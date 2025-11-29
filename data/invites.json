@@ -1,0 +1,82 @@
+[
+  {
+    "id": "165ee324-8c24-44fb-a6f8-aa66322ba85b",
+    "code": "CLI-8RT3DY",
+    "role": "client",
+    "storeId": "IH-JRTJYJ",
+    "storeName": "Laguna Liquor",
+    "storeAddress": "9632 emerald Oak Dr Elk Grove, CA 95624",
+    "managerId": "ironhand-nia",
+    "createdAt": "2025-11-28T18:28:49.168Z",
+    "expiresAt": "2025-11-29T18:28:49.168Z",
+    "usedByIds": []
+  },
+  {
+    "id": "5aad0d86-6138-4651-b1c9-c1e1dd6dd657",
+    "code": "EMP-GZJWNJ",
+    "role": "employee",
+    "storeId": "IH-JRTJYJ",
+    "storeName": "Laguna Liquor",
+    "storeAddress": "9632 emerald Oak Dr Elk Grove, CA 95624",
+    "managerId": "ironhand-nia",
+    "createdAt": "2025-11-27T18:20:54.761Z",
+    "expiresAt": "2025-11-28T18:20:54.761Z",
+    "usedByIds": [
+      "14180486-538b-4edc-9fec-8c11bab1caa4"
+    ],
+    "usedAt": "2025-11-28T05:01:35.337Z",
+    "usedBy": "14180486-538b-4edc-9fec-8c11bab1caa4"
+  },
+  {
+    "id": "4431df8e-0981-4733-8916-ff98b1fc168e",
+    "code": "SUR-FG7KZO",
+    "role": "surveillance",
+    "storeId": "IH-JRTJYJ",
+    "storeName": "Laguna Liquor",
+    "storeAddress": "9632 emerald Oak Dr Elk Grove, CA 95624",
+    "managerId": "6074646b-3aac-410a-bb90-95f18d3d591a",
+    "createdAt": "2025-11-28T18:28:49.168Z",
+    "expiresAt": "2025-11-29T18:28:49.168Z",
+    "usedByIds": []
+  },
+  {
+    "id": "6c4caa58-1615-44ce-a0d7-c0a8e7124640",
+    "code": "SUR-6HLLYH",
+    "role": "surveillance",
+    "storeId": "IH-JRTJYJ",
+    "storeName": "Laguna Liquor",
+    "storeAddress": "9632 emerald Oak Dr Elk Grove, CA 95624",
+    "managerId": "6074646b-3aac-410a-bb90-95f18d3d591a",
+    "createdAt": "2025-11-28T18:28:49.168Z",
+    "expiresAt": "2025-11-29T18:28:49.168Z",
+    "usedByIds": []
+  },
+  {
+    "id": "92e260a1-e4d8-40c7-b104-8843bad6d2d1",
+    "code": "SUR-QSS38T",
+    "role": "surveillance",
+    "storeId": "IH-JRTJYJ",
+    "storeName": "Laguna Liquor",
+    "storeAddress": "9632 emerald Oak Dr Elk Grove, CA 95624",
+    "managerId": "6074646b-3aac-410a-bb90-95f18d3d591a",
+    "createdAt": "2025-11-28T18:28:49.168Z",
+    "expiresAt": "2025-11-29T18:28:49.168Z",
+    "usedByIds": []
+  },
+  {
+    "id": "59cb787c-fb27-44d5-bb9f-8104c297d398",
+    "code": "SUR-1IOGA6",
+    "role": "surveillance",
+    "storeId": "IH-JRTJYJ",
+    "storeName": "Laguna Liquor",
+    "storeAddress": "9632 emerald Oak Dr Elk Grove, CA 95624",
+    "managerId": "6074646b-3aac-410a-bb90-95f18d3d591a",
+    "createdAt": "2025-11-26T12:30:30.754Z",
+    "expiresAt": "2025-11-27T12:30:30.754Z",
+    "usedAt": "2025-11-26T12:31:14.463Z",
+    "usedBy": "69d999d9-1b45-4432-a30a-97099f7d4dc9",
+    "usedByIds": [
+      "69d999d9-1b45-4432-a30a-97099f7d4dc9"
+    ]
+  }
+]

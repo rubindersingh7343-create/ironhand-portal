@@ -1,0 +1,82 @@
+[
+  {
+    "id": "1d11fb33-e61d-41e9-b846-112271078d79",
+    "name": "Rubin Singh",
+    "email": "11rsingh99@gmail.com",
+    "password": "Liquor@Laguna9632",
+    "role": "client",
+    "storeNumber": "IH-JRTJYJ",
+    "phone": "9163427324",
+    "storeName": "Laguna Liquor",
+    "storeAddress": "9632 Emerald Oak Dr, Elk Grove Ca 95624",
+    "storeIds": [
+      "IH-JRTJYJ"
+    ]
+  },
+  {
+    "id": "6074646b-3aac-410a-bb90-95f18d3d591a",
+    "name": "Rubinder Singh",
+    "email": "rsingh1199@icloud.com",
+    "password": "Liquor@Laguna9632",
+    "role": "ironhand",
+    "storeNumber": "IH-JRTJYJ",
+    "phone": "9163427324",
+    "employeeCode": "IH-18OV42"
+  },
+  {
+    "id": "69d999d9-1b45-4432-a30a-97099f7d4dc9",
+    "name": "Rubinder Singh",
+    "email": "rubindersingh7343@gmail.com",
+    "password": "Liquor@Laguna9632",
+    "role": "surveillance",
+    "storeNumber": "IH-JRTJYJ",
+    "phone": "9163427344",
+    "storeName": "Laguna Liquor",
+    "storeAddress": "9632 emerald Oak Dr Elk Grove, CA 95624",
+    "storeIds": [
+      "IH-JRTJYJ"
+    ]
+  },
+  {
+    "id": "ironhand-hq",
+    "name": "Iron Hand Master",
+    "email": "rubinder.singh7343@yahoo.com",
+    "password": "Liquor@Laguna9632",
+    "role": "ironhand",
+    "storeNumber": "HQ",
+    "employeeCode": "IH-0002",
+    "portal": "master"
+  },
+  {
+    "id": "14180486-538b-4edc-9fec-8c11bab1caa4",
+    "name": "Rubin Singh",
+    "email": "11rsingh99999@gmail.com",
+    "password": "Liquor@Laguna9632",
+    "role": "employee",
+    "storeNumber": "IH-JRTJYJ",
+    "phone": "9163427324",
+    "storeName": "Laguna Liquor",
+    "storeAddress": "9632 emerald Oak Dr Elk Grove, CA 95624"
+  },
+  {
+    "id": "4e78c5c3-3231-47b8-850d-62ae40ea1e32",
+    "name": "Sammy Singh",
+    "email": "sammy.singh5252@gmail.com",
+    "password": "Laguna8451",
+    "role": "ironhand",
+    "storeNumber": "HQ",
+    "phone": "9163358685",
+    "employeeCode": "IH-PTMM24"
+  },
+  {
+    "id": "f9647436-12a3-46cd-ad46-80349fdc0375",
+    "name": "Guravtar Singh",
+    "email": "Avi@manager.com",
+    "password": "MandLiquor",
+    "role": "ironhand",
+    "storeNumber": "",
+    "storeIds": [],
+    "phone": "9167777777",
+    "employeeCode": "IH-YL6378"
+  }
+]

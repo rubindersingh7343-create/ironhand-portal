@@ -1,0 +1,230 @@
+{
+  "shiftSubmissions": [
+    {
+      "employeeName": "Rubin Singh",
+      "storeNumber": "IH-JRTJYJ",
+      "shiftNotes": "m",
+      "scratcherVideo": {
+        "id": "ee9c2f71-b56d-4a33-801e-2b7bd62a4b9e",
+        "path": "/uploads/shift/ee9c2f71-b56d-4a33-801e-2b7bd62a4b9e-10_Sec_Vid.MP4",
+        "originalName": "10 Sec Vid.MP4",
+        "mimeType": "video/mp4",
+        "size": 6324003,
+        "label": "Scratcher Count Video",
+        "kind": "video"
+      },
+      "cashPhoto": {
+        "id": "21a17615-d2c6-4e7a-8344-9932a5075491",
+        "path": "/uploads/shift/21a17615-d2c6-4e7a-8344-9932a5075491-ChatGPT_Image_Nov_20__2025_at_05_46_49_PM.png",
+        "originalName": "ChatGPT Image Nov 20, 2025 at 05_46_49 PM.png",
+        "mimeType": "image/png",
+        "size": 1352604,
+        "label": "Cash Count Photo",
+        "kind": "image"
+      },
+      "salesPhoto": {
+        "id": "9fb13e8e-7054-4faa-99b1-f669325f6711",
+        "path": "/uploads/shift/9fb13e8e-7054-4faa-99b1-f669325f6711-ChatGPT_Image_Nov_20__2025__12_52_17_PM.png",
+        "originalName": "ChatGPT Image Nov 20, 2025, 12_52_17 PM.png",
+        "mimeType": "image/png",
+        "size": 2082863,
+        "label": "Sales Report Photo",
+        "kind": "image"
+      },
+      "id": "78a76b26-7871-4fdd-bc7e-6cd0b46f42a1",
+      "createdAt": "2025-11-28T06:51:24.660Z"
+    },
+    {
+      "employeeName": "Rubinn Singh",
+      "storeNumber": "IH-JRTJYJ",
+      "shiftNotes": "what's up \r\n",
+      "scratcherVideo": {
+        "id": "08c13d2a-bbaa-4a01-892e-82231f45ed0a",
+        "path": "/uploads/shift/08c13d2a-bbaa-4a01-892e-82231f45ed0a-10_Sec_Vid.MP4",
+        "originalName": "10 Sec Vid.MP4",
+        "mimeType": "video/mp4",
+        "size": 6324003,
+        "label": "Scratcher Count Video",
+        "kind": "video"
+      },
+      "cashPhoto": {
+        "id": "41da67f2-d17e-45f1-9c3a-0d46822c8a59",
+        "path": "/uploads/shift/41da67f2-d17e-45f1-9c3a-0d46822c8a59-ChatGPT_Image_Nov_20__2025_at_05_46_49_PM.png",
+        "originalName": "ChatGPT Image Nov 20, 2025 at 05_46_49 PM.png",
+        "mimeType": "image/png",
+        "size": 1352604,
+        "label": "Cash Count Photo",
+        "kind": "image"
+      },
+      "salesPhoto": {
+        "id": "8156c2a9-638c-4e19-b12f-1a63180e07d6",
+        "path": "/uploads/shift/8156c2a9-638c-4e19-b12f-1a63180e07d6-ChatGPT_Image_Nov_20__2025__03_31_21_PM.png",
+        "originalName": "ChatGPT Image Nov 20, 2025, 03_31_21 PM.png",
+        "mimeType": "image/png",
+        "size": 2105589,
+        "label": "Sales Report Photo",
+        "kind": "image"
+      },
+      "id": "6fef718d-86a0-40fa-ad5e-0943104b75e2",
+      "createdAt": "2025-11-27T20:28:25.695Z"
+    },
+    {
+      "employeeName": "Rubinn Singh",
+      "storeNumber": "IH-JRTJYJ",
+      "shiftNotes": "Sai came",
+      "scratcherVideo": {
+        "id": "85cacad8-3fc7-461e-8b90-bf9e889a577b",
+        "path": "/uploads/shift/85cacad8-3fc7-461e-8b90-bf9e889a577b-Screen_Recording_2025-11-07_at_11.05.31_AM.mov",
+        "originalName": "Screen Recording 2025-11-07 at 11.05.31 AM.mov",
+        "mimeType": "video/quicktime",
+        "size": 57927779,
+        "label": "Scratcher Count Video",
+        "kind": "video"
+      },
+      "cashPhoto": {
+        "id": "7ecdb6bc-a0a3-4d3c-86cc-4bb469e145de",
+        "path": "/uploads/shift/7ecdb6bc-a0a3-4d3c-86cc-4bb469e145de-Screenshot_2025-11-22_at_3.42.30_PM.png",
+        "originalName": "Screenshot 2025-11-22 at 3.42.30 PM.png",
+        "mimeType": "image/png",
+        "size": 1199212,
+        "label": "Cash Count Photo",
+        "kind": "image"
+      },
+      "salesPhoto": {
+        "id": "2459b9a4-34ab-4230-8c40-6fa8486f7707",
+        "path": "/uploads/shift/2459b9a4-34ab-4230-8c40-6fa8486f7707-Screenshot_2025-11-16_at_9.02.59_PM.png",
+        "originalName": "Screenshot 2025-11-16 at 9.02.59 PM.png",
+        "mimeType": "image/png",
+        "size": 1697703,
+        "label": "Sales Report Photo",
+        "kind": "image"
+      },
+      "id": "195ae301-be13-44be-a9db-37653e665bf6",
+      "createdAt": "2025-11-23T00:56:24.812Z"
+    }
+  ],
+  "reports": [
+    {
+      "employeeName": "Rubin Singh",
+      "storeNumber": "IH-JRTJYJ",
+      "reportType": "weekly",
+      "notes": "",
+      "textContent": "",
+      "attachments": [
+        {
+          "id": "951c1622-9e50-4851-843e-0c4219392b5a",
+          "path": "/uploads/reports/951c1622-9e50-4851-843e-0c4219392b5a-Screenshot_2025-11-16_at_9.02.59_PM.png",
+          "originalName": "Screenshot 2025-11-16 at 9.02.59 PM.png",
+          "mimeType": "image/png",
+          "size": 1697703,
+          "label": "Weekly Orders Attachment",
+          "kind": "image"
+        }
+      ],
+      "id": "6eded9c3-31e2-44a3-a325-c42ddb1c2b24",
+      "createdAt": "2025-11-23T16:23:49.063Z"
+    },
+    {
+      "employeeName": "Rubin Singh",
+      "storeNumber": "IH-JRTJYJ",
+      "reportType": "daily",
+      "notes": "",
+      "textContent": "hhh",
+      "attachments": [
+        {
+          "id": "04e9b736-4b96-4a67-bde4-ec4d21ba015f",
+          "path": "/uploads/reports/04e9b736-4b96-4a67-bde4-ec4d21ba015f-Screenshot_2025-11-16_at_9.02.59_PM.png",
+          "originalName": "Screenshot 2025-11-16 at 9.02.59 PM.png",
+          "mimeType": "image/png",
+          "size": 1697703,
+          "label": "Daily Report Media",
+          "kind": "image"
+        }
+      ],
+      "id": "8d2bc125-1b30-4a64-8f71-1fb7931f97bf",
+      "createdAt": "2025-11-23T16:21:22.261Z"
+    }
+  ],
+  "surveillanceReports": [
+    {
+      "employeeName": "Rubinder Singh",
+      "storeNumber": "IH-JRTJYJ",
+      "label": "routine",
+      "summary": "yo",
+      "notes": "yooo",
+      "attachments": [
+        {
+          "id": "b07d36e0-6929-4c71-b414-b87b8920ad5f",
+          "path": "/uploads/surveillance/b07d36e0-6929-4c71-b414-b87b8920ad5f-10_Sec_Vid.MP4",
+          "originalName": "10 Sec Vid.MP4",
+          "mimeType": "video/mp4",
+          "size": 6324003,
+          "label": "routine",
+          "kind": "video"
+        }
+      ],
+      "id": "617c6b21-834c-4514-888f-c673126297eb",
+      "createdAt": "2025-11-27T20:38:54.902Z"
+    },
+    {
+      "employeeName": "Rubinder Singh",
+      "storeNumber": "IH-JRTJYJ",
+      "label": "critical",
+      "summary": "hvjvj",
+      "notes": "",
+      "attachments": [
+        {
+          "id": "c32d57f8-1573-4d99-916b-3c12f5a4e5ca",
+          "path": "/uploads/surveillance/c32d57f8-1573-4d99-916b-3c12f5a4e5ca-10_Sec_Vid.MP4",
+          "originalName": "10 Sec Vid.MP4",
+          "mimeType": "video/mp4",
+          "size": 6324003,
+          "label": "critical",
+          "kind": "video"
+        }
+      ],
+      "id": "77fb8f93-6b49-4978-ac22-190bbab9e961",
+      "createdAt": "2025-11-26T13:40:26.931Z"
+    },
+    {
+      "employeeName": "Rubinder Singh",
+      "storeNumber": "IH-JRTJYJ",
+      "label": "critical",
+      "summary": "employee was good.",
+      "notes": "",
+      "attachments": [
+        {
+          "id": "4f6ccb4b-4424-4019-9f04-ea18a7f7443c",
+          "path": "/uploads/surveillance/4f6ccb4b-4424-4019-9f04-ea18a7f7443c-10_Sec_Vid.MP4",
+          "originalName": "10 Sec Vid.MP4",
+          "mimeType": "video/mp4",
+          "size": 6324003,
+          "label": "critical",
+          "kind": "video"
+        }
+      ],
+      "id": "e1441b62-c150-4d44-a768-e3eda196c4eb",
+      "createdAt": "2025-11-26T13:12:43.142Z"
+    },
+    {
+      "employeeName": "Rubinder Singh",
+      "storeNumber": "IH-JRTJYJ",
+      "label": "routine",
+      "summary": "test",
+      "notes": "test",
+      "attachments": [
+        {
+          "id": "2e4d4f89-f853-43b8-819c-17bbb6939227",
+          "path": "/uploads/surveillance/2e4d4f89-f853-43b8-819c-17bbb6939227-10_Sec_Vid.MP4",
+          "originalName": "10 Sec Vid.MP4",
+          "mimeType": "video/mp4",
+          "size": 6324003,
+          "label": "routine",
+          "kind": "video"
+        }
+      ],
+      "id": "7d353d43-2aea-4796-8ab6-17a824d986a0",
+      "createdAt": "2025-11-26T12:55:00.596Z"
+    }
+  ]
+}
