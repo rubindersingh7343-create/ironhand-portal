@@ -160,7 +160,10 @@ export async function POST(request: Request) {
     const cashPhoto = formData.get("cashPhoto");
     const salesPhoto = formData.get("salesPhoto");
     const shiftNotes = formData.get("shiftNotes")?.toString() ?? "";
-    const storeId = await resolveStoreId(formData.get("storeId") ?? formData.get("store_id"));
+    const storeIdRaw = formData.get("storeId") ?? formData.get("store_id");
+    const storeId = await resolveStoreId(
+      typeof storeIdRaw === "string" ? storeIdRaw : null,
+    );
 
     if (
       !(scratcherVideo instanceof File) ||
