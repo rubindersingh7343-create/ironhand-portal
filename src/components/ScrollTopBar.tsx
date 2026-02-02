@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 
 const PULL_THRESHOLD = 70;
 const MAX_PULL = 140;
 const HOLD_OFFSET = 36;
 
 export default function ScrollTopBar() {
+  const pathname = usePathname();
   const [pullProgress, setPullProgress] = useState(0);
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -131,6 +133,10 @@ export default function ScrollTopBar() {
       delete document.body.dataset.pullRefreshing;
     }
   }, [pullDistance, isRefreshing]);
+
+  if (pathname === "/auth/login") {
+    return null;
+  }
 
   return (
     <div
