@@ -100,6 +100,7 @@ interface StorageSchema {
     slotNumber: number;
     label?: string | null;
     isActive: boolean;
+    defaultProductId?: string | null;
     activePackId?: string | null;
     createdAt: string;
   }>;
