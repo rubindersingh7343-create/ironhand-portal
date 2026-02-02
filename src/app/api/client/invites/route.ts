@@ -3,8 +3,9 @@ import { getSessionUser } from "@/lib/auth";
 import {
   createClientStoreInvite,
   deleteInvite,
+  getClientStoreIds,
+  getStoreSummariesByIds,
   listInvites,
-  listStoresForManager,
 } from "@/lib/userStore";
 
 export async function POST(request: Request) {
@@ -19,8 +20,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "storeId required" }, { status: 400 });
   }
 
-  const stores = await listStoresForManager(user.id, user.storeNumber);
-  const target = stores.find((store) => store.storeId === storeId);
+  const linkStoreIds = await getClientStoreIds(user.id);
+  const allowed = Array.from(
+    new Set(
+      [
+        ...linkStoreIds,
+        ...(user.storeIds ?? []),
+        user.storeNumber ?? "",
+      ].filter(Boolean),
+    ),
+  );
+  const summaries = await getStoreSummariesByIds(allowed);
+  const target = summaries.find((store) => store.storeId === storeId);
   if (!target) {
     return NextResponse.json({ error: "Store not found" }, { status: 404 });
   }

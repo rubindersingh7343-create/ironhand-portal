@@ -8,6 +8,7 @@ const reportCategories: Array<CombinedRecord["category"]> = [
   "weekly",
   "monthly",
   "surveillance",
+  "invoice",
 ];
 
 const reportLabels: Record<CombinedRecord["category"], string> = {
@@ -16,6 +17,7 @@ const reportLabels: Record<CombinedRecord["category"], string> = {
   weekly: "Weekly Orders",
   monthly: "Monthly Report",
   surveillance: "Surveillance",
+  invoice: "Invoices",
 };
 
 interface ArchiveStore {
@@ -88,7 +90,7 @@ export default function MasterArchivePanel() {
   }, 0);
 
   return (
-    <section className="rounded-[32px] border border-white/10 bg-[rgba(10,18,34,0.9)] p-6 shadow-2xl shadow-slate-950/40">
+    <section className="ui-card text-white">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
@@ -108,9 +110,18 @@ export default function MasterArchivePanel() {
       </div>
 
       {loading && (
-        <p className="rounded-2xl bg-white/5 px-4 py-3 text-sm text-slate-200">
-          Loading archive…
-        </p>
+        <div className="space-y-3">
+          {Array.from({ length: 2 }).map((_, index) => (
+            <div
+              key={`archive-skeleton-${index}`}
+              className="rounded-3xl border border-white/10 bg-[#0b152b] px-5 py-4"
+            >
+              <div className="ui-skeleton h-4 w-36" />
+              <div className="mt-3 ui-skeleton h-5 w-56" />
+              <div className="mt-2 ui-skeleton h-3 w-40" />
+            </div>
+          ))}
+        </div>
       )}
       {error && (
         <p className="rounded-2xl bg-red-500/10 px-4 py-3 text-sm text-red-200">
@@ -248,22 +259,27 @@ export default function MasterArchivePanel() {
                                   </p>
                                 )}
                                 <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                                  {record.attachments.map((file) => (
-                                    <a
-                                      key={file.id}
-                                      href={file.path}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-blue-200 transition hover:border-blue-400 hover:text-blue-100"
-                                    >
-                                      <p className="font-semibold text-white">
-                                        {file.label ?? "Attachment"}
-                                      </p>
-                                      <p className="truncate text-[10px] text-slate-300">
-                                        {file.originalName}
-                                      </p>
-                                    </a>
-                                  ))}
+                                  {record.attachments.map((file) => {
+                                    const proxyUrl = `/api/uploads/proxy?path=${encodeURIComponent(
+                                      file.path ?? file.id,
+                                    )}&id=${encodeURIComponent(file.id)}&name=${encodeURIComponent(
+                                      file.originalName ?? file.label ?? "file",
+                                    )}`;
+                                    return (
+                                      <a
+                                        key={file.id}
+                                        href={proxyUrl}
+                                        className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-blue-200 transition hover:border-blue-400 hover:text-blue-100"
+                                      >
+                                        <p className="font-semibold text-white">
+                                          {file.label ?? "Attachment"}
+                                        </p>
+                                        <p className="truncate text-[10px] text-slate-300">
+                                          {file.originalName}
+                                        </p>
+                                      </a>
+                                    );
+                                  })}
                                   {record.attachments.length === 0 && (
                                     <p className="rounded-xl border border-dashed border-white/10 px-3 py-2 text-center text-[11px] text-slate-400">
                                       No files attached

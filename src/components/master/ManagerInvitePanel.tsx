@@ -1,18 +1,30 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import CopyButton from "@/components/ui/CopyButton";
 
 interface ManagerInvite {
   id: string;
   code: string;
+  storeId?: string;
+  storeName?: string;
+  storeAddress?: string;
   createdAt: string;
   expiresAt: string;
   usedAt?: string;
   usedBy?: string;
 }
 
+interface StoreOption {
+  id: string;
+  name: string;
+  address?: string;
+}
+
 export default function ManagerInvitePanel() {
   const [invites, setInvites] = useState<ManagerInvite[]>([]);
+  const [stores, setStores] = useState<StoreOption[]>([]);
+  const [storeId, setStoreId] = useState("");
   const [status, setStatus] = useState<"idle" | "loading">("idle");
   const [message, setMessage] = useState<string | null>(null);
 
@@ -34,11 +46,45 @@ export default function ManagerInvitePanel() {
     loadInvites();
   }, []);
 
+  useEffect(() => {
+    const loadStores = async () => {
+      try {
+        const response = await fetch("/api/stores/all", { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error("Unable to load stores.");
+        }
+        const data = await response.json();
+        const options: StoreOption[] = (data.stores ?? []).map((store: any) => ({
+          id: store.storeId,
+          name: store.storeName ?? `Store ${store.storeId}`,
+          address: store.address ?? "",
+        }));
+        setStores(options);
+        if (!storeId && options.length) {
+          setStoreId(options[0].id);
+        }
+      } catch (error) {
+        console.error(error);
+        setMessage("Unable to load stores.");
+      }
+    };
+    loadStores();
+  }, [storeId]);
+
   const generateInvite = async () => {
     setStatus("loading");
     setMessage(null);
     try {
-      const response = await fetch("/api/manager-invites", { method: "POST" });
+      if (!storeId) {
+        setMessage("Select a store to generate a manager code.");
+        setStatus("idle");
+        return;
+      }
+      const response = await fetch("/api/manager-invites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeId }),
+      });
       if (!response.ok) {
         throw new Error("Unable to create invite.");
       }
@@ -99,7 +145,7 @@ export default function ManagerInvitePanel() {
   };
 
   return (
-    <section className="rounded-[32px] border border-white/10 bg-[rgba(12,20,38,0.85)] p-6 shadow-2xl shadow-slate-950/40">
+    <section className="ui-card text-white">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
@@ -109,17 +155,33 @@ export default function ManagerInvitePanel() {
             Manager portal invites
           </h2>
           <p className="text-sm text-slate-300">
-            Generate or revoke codes used to create Manager Portal accounts.
+            Generate store-bound codes to add a manager to a specific store.
           </p>
         </div>
-        <button
-          type="button"
-          disabled={status === "loading"}
-          onClick={generateInvite}
-          className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:opacity-60"
-        >
-          {status === "loading" ? "Generating..." : "New manager code"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={storeId}
+            onChange={(event) => setStoreId(event.target.value)}
+            className="ui-field"
+          >
+            {stores.length === 0 && (
+              <option value="">No stores found</option>
+            )}
+            {stores.map((store) => (
+              <option key={store.id} value={store.id}>
+                {store.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={status === "loading"}
+            onClick={generateInvite}
+            className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:opacity-60"
+          >
+            {status === "loading" ? "Generating..." : "New manager code"}
+          </button>
+        </div>
       </div>
 
       {message && (
@@ -146,9 +208,18 @@ export default function ManagerInvitePanel() {
                   <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
                     Code
                   </p>
-                  <p className="text-xl font-semibold tracking-widest">
-                    {invite.code}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xl font-semibold tracking-widest">
+                      {invite.code}
+                    </p>
+                    <CopyButton value={invite.code} label="Copy manager code" />
+                  </div>
+                  {invite.storeName && (
+                    <p className="text-xs text-slate-300">
+                      {invite.storeName}
+                      {invite.storeId ? ` · ${invite.storeId}` : ""}
+                    </p>
+                  )}
                   <p className="text-xs text-slate-400">
                     Created {new Date(invite.createdAt).toLocaleString()}
                   </p>

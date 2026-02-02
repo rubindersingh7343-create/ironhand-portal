@@ -2,7 +2,7 @@ import Image from "next/image";
 import { redirect } from "next/navigation";
 import MasterDashboard from "@/components/master/MasterDashboard";
 import LoginForm from "@/components/auth/LoginForm";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, isMasterUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,7 @@ export default async function MasterPage() {
     return <MasterAccessCard />;
   }
 
-  if (user.role !== "ironhand" || user.storeNumber !== "HQ") {
+  if (!isMasterUser(user)) {
     redirect("/");
   }
   return <MasterDashboard user={user} />;

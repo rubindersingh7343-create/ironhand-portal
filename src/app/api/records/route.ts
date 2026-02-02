@@ -43,7 +43,9 @@ export async function GET(request: Request) {
   if (user.role === "client") {
     const allowedStores =
       (user.storeIds?.length ? user.storeIds : [user.storeNumber]).filter(Boolean);
-    if (requestedStore && allowedStores.includes(requestedStore)) {
+    if (requestedStore === "all") {
+      storeNumber = undefined;
+    } else if (requestedStore && allowedStores.includes(requestedStore)) {
       storeNumber = requestedStore;
     } else {
       storeNumber = allowedStores[0];
@@ -75,7 +77,14 @@ export async function GET(request: Request) {
 
   const filteredRecords = isManager
     ? records.filter((record) => managedStoreIds.includes(record.storeNumber))
-    : records;
+    : user.role === "client"
+      ? records.filter((record) =>
+          (user.storeIds?.length
+            ? user.storeIds
+            : [user.storeNumber]
+          ).filter(Boolean).includes(record.storeNumber),
+        )
+      : records;
 
   const allowedStoreIds =
     user.role === "client"

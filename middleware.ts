@@ -7,15 +7,21 @@ export function middleware(request: NextRequest) {
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/public") ||
-    pathname.endsWith(".ico")
+    pathname.endsWith(".ico") ||
+    pathname.endsWith(".png") ||
+    pathname.endsWith(".jpg") ||
+    pathname.endsWith(".jpeg") ||
+    pathname.endsWith(".svg") ||
+    pathname.endsWith(".pdf")
   ) {
     return NextResponse.next();
   }
 
   const sessionCookie = request.cookies.get(SESSION_COOKIE)?.value;
   const isAuthRoute = pathname.startsWith("/auth");
+  const isSignupRoute = pathname.startsWith("/signup");
 
-  if (!sessionCookie && !isAuthRoute) {
+  if (!sessionCookie && !isAuthRoute && !isSignupRoute) {
     const loginUrl = new URL("/auth/login", request.url);
     if (pathname !== "/") {
       loginUrl.searchParams.set("redirectTo", pathname);

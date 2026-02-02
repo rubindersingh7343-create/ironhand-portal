@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { authenticateUser, createSessionToken } from "@/lib/auth";
+import {
+  SESSION_MAX_AGE_SECONDS,
+  authenticateUser,
+  createSessionToken,
+} from "@/lib/auth";
 import { SESSION_COOKIE } from "@/lib/users";
 
 export async function POST(request: Request) {
@@ -8,9 +12,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
-  const { email, password } = body as {
+  const { email, password, rememberMe } = body as {
     email?: string;
     password?: string;
+    rememberMe?: boolean;
   };
 
   if (!email || !password) {
@@ -31,7 +36,7 @@ export async function POST(request: Request) {
     name: SESSION_COOKIE,
     value: token,
     httpOnly: true,
-    maxAge: 60 * 60 * 12,
+    maxAge: SESSION_MAX_AGE_SECONDS,
     sameSite: "lax",
     path: "/",
     secure: process.env.NODE_ENV === "production",

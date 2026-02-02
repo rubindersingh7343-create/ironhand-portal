@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSessionUser, requireRole } from "@/lib/auth";
+import { getSessionUser, isMasterUser } from "@/lib/auth";
 import { mockUsers } from "@/lib/users";
 import {
   getDynamicUsers,
@@ -11,10 +11,7 @@ import type { CombinedRecord } from "@/lib/types";
 
 async function authorizeMaster() {
   const user = await getSessionUser();
-  if (!user || !requireRole(user, ["ironhand"]) || user.storeNumber !== "HQ") {
-    return null;
-  }
-  return user;
+  return isMasterUser(user);
 }
 
 export async function GET() {

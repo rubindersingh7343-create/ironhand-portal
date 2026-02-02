@@ -7,10 +7,10 @@ import {
   listEmployeesForStoreIds,
 } from "@/lib/userStore";
 
-async function getClientStoreSet(userId: string, fallbackStore: string) {
+async function getClientStoreSet(userId: string, fallbackStore: string): Promise<string[]> {
   const extra = await getClientStoreIds(userId);
   const all = new Set(extra.length ? extra : [fallbackStore].filter(Boolean));
-  return Array.from(all);
+  return Array.from(all) as string[];
 }
 
 export async function GET() {

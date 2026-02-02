@@ -1,8 +1,12 @@
 import { appendFile } from "fs/promises";
 import path from "path";
 import { NextResponse } from "next/server";
-import { createSessionToken, getSessionUser } from "@/lib/auth";
-import { attachStoreToClient } from "@/lib/userStore";
+import {
+  SESSION_MAX_AGE_SECONDS,
+  createSessionToken,
+  getSessionUser,
+} from "@/lib/auth";
+import { attachStoreToClient, createStoreForClient } from "@/lib/userStore";
 import { SESSION_COOKIE } from "@/lib/users";
 
 const ERROR_LOG = path.join(process.cwd(), "data", "api-errors.log");
@@ -16,19 +20,35 @@ export async function POST(request: Request) {
 
     const body = await request.json().catch(() => null);
     const code = body?.code as string | undefined;
-    if (!code) {
+    const storeName = body?.storeName as string | undefined;
+    const storeAddress = body?.storeAddress as string | undefined;
+    if (!code && (!storeName || !storeName.trim())) {
       return NextResponse.json(
-        { error: "Invite code required" },
+        { error: "Store name required" },
         { status: 400 },
       );
     }
 
-    const result = await attachStoreToClient(user.id, code);
-    if (!result.invite || !result.updated) {
-      return NextResponse.json(
-        { error: "Invalid or expired client code." },
-        { status: 400 },
-      );
+    let result:
+      | { invite: { storeId: string; storeName?: string } | null; updated: boolean; stores: string[] }
+      | { store: { storeId: string; name: string }; stores: string[] };
+
+    if (code) {
+      const inviteResult = await attachStoreToClient(user.id, code);
+      if (!inviteResult.invite || !inviteResult.updated) {
+        return NextResponse.json(
+          { error: "Invalid or expired client code." },
+          { status: 400 },
+        );
+      }
+      result = inviteResult;
+    } else {
+      const created = await createStoreForClient({
+        userId: user.id,
+        storeName: storeName?.trim() ?? "",
+        storeAddress: storeAddress?.trim(),
+      });
+      result = created;
     }
 
     const stores = Array.from(
@@ -48,12 +68,16 @@ export async function POST(request: Request) {
 
     const response = NextResponse.json({
       success: true,
-      storeId: result.invite.storeId,
+      storeId: "invite" in result ? result.invite?.storeId : result.store.storeId,
+      storeName: "invite" in result ? result.invite?.storeName : result.store.name,
       stores,
     });
     response.cookies.set(SESSION_COOKIE, createSessionToken(updatedUser), {
       path: "/",
       httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: SESSION_MAX_AGE_SECONDS,
     });
     return response;
   } catch (error) {

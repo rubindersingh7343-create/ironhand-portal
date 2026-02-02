@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { CombinedRecord } from "@/lib/types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { CombinedRecord, StoredFile } from "@/lib/types";
+import IHModal from "@/components/ui/IHModal";
 
 interface StoreInfo {
   storeId: string;
@@ -23,6 +24,7 @@ export default function DailyFilesPanel() {
   const [selectedDate, setSelectedDate] = useState(today);
   const [showAll, setShowAll] = useState(false);
   const [expandedStore, setExpandedStore] = useState<string | null>(null);
+  const [viewerFile, setViewerFile] = useState<StoredFile | null>(null);
 
   const groupedRecords = useMemo<GroupedRecord[]>(() => {
     const groups: Record<string, GroupedRecord> = {};
@@ -88,7 +90,7 @@ export default function DailyFilesPanel() {
   const visibleGroups = showAll ? groupedRecords : groupedRecords.slice(0, 3);
 
   return (
-    <section className="rounded-[32px] border border-white/10 bg-[rgba(12,20,38,0.85)] p-6 shadow-2xl shadow-slate-950/40">
+    <section className="ui-card text-white">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
@@ -131,9 +133,18 @@ export default function DailyFilesPanel() {
       )}
 
       {loading ? (
-        <p className="rounded-2xl border border-white/10 px-4 py-3 text-sm text-slate-200">
-          Loading files…
-        </p>
+        <div className="space-y-4">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div
+              key={`daily-files-skeleton-${index}`}
+              className="rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3"
+            >
+              <div className="ui-skeleton h-4 w-36" />
+              <div className="mt-2 ui-skeleton h-3 w-28" />
+              <div className="mt-3 ui-skeleton h-10 w-full" />
+            </div>
+          ))}
+        </div>
       ) : groupedRecords.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-white/10 px-4 py-3 text-sm text-slate-300">
           No uploads yet today.
@@ -200,15 +211,14 @@ export default function DailyFilesPanel() {
                           <p className="text-slate-400">No files uploaded.</p>
                         ) : (
                           record.attachments.map((file) => (
-                            <a
+                            <button
+                              type="button"
                               key={file.id}
-                              href={file.path}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="block rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white hover:border-white/40"
+                              onClick={() => setViewerFile(file)}
+                              className="block w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-left text-[11px] text-white hover:border-white/40"
                             >
                               {file.label ?? file.originalName}
-                            </a>
+                            </button>
                           ))
                         )}
                       </div>
@@ -220,6 +230,195 @@ export default function DailyFilesPanel() {
           ))}
         </div>
       )}
+      <FileViewer file={viewerFile} onClose={() => setViewerFile(null)} />
     </section>
+  );
+}
+
+function FileViewer({
+  file,
+  onClose,
+}: {
+  file: StoredFile | null;
+  onClose: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [scale, setScale] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const pinchStartDist = useRef<number | null>(null);
+  const pinchStartScale = useRef(1);
+  const lastTouch = useRef<{ x: number; y: number } | null>(null);
+  if (!file) return null;
+  const clamp = (val: number, min: number, max: number) =>
+    Math.min(max, Math.max(min, val));
+  const getDistance = (touches: TouchList | React.TouchList) => {
+    const [a, b] = [touches[0] as Touch, touches[1] as Touch];
+    const dx = a.clientX - b.clientX;
+    const dy = a.clientY - b.clientY;
+    return Math.hypot(dx, dy);
+  };
+  const showSpinner = file.kind !== "video";
+  useEffect(() => {
+    if (!showSpinner) {
+      setLoading(false);
+      setLoadError(false);
+      return;
+    }
+    setLoading(true);
+    setLoadError(false);
+    const timer = setTimeout(() => {
+      setLoading(false);
+      setLoadError(true);
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [file?.id, showSpinner]);
+  const src = `/api/uploads/proxy?path=${encodeURIComponent(
+    file.path ?? file.id,
+  )}&id=${encodeURIComponent(file.id)}&name=${encodeURIComponent(
+    file.originalName ?? file.label ?? "file",
+  )}`;
+  const isImage = file.kind === "image";
+  const isVideo = file.kind === "video";
+  const contentStyle = {
+    transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+    transformOrigin: "center center",
+    transition: "transform 80ms ease",
+  };
+  const zoomIn = () => setScale((prev) => Math.min(4, parseFloat((prev + 0.25).toFixed(2))));
+  const zoomOut = () => setScale((prev) => Math.max(0.5, parseFloat((prev - 0.25).toFixed(2))));
+
+  return (
+    <IHModal isOpen onClose={onClose} allowOutsideClose panelClassName="max-w-4xl">
+      <div className="relative flex max-h-[82vh] flex-col gap-3">
+        <div className="absolute right-2 top-10 flex gap-2">
+          <button
+            type="button"
+            onClick={zoomOut}
+            className="rounded-full border border-white/20 px-3 py-1 text-xs text-white hover:bg-white/10"
+          >
+            -
+          </button>
+          <button
+            type="button"
+            onClick={zoomIn}
+            className="rounded-full border border-white/20 px-3 py-1 text-xs text-white hover:bg-white/10"
+          >
+            +
+          </button>
+        </div>
+        <div className="space-y-1 pr-12">
+          <p className="text-lg font-semibold text-white">
+            {file.label || file.originalName || "File"}
+          </p>
+          <p className="text-xs text-slate-300">{file.originalName}</p>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <div
+            className="relative max-h-[70vh] overflow-hidden rounded-xl border border-white/10 bg-black/20 p-2"
+            onTouchStart={(event) => {
+              if (event.touches.length === 2) {
+                pinchStartDist.current = getDistance(event.touches);
+                pinchStartScale.current = scale;
+              } else if (event.touches.length === 1) {
+                lastTouch.current = {
+                  x: event.touches[0].clientX,
+                  y: event.touches[0].clientY,
+                };
+              }
+            }}
+            onTouchMove={(event) => {
+              if (event.touches.length === 2 && pinchStartDist.current) {
+                const dist = getDistance(event.touches);
+                const nextScale = clamp(
+                  pinchStartScale.current * (dist / pinchStartDist.current),
+                  1,
+                  4,
+                );
+                setScale(nextScale);
+              } else if (
+                event.touches.length === 1 &&
+                lastTouch.current &&
+                scale > 1
+              ) {
+                const { clientX, clientY } = event.touches[0];
+                const deltaX = clientX - lastTouch.current.x;
+                const deltaY = clientY - lastTouch.current.y;
+                setOffset((prev) => ({
+                  x: prev.x + deltaX,
+                  y: prev.y + deltaY,
+                }));
+                lastTouch.current = { x: clientX, y: clientY };
+              }
+            }}
+            onTouchEnd={() => {
+              pinchStartDist.current = null;
+              lastTouch.current = null;
+            }}
+            style={{ touchAction: "none" }}
+          >
+            {showSpinner && loading && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/20">
+                <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              </div>
+            )}
+            {showSpinner && loadError && (
+              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-black/40 text-sm text-red-200">
+                <p>Unable to load this file.</p>
+                <a
+                  href={src}
+                  className="rounded-md bg-white/10 px-3 py-1 text-xs text-white hover:bg-white/20"
+                >
+                  Download / open directly
+                </a>
+              </div>
+            )}
+            {isImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={src}
+                alt={file.originalName}
+                loading="lazy"
+                onLoad={() => setLoading(false)}
+                onError={() => {
+                  setLoading(false);
+                  setLoadError(true);
+                }}
+                className="mx-auto block h-auto max-h-[64vh] w-auto"
+                style={contentStyle}
+              />
+            ) : isVideo ? (
+              <>
+                <video
+                  controls
+                  src={src}
+                  playsInline
+                  preload="metadata"
+                  onLoadedData={() => setLoading(false)}
+                  className="mx-auto block h-auto max-h-[64vh] w-auto max-w-none rounded-lg bg-black"
+                  style={contentStyle}
+                />
+                <div className="mt-3 text-center text-xs text-slate-300">
+                  <a
+                    href={src}
+                    className="text-blue-200 underline underline-offset-4 hover:text-white"
+                  >
+                    Open directly / download
+                  </a>
+                </div>
+              </>
+            ) : (
+              <iframe
+                src={src}
+                title={file.originalName}
+                onLoad={() => setLoading(false)}
+                className="h-[60vh] w-full rounded-lg bg-white"
+                style={{ ...contentStyle, height: "60vh" }}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    </IHModal>
   );
 }

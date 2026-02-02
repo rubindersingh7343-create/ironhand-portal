@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import CopyButton from "@/components/ui/CopyButton";
 
 interface ManagerRecord {
   id: string;
@@ -267,7 +268,7 @@ export default function ManagerDirectory() {
   }, []);
 
   return (
-    <section className="rounded-[32px] border border-white/10 bg-[rgba(12,20,38,0.85)] p-6 shadow-2xl shadow-slate-950/40">
+    <section className="ui-card text-white">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
@@ -290,9 +291,18 @@ export default function ManagerDirectory() {
       )}
 
       {loading ? (
-        <p className="rounded-2xl border border-white/10 px-4 py-3 text-sm text-slate-200">
-          Loading managers…
-        </p>
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div
+              key={`manager-skeleton-${index}`}
+              className="rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3"
+            >
+              <div className="ui-skeleton h-4 w-40" />
+              <div className="mt-2 ui-skeleton h-3 w-52" />
+              <div className="mt-2 ui-skeleton h-3 w-32" />
+            </div>
+          ))}
+        </div>
       ) : managers.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-white/10 px-4 py-3 text-sm text-slate-300">
           No manager accounts yet.
@@ -311,9 +321,15 @@ export default function ManagerDirectory() {
                 <div>
                   <p className="text-lg font-semibold">{manager.name}</p>
                   <p className="text-slate-300">{manager.email}</p>
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                    Employee code {manager.employeeCode}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                      Employee code {manager.employeeCode}
+                    </p>
+                    <CopyButton
+                      value={manager.employeeCode}
+                      label="Copy employee code"
+                    />
+                  </div>
                 </div>
                 {manager.portal === "master" ? (
                   <span className="rounded-full border border-white/20 px-3 py-1 text-xs uppercase tracking-wide text-slate-200">
@@ -387,16 +403,22 @@ export default function ManagerDirectory() {
                           </button>
                         </div>
                         {surveillanceCodes[store.storeId] && (
-                          <p className="mt-2 rounded-xl border border-dashed border-white/20 bg-white/5 px-3 py-2 text-[11px] text-slate-200">
-                            Share code:{" "}
+                          <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-white/20 bg-white/5 px-3 py-2 text-[11px] text-slate-200">
+                            <span>Share code:</span>
                             <span className="font-semibold text-white">
                               {surveillanceCodes[store.storeId]?.code}
-                            </span>{" "}
-                            · expires{" "}
-                            {new Date(
-                              surveillanceCodes[store.storeId]?.expiresAt ?? "",
-                            ).toLocaleString()}
-                          </p>
+                            </span>
+                            <CopyButton
+                              value={surveillanceCodes[store.storeId]?.code ?? ""}
+                              label="Copy surveillance code"
+                            />
+                            <span>
+                              · expires{" "}
+                              {new Date(
+                                surveillanceCodes[store.storeId]?.expiresAt ?? "",
+                              ).toLocaleString()}
+                            </span>
+                          </div>
                         )}
                         <div className="space-y-1 text-xs">
                           <p className="text-slate-400 uppercase tracking-[0.3em]">

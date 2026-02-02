@@ -1,16 +1,15 @@
 import { NextResponse } from "next/server";
-import { getSessionUser, requireRole } from "@/lib/auth";
+import { getSessionUser, isMasterUser } from "@/lib/auth";
 import {
   createManagerInvite,
   deleteManagerInvite,
   listManagerInvites,
   regenerateManagerInvite,
+  listAllStores,
 } from "@/lib/userStore";
 
 function authorizeMaster(userPromise: ReturnType<typeof getSessionUser>) {
-  return userPromise.then((user) =>
-    requireRole(user, ["ironhand"]) && user?.storeNumber === "HQ" ? user : null,
-  );
+  return userPromise.then((user) => isMasterUser(user));
 }
 
 export async function GET() {
@@ -22,12 +21,27 @@ export async function GET() {
   return NextResponse.json({ invites });
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   const user = await authorizeMaster(getSessionUser());
   if (!user) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const invite = await createManagerInvite(user.id);
+  const body = await request.json().catch(() => null);
+  const storeId = body?.storeId as string | undefined;
+  let storeInfo: { storeId: string; storeName?: string; storeAddress?: string } | undefined;
+  if (storeId) {
+    const stores = await listAllStores();
+    const target = stores.find((store) => store.storeId === storeId);
+    if (!target) {
+      return NextResponse.json({ error: "Store not found." }, { status: 404 });
+    }
+    storeInfo = {
+      storeId,
+      storeName: target.name ?? `Store ${storeId}`,
+      storeAddress: target.address ?? "",
+    };
+  }
+  const invite = await createManagerInvite(user.id, storeInfo);
   return NextResponse.json({ invite });
 }
 

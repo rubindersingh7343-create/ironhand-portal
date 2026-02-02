@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser, requireRole } from "@/lib/auth";
 import {
   createStoreInvites,
+  createStore,
   deleteInvite,
   deleteInvitesForStore,
   listInvites,
@@ -32,10 +33,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const isMaster = authorized.portal === "master";
   const body = await request.json().catch(() => null);
-  const { storeName, storeAddress } = (body ?? {}) as {
+  const { storeName, storeAddress, managerId, createStoreOnly } = (body ?? {}) as {
     storeName?: string;
     storeAddress?: string;
+    managerId?: string;
+    createStoreOnly?: boolean;
   };
 
   if (!storeName || !storeAddress) {
@@ -45,8 +49,20 @@ export async function POST(request: Request) {
     );
   }
 
+  const resolvedManagerId =
+    (isMaster ? managerId : authorized.id) ?? "unassigned";
+
+  if (isMaster && createStoreOnly) {
+    const store = await createStore({
+      managerId: resolvedManagerId,
+      storeName,
+      storeAddress,
+    });
+    return NextResponse.json({ store });
+  }
+
   const result = await createStoreInvites({
-    managerId: authorized.id,
+    managerId: resolvedManagerId,
     storeName,
     storeAddress,
   });

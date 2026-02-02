@@ -5,21 +5,39 @@ import { getSessionUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Record<string, string | string[] | undefined>;
+}) {
   const user = await getSessionUser();
   if (user) {
     redirect("/");
   }
 
+  const redirectToParam = (() => {
+    const raw = searchParams?.redirect;
+    if (Array.isArray(raw)) return raw[0];
+    return raw;
+  })();
+  const redirectTo =
+    typeof redirectToParam === "string" && redirectToParam.length
+      ? redirectToParam
+      : "/";
+
+  // External login URL with callback back into the app (for Keychain flow)
+  const appCallback = "com.ironhand.operations://auth-callback";
+  const externalLoginUrl = `https://ironhand.net/auth/login?redirect=${encodeURIComponent(appCallback)}`;
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,#0f1f3d,#050914_60%,#01030a_95%)] px-4 py-16">
+    <div className="login-lock flex items-center justify-center bg-[radial-gradient(circle_at_top,#0f1f3d,#050914_60%,#01030a_95%)] px-4 py-12">
       <div className="w-full max-w-5xl space-y-6">
         <div className="flex justify-center">
           <Image
-            src="/IronHandsLogo.png"
+            src="/logowriting2.png"
             alt="Iron Hand logo"
-            width={112}
-            height={112}
+            width={125}
+            height={125}
             className="object-contain"
             priority
           />
@@ -33,15 +51,15 @@ export default async function LoginPage() {
         </div>
 
         <div className="mx-auto max-w-md space-y-6">
-          <LoginForm />
-          <p className="text-center text-sm text-slate-300">
+          <LoginForm redirectTo={redirectTo} />
+          <div className="text-center text-sm text-slate-300">
             <a
               href="/signup"
               className="font-semibold text-blue-200 underline decoration-dotted underline-offset-4 hover:text-white"
             >
-              Create account
+              Create an account
             </a>
-          </p>
+          </div>
         </div>
         </section>
       </div>

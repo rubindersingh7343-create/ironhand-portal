@@ -8,7 +8,8 @@ import {
   getSurveillanceStoreIds,
 } from "./userStore";
 
-const TOKEN_EXPIRATION_HOURS = 12;
+export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 365 * 5; // 5 years
+const TOKEN_EXPIRATION = `${SESSION_MAX_AGE_SECONDS}s`;
 const JWT_SECRET = process.env.AUTH_SECRET ?? "hiremote-dev-secret";
 
 export async function authenticateUser(
@@ -48,12 +49,18 @@ export async function authenticateUser(
     name: match.name,
     email: match.email,
     role: match.role,
-    storeNumber: mergedStores[0] ?? match.storeNumber,
-    storeIds: mergedStores.length
-      ? mergedStores
-      : match.storeNumber
-        ? [match.storeNumber]
-        : [],
+    storeNumber:
+      match.role === "ironhand" && match.storeNumber === "HQ"
+        ? "HQ"
+        : mergedStores[0] ?? match.storeNumber,
+    storeIds:
+      match.role === "ironhand" && match.storeNumber === "HQ"
+        ? ["HQ", ...mergedStores.filter((id) => id !== "HQ")]
+        : mergedStores.length
+          ? mergedStores
+          : match.storeNumber
+            ? [match.storeNumber]
+            : [],
     portal:
       match.portal ??
       (match.role === "ironhand" ? "manager" : undefined),
@@ -64,7 +71,7 @@ export async function authenticateUser(
 export function createSessionToken(user: SessionUser): string {
   const payload = { ...user };
   delete (payload as any).exp;
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: `${TOKEN_EXPIRATION_HOURS}h` });
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_EXPIRATION });
 }
 
 export function parseSessionToken(token: string | undefined): SessionUser | null {
@@ -93,6 +100,16 @@ export function requireRole(
   }
 
   return user;
+}
+
+export function isMasterUser(user: SessionUser | null): SessionUser | null {
+  if (!user) return null;
+  const authorized = requireRole(user, ["ironhand"]);
+  if (!authorized) return null;
+  if (authorized.storeNumber === "HQ" || authorized.portal === "master") {
+    return authorized;
+  }
+  return null;
 }
 
 async function readSessionCookie(): Promise<string | null> {

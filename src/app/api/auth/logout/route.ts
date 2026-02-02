@@ -6,8 +6,11 @@ export async function POST() {
   response.cookies.set({
     name: SESSION_COOKIE,
     value: "",
+    httpOnly: true,
     maxAge: 0,
+    sameSite: "lax",
     path: "/",
+    secure: process.env.NODE_ENV === "production",
   });
   return response;
 }

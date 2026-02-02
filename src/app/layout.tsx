@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Geist, Geist_Mono, Roboto_Slab } from "next/font/google";
 import "./globals.css";
+import ScrollTopBar from "@/components/ScrollTopBar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -12,10 +13,22 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const ironHandDisplay = Roboto_Slab({
+  variable: "--font-ironhand-display",
+  subsets: ["latin"],
+  weight: ["600"],
+});
+
 export const metadata: Metadata = {
   title: "Iron Hand Operations Desk",
   description:
     "Minimal workflow for Iron Hand managers, employees, and clients to exchange shift records.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -26,9 +39,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${ironHandDisplay.variable} antialiased`}
       >
-        {children}
+        <ScrollTopBar />
+        <div id="app-root">{children}</div>
       </body>
     </html>
   );

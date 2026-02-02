@@ -14,11 +14,6 @@ const reportOptions: Array<{
   description: string;
 }> = [
   {
-    value: "daily",
-    title: "Daily Report",
-    description: "Text update plus optional photo or video clip.",
-  },
-  {
     value: "weekly",
     title: "Weekly Orders",
     description: "Upload PDFs/photos or type the order list.",
@@ -35,7 +30,7 @@ interface IronHandReportFormProps {
 }
 
 export default function IronHandReportForm({ user }: IronHandReportFormProps) {
-  const [reportType, setReportType] = useState<ReportType>("daily");
+  const [reportType, setReportType] = useState<ReportType>("weekly");
   const [status, setStatus] = useState<"idle" | "sending" | "success" | "error">(
     "idle",
   );
@@ -59,7 +54,7 @@ export default function IronHandReportForm({ user }: IronHandReportFormProps) {
           throw new Error("Failed to load stores");
         }
         const data = await response.json();
-        const nextStores: StoreSummary[] =
+        const nextStores: ReportStore[] =
           data.stores?.length ? data.stores : [fallbackStore];
         setStores(nextStores);
         setTargetStore((prev) =>
@@ -77,6 +72,7 @@ export default function IronHandReportForm({ user }: IronHandReportFormProps) {
     loadStores();
     return () => controller.abort();
   }, [fallbackStore]);
+
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -118,10 +114,13 @@ export default function IronHandReportForm({ user }: IronHandReportFormProps) {
   };
 
   return (
-    <section className="rounded-[32px] border border-white/10 bg-[rgba(12,20,38,0.85)] p-6 text-white shadow-2xl shadow-slate-950/40 backdrop-blur">
+    <section className="ui-card text-white">
       <div className="mb-5">
-        <h2 className="text-xl font-semibold text-white uppercase tracking-[0.25em]">
-          Client Reports
+        <p className="text-xs uppercase tracking-[0.3em] text-slate-300">
+          Owner Reports
+        </p>
+        <h2 className="mt-2 text-xl font-semibold text-white">
+          Owner Reports
         </h2>
       </div>
 
@@ -145,13 +144,13 @@ export default function IronHandReportForm({ user }: IronHandReportFormProps) {
 
       <form onSubmit={handleSubmit} className="space-y-5">
         <div>
-          <label className="mb-2 block text-sm font-medium text-slate-200">
+          <label className="ui-label mb-2 block">
             Send this report to
           </label>
           <select
             value={targetStore}
             onChange={(event) => setTargetStore(event.target.value)}
-            className="w-full rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-sm text-slate-100 focus:border-blue-400 focus:outline-none"
+            className="ui-field w-full"
           >
             {stores.map((store) => (
               <option key={store.storeId} value={store.storeId}>
@@ -160,44 +159,12 @@ export default function IronHandReportForm({ user }: IronHandReportFormProps) {
             ))}
           </select>
         </div>
-        {reportType === "daily" && (
-          <>
-            <div>
-              <label
-                htmlFor="dailySummary"
-                className="mb-2 block text-sm font-medium text-slate-200"
-              >
-                Daily summary
-              </label>
-              <textarea
-                id="dailySummary"
-                name="dailySummary"
-                rows={4}
-                required
-                placeholder="Key wins, losses, staffing notes, etc."
-                className="w-full rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-sm text-slate-100 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-200">
-                Optional photo/video evidence
-              </label>
-              <input
-                type="file"
-                name="dailyMedia"
-                accept="image/*,video/*"
-                className="w-full rounded-2xl border border-dashed border-white/15 bg-[#121f3e] px-4 py-3 text-xs text-slate-200"
-              />
-            </div>
-          </>
-        )}
-
         {reportType === "weekly" && (
           <>
             <div>
               <label
                 htmlFor="weeklyList"
-                className="mb-2 block text-sm font-medium text-slate-200"
+                className="ui-label mb-2 block"
               >
                 Weekly order list
               </label>
@@ -206,11 +173,11 @@ export default function IronHandReportForm({ user }: IronHandReportFormProps) {
                 name="weeklyList"
                 rows={4}
                 placeholder="SKU + quantity per line. Provide at least one attachment or text entry."
-                className="w-full rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-sm text-slate-100 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+                className="w-full rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-sm text-slate-100 placeholder:text-slate-300 focus:border-blue-400 focus:outline-none"
               />
             </div>
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-200">
+              <label className="ui-label mb-2 block">
                 Upload supporting PDF/photo
               </label>
               <input
@@ -225,7 +192,7 @@ export default function IronHandReportForm({ user }: IronHandReportFormProps) {
 
         {reportType === "monthly" && (
           <div>
-            <label className="mb-2 block text-sm font-medium text-slate-200">
+            <label className="ui-label mb-2 block">
               Monthly report file (PDF, DOCX, photo)
             </label>
             <input
@@ -241,7 +208,7 @@ export default function IronHandReportForm({ user }: IronHandReportFormProps) {
         <div>
           <label
             htmlFor="notes"
-            className="mb-2 block text-sm font-medium text-slate-200"
+            className="ui-label mb-2 block"
           >
             Notes (optional)
           </label>
@@ -250,7 +217,7 @@ export default function IronHandReportForm({ user }: IronHandReportFormProps) {
             name="notes"
             rows={3}
             placeholder="Add approvals, blockers, or store context."
-            className="w-full rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-sm text-slate-100 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+            className="w-full rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-sm text-slate-100 placeholder:text-slate-300 focus:border-blue-400 focus:outline-none"
           />
         </div>
 

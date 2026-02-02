@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
-import { createSessionToken, getSessionUser } from "@/lib/auth";
+import {
+  SESSION_MAX_AGE_SECONDS,
+  createSessionToken,
+  getSessionUser,
+} from "@/lib/auth";
 import {
   getStoreSummariesByIds,
-  removeStoreFromClient,
+  getStoreManagerId,
+  getSurveillanceManagerId,
 } from "@/lib/userStore";
 import { SESSION_COOKIE } from "@/lib/users";
 
@@ -18,24 +23,50 @@ export async function GET() {
       ? [user.storeNumber]
       : [];
   const summaries = await getStoreSummariesByIds(storeIds);
-  const validIds = summaries.map((store) => store.storeId);
-  const missingIds = storeIds.filter((id) => !validIds.includes(id));
+  const summaryMap = new Map(summaries.map((store) => [store.storeId, store]));
+  const serviceStates = await Promise.all(
+    storeIds.map(async (storeId) => {
+      const [managerId, surveillanceId] = await Promise.all([
+        getStoreManagerId(storeId),
+        getSurveillanceManagerId(storeId),
+      ]);
+      return {
+        storeId,
+        hasManager: Boolean(managerId),
+        hasSurveillance: Boolean(surveillanceId),
+      };
+    }),
+  );
+  const stateMap = new Map(
+    serviceStates.map((state) => [state.storeId, state]),
+  );
+  const mergedSummaries = storeIds.map((id) => {
+    const found = summaryMap.get(id);
+    const state = stateMap.get(id);
+    return {
+      ...(found ?? {
+        storeId: id,
+        storeName: `Store ${id}`,
+      }),
+      hasManager: state?.hasManager ?? false,
+      hasSurveillance: state?.hasSurveillance ?? false,
+    };
+  });
 
-  for (const missingId of missingIds) {
-    await removeStoreFromClient(user.id, missingId);
-  }
-
-  const updatedStoreIds = validIds;
+  const updatedStoreIds = storeIds;
   const updatedUser = {
     ...user,
     storeIds: updatedStoreIds,
     storeNumber: updatedStoreIds[0] ?? "",
   };
 
-  const response = NextResponse.json({ stores: summaries });
+  const response = NextResponse.json({ stores: mergedSummaries });
   response.cookies.set(SESSION_COOKIE, createSessionToken(updatedUser), {
     path: "/",
     httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: SESSION_MAX_AGE_SECONDS,
   });
   return response;
 }

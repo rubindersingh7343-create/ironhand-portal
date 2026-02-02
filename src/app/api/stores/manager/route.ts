@@ -1,24 +1,14 @@
 import { NextResponse } from "next/server";
-import { getSessionUser, requireRole } from "@/lib/auth";
-import { deleteStoreAndAccounts, listAllStores } from "@/lib/userStore";
-import { readFile, writeFile } from "fs/promises";
-import path from "path";
-
-const STORES_PATH = path.join(process.cwd(), "data", "stores.json");
-
-async function updateStoreManager(storeId: string, managerId: string) {
-  const data = await readFile(STORES_PATH, "utf-8").catch(() => "[]");
-  const stores = JSON.parse(data) as Array<any>;
-  const store = stores.find((entry) => entry.storeId === storeId);
-  if (!store) return false;
-  store.managerId = managerId;
-  await writeFile(STORES_PATH, JSON.stringify(stores, null, 2), "utf-8");
-  return true;
-}
+import { getSessionUser, isMasterUser, requireRole } from "@/lib/auth";
+import {
+  deleteStoreAndAccounts,
+  listAllStores,
+  setStoreManager,
+} from "@/lib/userStore";
 
 export async function PATCH(request: Request) {
   const user = await getSessionUser();
-  if (!user || !requireRole(user, ["ironhand"]) || user.storeNumber !== "HQ") {
+  if (!isMasterUser(user)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -34,7 +24,7 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const success = await updateStoreManager(storeId, managerId);
+  const success = await setStoreManager(storeId, managerId);
   if (!success) {
     return NextResponse.json({ error: "Store not found." }, { status: 404 });
   }

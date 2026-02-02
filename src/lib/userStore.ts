@@ -1,42 +1,274 @@
 "use server";
 
 import { randomUUID } from "crypto";
-import { readFile, writeFile } from "fs/promises";
+import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 import { mockUsers } from "@/lib/users";
 import type { AppUser } from "@/lib/users";
 import { deleteRecordsForStore } from "@/lib/dataStore";
+import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import crypto from "crypto";
 
-const USERS_PATH = path.join(process.cwd(), "data", "users.json");
-const INVITES_PATH = path.join(process.cwd(), "data", "invites.json");
-const STORES_PATH = path.join(process.cwd(), "data", "stores.json");
-const CLIENT_STORES_PATH = path.join(
-  process.cwd(),
-  "data",
-  "clientStores.json",
-);
-const SURVEILLANCE_STORES_PATH = path.join(
-  process.cwd(),
-  "data",
-  "surveillanceStores.json",
-);
-const MANAGER_INVITES_PATH = path.join(
-  process.cwd(),
-  "data",
-  "managerInvites.json",
-);
+// Use writable temp storage on Vercel and seed from bundled /data defaults.
+const DEFAULT_DATA_DIR = path.join(process.cwd(), "data");
+const DATA_DIR =
+  process.env.DATA_ROOT ??
+  (process.env.VERCEL ? "/tmp/hiremote-data" : DEFAULT_DATA_DIR);
 
-async function readJson<T>(filePath: string): Promise<T[]> {
+const USERS_FILE = "users.json";
+const INVITES_FILE = "invites.json";
+const STORES_FILE = "stores.json";
+const CLIENT_STORES_FILE = "clientStores.json";
+const SURVEILLANCE_STORES_FILE = "surveillanceStores.json";
+const MANAGER_INVITES_FILE = "managerInvites.json";
+const PASSWORD_RESETS_FILE = "passwordResets.json";
+
+type DbUser = {
+  id: string;
+  name: string;
+  email: string;
+  password: string;
+  role: string;
+  phone?: string;
+  store_number?: string | null;
+  store_ids?: string[] | null;
+  employee_code?: string | null;
+  portal?: string | null;
+  created_at?: string;
+};
+
+type DbStore = {
+  id: string;
+  store_id: string;
+  name: string;
+  address: string;
+  manager_id: string;
+  created_at?: string;
+};
+
+type DbInvite = {
+  id: string;
+  code: string;
+  role: string;
+  store_id: string;
+  store_name?: string;
+  store_address?: string;
+  manager_id: string;
+  created_at: string;
+  expires_at: string;
+  used_at?: string | null;
+  used_by?: string | null;
+  used_by_ids?: string[] | null;
+};
+
+type DbManagerInvite = {
+  id: string;
+  code: string;
+  created_by: string;
+  store_id?: string | null;
+  store_name?: string | null;
+  store_address?: string | null;
+  created_at: string;
+  expires_at: string;
+  used_at?: string | null;
+  used_by?: string | null;
+};
+
+type DbPasswordReset = {
+  id: string;
+  email: string;
+  token: string;
+  expires_at: string;
+  used_at?: string | null;
+};
+
+type DbLink = {
+  user_id: string;
+  store_ids: string[] | null;
+};
+
+const supabase = getSupabaseAdmin();
+const useSupabase = Boolean(supabase);
+
+// Seed once at startup if Supabase is empty.
+let seeded = false;
+async function seedSupabaseIfEmpty() {
+  if (seeded || !useSupabase || !supabase) return;
+  seeded = true;
   try {
-    const data = await readFile(filePath, "utf-8");
+    const [usersJson, storesJson, invitesJson, mgrInvitesJson, clientLinksJson, survLinksJson] =
+      await Promise.all([
+        readJson<AppUser>(USERS_FILE),
+        readJson<StoreRecord>(STORES_FILE),
+        readJson<SignupInvite>(INVITES_FILE),
+        readJson<ManagerInvite>(MANAGER_INVITES_FILE),
+        readJson<ClientStoreLink>(CLIENT_STORES_FILE),
+        readJson<StoreLink>(SURVEILLANCE_STORES_FILE),
+      ]);
+
+    await supabase.from("users").upsert(usersJson.map(fromAppUser));
+    await supabase.from("stores").upsert(
+      storesJson.map((store) => ({
+        id: store.id,
+        store_id: store.storeId,
+        name: store.name,
+        address: store.address,
+        manager_id: store.managerId,
+        created_at: store.createdAt,
+      })),
+    );
+    await supabase.from("invites").upsert(invitesJson.map(fromInvite));
+    await supabase.from("manager_invites").upsert(mgrInvitesJson.map(fromManagerInvite));
+    await supabase.from("client_store_links").upsert(
+      clientLinksJson.map((link) => ({
+        user_id: link.userId,
+        store_ids: link.storeIds,
+      })),
+    );
+    await supabase.from("surveillance_links").upsert(
+      survLinksJson.map((link) => ({
+        user_id: link.userId,
+        store_ids: link.storeIds,
+      })),
+    );
+  } catch (error) {
+    console.error("Supabase seed failed", error);
+  }
+}
+async function ensureDataDir() {
+  await mkdir(DATA_DIR, { recursive: true });
+}
+
+function toAppUser(row: DbUser): AppUser {
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    password: row.password,
+    role: row.role as AppUser["role"],
+    phone: row.phone ?? undefined,
+    storeNumber: row.store_number ?? "",
+    storeIds: Array.isArray(row.store_ids) ? row.store_ids : [],
+    employeeCode: row.employee_code ?? undefined,
+    portal: row.portal as any,
+  };
+}
+
+function fromAppUser(user: AppUser): DbUser {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    password: user.password,
+    role: user.role,
+    phone: user.phone,
+    store_number: user.storeNumber ?? "",
+    store_ids: Array.isArray(user.storeIds) ? user.storeIds : [],
+    employee_code: user.employeeCode ?? null,
+    portal: user.portal ?? null,
+  };
+}
+
+function toStore(row: DbStore): StoreRecord {
+  return {
+    id: row.id,
+    storeId: row.store_id,
+    name: row.name,
+    address: row.address,
+    managerId: row.manager_id,
+    createdAt: row.created_at ?? new Date().toISOString(),
+  };
+}
+
+function toInvite(row: DbInvite): SignupInvite {
+  return {
+    id: row.id,
+    code: row.code,
+    role: row.role as InviteRole,
+    storeId: row.store_id,
+    storeName: row.store_name ?? "",
+    storeAddress: row.store_address ?? "",
+    managerId: row.manager_id,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    usedAt: row.used_at ?? undefined,
+    usedBy: row.used_by ?? undefined,
+    usedByIds: row.used_by_ids ?? undefined,
+  };
+}
+
+function fromInvite(invite: SignupInvite): DbInvite {
+  return {
+    id: invite.id,
+    code: invite.code,
+    role: invite.role,
+    store_id: invite.storeId,
+    store_name: invite.storeName,
+    store_address: invite.storeAddress,
+    manager_id: invite.managerId,
+    created_at: invite.createdAt,
+    expires_at: invite.expiresAt,
+    used_at: invite.usedAt ?? null,
+    used_by: invite.usedBy ?? null,
+    used_by_ids: invite.usedByIds ?? [],
+  };
+}
+
+function toManagerInvite(row: DbManagerInvite): ManagerInvite {
+  return {
+    id: row.id,
+    code: row.code,
+    createdBy: row.created_by,
+    storeId: row.store_id ?? undefined,
+    storeName: row.store_name ?? undefined,
+    storeAddress: row.store_address ?? undefined,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    usedAt: row.used_at ?? undefined,
+    usedBy: row.used_by ?? undefined,
+  };
+}
+
+function fromManagerInvite(invite: ManagerInvite): DbManagerInvite {
+  return {
+    id: invite.id,
+    code: invite.code,
+    created_by: invite.createdBy,
+    store_id: invite.storeId ?? null,
+    store_name: invite.storeName ?? null,
+    store_address: invite.storeAddress ?? null,
+    created_at: invite.createdAt,
+    expires_at: invite.expiresAt,
+    used_at: invite.usedAt ?? null,
+    used_by: invite.usedBy ?? null,
+  };
+}
+
+async function readJson<T>(fileName: string): Promise<T[]> {
+  const primaryPath = path.join(DATA_DIR, fileName);
+  const fallbackPath = path.join(DEFAULT_DATA_DIR, fileName);
+  try {
+    await ensureDataDir();
+    const data = await readFile(primaryPath, "utf-8");
     return JSON.parse(data) as T[];
   } catch {
-    return [];
+    try {
+      const fallback = await readFile(fallbackPath, "utf-8");
+      const parsed = JSON.parse(fallback) as T[];
+      // Seed the writable location if needed (best-effort).
+      await writeJson(fileName, parsed);
+      return parsed;
+    } catch {
+      return [];
+    }
   }
 }
 
-async function writeJson<T>(filePath: string, payload: T[]) {
-  await writeFile(filePath, JSON.stringify(payload, null, 2), "utf-8");
+async function writeJson<T>(fileName: string, payload: T[]) {
+  const serialized = JSON.stringify(payload, null, 2);
+  await ensureDataDir();
+  const targetPath = path.join(DATA_DIR, fileName);
+  await writeFile(targetPath, serialized, "utf-8");
 }
 
 interface StoreLink {
@@ -44,39 +276,82 @@ interface StoreLink {
   storeIds: string[];
 }
 
-async function readStoreLinks(pathName: string): Promise<StoreLink[]> {
-  return readJson<StoreLink>(pathName);
+async function readStoreLinks(fileName: string): Promise<StoreLink[]> {
+  return readJson<StoreLink>(fileName);
 }
 
-async function writeStoreLinks(pathName: string, payload: StoreLink[]) {
-  await writeJson(pathName, payload);
+async function writeStoreLinks(fileName: string, payload: StoreLink[]) {
+  await writeJson(fileName, payload);
 }
 
 export async function getDynamicUsers(): Promise<AppUser[]> {
-  return readJson<AppUser>(USERS_PATH);
+  await seedSupabaseIfEmpty();
+  if (useSupabase && supabase) {
+    const { data, error } = await supabase.from("users").select("*");
+    if (error) {
+      console.error("supabase users select error", error);
+    } else if (data) {
+      if (data.length) {
+        return data.map(toAppUser);
+      }
+    }
+  }
+  return readJson<AppUser>(USERS_FILE);
 }
 
 export async function addDynamicUser(user: AppUser) {
+  if (useSupabase && supabase) {
+    const { error } = await supabase.from("users").insert(fromAppUser(user));
+    if (error) {
+      console.error("supabase add user error", error);
+    } else {
+      return;
+    }
+  }
   const users = await getDynamicUsers();
   users.push(user);
-  await writeJson(USERS_PATH, users);
+  await writeJson(USERS_FILE, users);
 }
 
 export async function findDynamicUserByEmail(email: string) {
   const normalized = email.trim().toLowerCase();
+  if (useSupabase && supabase) {
+    const { data, error } = await supabase
+      .from("users")
+      .select("*")
+      .ilike("email", normalized)
+      .maybeSingle();
+    if (!error && data) {
+      return toAppUser(data);
+    }
+  }
   const users = await getDynamicUsers();
   return users.find((entry) => entry.email.toLowerCase() === normalized) ?? null;
 }
 
 export async function findDynamicUserById(id: string) {
+  if (useSupabase && supabase) {
+    const { data, error } = await supabase.from("users").select("*").eq("id", id).maybeSingle();
+    if (!error && data) {
+      return toAppUser(data);
+    }
+  }
   const users = await getDynamicUsers();
   return users.find((entry) => entry.id === id) ?? null;
 }
 
 export async function deleteDynamicUser(id: string) {
+  if (useSupabase && supabase) {
+    const { error } = await supabase.from("users").delete().eq("id", id);
+    if (error) {
+      console.error("supabase delete user error", error);
+    } else {
+      return true;
+    }
+  }
   const users = await getDynamicUsers();
   const filtered = users.filter((entry) => entry.id !== id);
-  await writeJson(USERS_PATH, filtered);
+  await writeJson(USERS_FILE, filtered);
   return users.length !== filtered.length;
 }
 
@@ -133,6 +408,17 @@ export async function updateUserAccount(options: {
 
   if (index >= 0) {
     users[index] = updated;
+    if (useSupabase && supabase) {
+      const { error } = await supabase
+        .from("users")
+        .update(fromAppUser(updated))
+        .eq("id", updated.id);
+      if (error) {
+        console.error("supabase update user error", error);
+      } else {
+        return { success: true, user: updated };
+      }
+    }
   } else {
     const overrideIndex = users.findIndex((entry) => entry.id === updated.id);
     if (overrideIndex >= 0) {
@@ -142,7 +428,12 @@ export async function updateUserAccount(options: {
     }
   }
 
-  await writeJson(USERS_PATH, users);
+  if (useSupabase && supabase) {
+    const { error } = await supabase.from("users").update(fromAppUser(updated)).eq("id", updated.id);
+    if (error) console.error("supabase update user error", error);
+  } else {
+    await writeJson(USERS_FILE, users);
+  }
   return { success: true, user: updated };
 }
 
@@ -166,10 +457,21 @@ export async function removeStoreFromClient(userId: string, storeId: string) {
     };
   });
   if (updated) {
-    await writeJson(USERS_PATH, next);
+    if (useSupabase && supabase) {
+      const target = next.find((u) => u.id === userId);
+      if (target) {
+        const { error } = await supabase
+          .from("users")
+          .update(fromAppUser(target))
+          .eq("id", userId);
+        if (error) console.error("supabase remove client store update error", error);
+      }
+    } else {
+      await writeJson(USERS_FILE, next);
+    }
   }
-  const extraStores = await getClientStoreIds(userId);
-  const filteredExtra = extraStores.filter((id) => id !== storeId);
+  const extraStores: string[] = await getClientStoreIds(userId);
+  const filteredExtra = extraStores.filter((id: string) => id !== storeId);
   await setClientStoreIds(userId, filteredExtra);
   return updated;
 }
@@ -186,12 +488,23 @@ export async function removeStoreFromSurveillance(userId: string, storeId: strin
       storeNumber: filtered[0] ?? user.storeNumber,
     };
   });
-  await writeJson(USERS_PATH, nextUsers);
+  if (useSupabase && supabase) {
+    const target = nextUsers.find((u) => u.id === userId);
+    if (target) {
+      const { error } = await supabase
+        .from("users")
+        .update(fromAppUser(target))
+        .eq("id", userId);
+      if (error) console.error("supabase remove surveillance store update error", error);
+    }
+  } else {
+    await writeJson(USERS_FILE, nextUsers);
+  }
 
   const links = await readSurveillanceStoreLinks();
   const updatedLinks = links.map((link) =>
     link.userId === userId
-      ? { ...link, storeIds: link.storeIds.filter((id) => id !== storeId) }
+      ? { ...link, storeIds: link.storeIds.filter((id: string) => id !== storeId) }
       : link,
   ).filter((link) => link.storeIds.length);
   await writeSurveillanceStoreLinks(updatedLinks);
@@ -238,6 +551,9 @@ export interface ManagerInvite {
   id: string;
   code: string;
   createdBy: string;
+  storeId?: string;
+  storeName?: string;
+  storeAddress?: string;
   createdAt: string;
   expiresAt: string;
   usedAt?: string;
@@ -245,35 +561,137 @@ export interface ManagerInvite {
 }
 
 async function readInvites() {
-  return readJson<SignupInvite>(INVITES_PATH);
+  await seedSupabaseIfEmpty();
+  if (useSupabase && supabase) {
+    const { data, error } = await supabase.from("invites").select("*");
+    if (error) {
+      console.error("supabase invites select error", error);
+    } else if (data) {
+      if (data.length) {
+        return data.map(toInvite);
+      }
+    }
+  }
+  return readJson<SignupInvite>(INVITES_FILE);
 }
 
 async function writeInvites(invites: SignupInvite[]) {
-  await writeJson(INVITES_PATH, invites);
+  if (useSupabase && supabase) {
+    const rows = invites.map(fromInvite);
+    const { error } = await supabase.from("invites").upsert(rows);
+    if (error) console.error("supabase invites upsert error", error);
+    return;
+  }
+  await writeJson(INVITES_FILE, invites);
 }
 
 async function readStores() {
-  return readJson<StoreRecord>(STORES_PATH);
+  await seedSupabaseIfEmpty();
+  if (useSupabase && supabase) {
+    const { data, error } = await supabase.from("stores").select("*");
+    if (error) {
+      console.error("supabase stores select error", error);
+    } else if (data) {
+      if (data.length) {
+        return data.map(toStore);
+      }
+    }
+  }
+  return readJson<StoreRecord>(STORES_FILE);
 }
 
 async function writeStores(stores: StoreRecord[]) {
-  await writeJson(STORES_PATH, stores);
+  if (useSupabase && supabase) {
+    const rows: DbStore[] = stores.map((store) => ({
+      id: store.id,
+      store_id: store.storeId,
+      name: store.name,
+      address: store.address,
+      manager_id: store.managerId,
+      created_at: store.createdAt,
+    }));
+    const { error } = await supabase.from("stores").upsert(rows);
+    if (error) console.error("supabase stores upsert error", error);
+    return;
+  }
+  await writeJson(STORES_FILE, stores);
 }
 
 async function readClientStoreLinks() {
-  return readJson<ClientStoreLink>(CLIENT_STORES_PATH);
+  await seedSupabaseIfEmpty();
+  if (useSupabase && supabase) {
+    const { data, error } = await supabase.from("client_store_links").select("*");
+    if (error) {
+      console.error("supabase client links select error", error);
+    } else if (data) {
+      if (data.length) {
+        return data.map((row) => ({
+          userId: row.user_id,
+          storeIds: row.store_ids ?? [],
+        }));
+      }
+    }
+  }
+  return readJson<ClientStoreLink>(CLIENT_STORES_FILE);
 }
 
 async function writeClientStoreLinks(links: ClientStoreLink[]) {
-  await writeJson(CLIENT_STORES_PATH, links);
+  if (useSupabase && supabase) {
+    const rows: DbLink[] = links.map((link) => ({
+      user_id: link.userId,
+      store_ids: link.storeIds,
+    }));
+    const { error } = await supabase.from("client_store_links").upsert(rows);
+    if (error) console.error("supabase client links upsert error", error);
+    return;
+  }
+  await writeJson(CLIENT_STORES_FILE, links);
 }
 
 async function readManagerInvites() {
-  return readJson<ManagerInvite>(MANAGER_INVITES_PATH);
+  await seedSupabaseIfEmpty();
+  if (useSupabase && supabase) {
+    const { data, error } = await supabase.from("manager_invites").select("*");
+    if (error) {
+      console.error("supabase manager invites select error", error);
+    } else if (data) {
+      if (data.length) {
+        return data.map(toManagerInvite);
+      }
+    }
+  }
+  return readJson<ManagerInvite>(MANAGER_INVITES_FILE);
 }
 
 async function writeManagerInvites(invites: ManagerInvite[]) {
-  await writeJson(MANAGER_INVITES_PATH, invites);
+  if (useSupabase && supabase) {
+    const rows = invites.map(fromManagerInvite);
+    const { error } = await supabase.from("manager_invites").upsert(rows);
+    if (error) console.error("supabase manager invites upsert error", error);
+    return;
+  }
+  await writeJson(MANAGER_INVITES_FILE, invites);
+}
+
+async function readPasswordResets(): Promise<DbPasswordReset[]> {
+  if (useSupabase && supabase) {
+    const { data, error } = await supabase.from("password_resets").select("*");
+    if (error) {
+      console.error("supabase password resets select error", error);
+    } else if (data) {
+      return data as DbPasswordReset[];
+    }
+  }
+  return readJson<DbPasswordReset>(PASSWORD_RESETS_FILE);
+}
+
+async function writePasswordResets(resets: DbPasswordReset[]) {
+  if (useSupabase && supabase) {
+    const { error } = await supabase.from("password_resets").upsert(resets);
+    if (error) console.error("supabase password resets upsert error", error);
+    return;
+  }
+  await writeJson(PASSWORD_RESETS_FILE, resets);
 }
 
 async function setClientStoreIds(userId: string, storeIds: string[]) {
@@ -299,11 +717,34 @@ export async function getClientStoreIds(userId: string) {
 }
 
 async function readSurveillanceStoreLinks() {
-  return readJson<StoreLink>(SURVEILLANCE_STORES_PATH);
+  await seedSupabaseIfEmpty();
+  if (useSupabase && supabase) {
+    const { data, error } = await supabase.from("surveillance_links").select("*");
+    if (error) {
+      console.error("supabase surveillance links select error", error);
+    } else if (data) {
+      if (data.length) {
+        return data.map((row) => ({
+          userId: row.user_id,
+          storeIds: row.store_ids ?? [],
+        }));
+      }
+    }
+  }
+  return readJson<StoreLink>(SURVEILLANCE_STORES_FILE);
 }
 
 async function writeSurveillanceStoreLinks(links: StoreLink[]) {
-  await writeJson(SURVEILLANCE_STORES_PATH, links);
+  if (useSupabase && supabase) {
+    const rows: DbLink[] = links.map((link) => ({
+      user_id: link.userId,
+      store_ids: link.storeIds,
+    }));
+    const { error } = await supabase.from("surveillance_links").upsert(rows);
+    if (error) console.error("supabase surveillance links upsert error", error);
+    return;
+  }
+  await writeJson(SURVEILLANCE_STORES_FILE, links);
 }
 
 export async function setSurveillanceStoreIds(userId: string, storeIds: string[]) {
@@ -326,6 +767,13 @@ export async function setSurveillanceStoreIds(userId: string, storeIds: string[]
 export async function getSurveillanceStoreIds(userId: string) {
   const links = await readSurveillanceStoreLinks();
   return links.find((entry) => entry.userId === userId)?.storeIds ?? [];
+}
+
+export async function getOwnerIdsForStore(storeId: string): Promise<string[]> {
+  const links = await readClientStoreLinks();
+  return links
+    .filter((entry) => entry.storeIds.includes(storeId))
+    .map((entry) => entry.userId);
 }
 
 function generateStoreId() {
@@ -357,7 +805,10 @@ export async function createStoreInvites(options: {
   const stores = await readStores();
   const invites = await readInvites();
 
-  const storeId = generateStoreId();
+  let storeId = generateStoreId();
+  while (stores.some((store) => store.storeId === storeId)) {
+    storeId = generateStoreId();
+  }
   const storeRecord: StoreRecord = {
     id: randomUUID(),
     storeId,
@@ -387,6 +838,69 @@ export async function createStoreInvites(options: {
   return { store: storeRecord, invites: [clientInvite] };
 }
 
+export async function createStore(options: {
+  managerId: string;
+  storeName: string;
+  storeAddress: string;
+}): Promise<StoreRecord> {
+  const stores = await readStores();
+  let storeId = generateStoreId();
+  while (stores.some((store) => store.storeId === storeId)) {
+    storeId = generateStoreId();
+  }
+  const storeRecord: StoreRecord = {
+    id: randomUUID(),
+    storeId,
+    name: options.storeName,
+    address: options.storeAddress,
+    managerId: options.managerId,
+    createdAt: new Date().toISOString(),
+  };
+  stores.push(storeRecord);
+  await writeStores(stores);
+  return storeRecord;
+}
+
+export async function createStoreForClient(options: {
+  userId: string;
+  storeName: string;
+  storeAddress?: string;
+}): Promise<{ store: StoreRecord; stores: string[] }> {
+  const store = await createStore({
+    managerId: options.userId,
+    storeName: options.storeName,
+    storeAddress: options.storeAddress ?? "",
+  });
+
+  const existingLinks = await getClientStoreIds(options.userId);
+  const mergedStores = Array.from(
+    new Set([...existingLinks, store.storeId]),
+  );
+  await setClientStoreIds(options.userId, mergedStores);
+
+  const users = await getDynamicUsers();
+  const nextUsers = users.map((user) => {
+    if (user.id !== options.userId) return user;
+    const combined = Array.from(
+      new Set(
+        [
+          ...(Array.isArray(user.storeIds) ? user.storeIds : []),
+          user.storeNumber,
+          ...mergedStores,
+        ].filter(Boolean),
+      ),
+    );
+    return {
+      ...user,
+      storeIds: combined,
+      storeNumber: combined[0] ?? "",
+    };
+  });
+  await writeJson(USERS_FILE, nextUsers);
+
+  return { store, stores: mergedStores };
+}
+
 export async function listInvites() {
   return refreshExpiredInvites();
 }
@@ -407,7 +921,7 @@ export async function createClientStoreInvite(options: {
     storeAddress: options.storeAddress,
     managerId: options.managerId,
     createdAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    expiresAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
   };
   invites.push(invite);
   await writeInvites(invites);
@@ -495,7 +1009,7 @@ export async function attachStoreToClient(userId: string, inviteCode: string) {
     };
   });
 
-  await writeJson(USERS_PATH, nextUsers);
+  await writeJson(USERS_FILE, nextUsers);
   await markInviteUsed(invite.id, userId);
   return { invite, updated: true, stores: mergedStores };
 }
@@ -534,7 +1048,7 @@ export async function attachStoreToSurveillance(
     };
   });
 
-  await writeJson(USERS_PATH, nextUsers);
+  await writeJson(USERS_FILE, nextUsers);
   await markInviteUsed(invite.id, userId);
   return { invite, updated: true, stores: mergedStores };
 }
@@ -583,12 +1097,20 @@ export async function deleteInvitesForStore(storeId: string): Promise<number> {
     }
   }
 
-  const remaining = invites.filter((entry) => entry.storeId !== storeId);
-  await writeInvites(remaining);
+  if (useSupabase && supabase) {
+    const { error } = await supabase.from("invites").delete().eq("store_id", storeId);
+    if (error) console.error("supabase delete invites error", error);
+  } else {
+    const remaining = invites.filter((entry) => entry.storeId !== storeId);
+    await writeInvites(remaining);
+  }
 
   const stores = await readStores();
   const nextStores = stores.filter((store) => store.storeId !== storeId);
-  if (nextStores.length !== stores.length) {
+  if (useSupabase && supabase) {
+    const { error } = await supabase.from("stores").delete().eq("store_id", storeId);
+    if (error) console.error("supabase delete store error", error);
+  } else if (nextStores.length !== stores.length) {
     await writeStores(nextStores);
   }
 
@@ -648,6 +1170,43 @@ export async function listAllStores(): Promise<StoreRecord[]> {
   return readStores();
 }
 
+export async function getStoreManagerId(storeId: string): Promise<string | null> {
+  const stores = await readStores();
+  const match = stores.find((store) => store.storeId === storeId);
+  return match?.managerId ?? null;
+}
+
+export async function getSurveillanceManagerId(
+  storeId: string,
+): Promise<string | null> {
+  const users = await getDynamicUsers();
+  const directMatch = users.find(
+    (user) =>
+      user.role === "surveillance" &&
+      (user.storeNumber === storeId ||
+        (Array.isArray(user.storeIds) && user.storeIds.includes(storeId))),
+  );
+  if (directMatch) return directMatch.id;
+
+  const links = await readSurveillanceStoreLinks();
+  const linkedIds = links
+    .filter((entry) => entry.storeIds.includes(storeId))
+    .map((entry) => entry.userId);
+  const linkedUser = users.find(
+    (user) => user.role === "surveillance" && linkedIds.includes(user.id),
+  );
+  return linkedUser?.id ?? null;
+}
+
+export async function setStoreManager(storeId: string, managerId: string) {
+  const stores = await readStores();
+  const target = stores.find((store) => store.storeId === storeId);
+  if (!target) return false;
+  target.managerId = managerId;
+  await writeStores(stores);
+  return true;
+}
+
 export async function listEmployeesForStoreIds(storeIds: string[]) {
   if (!storeIds.length) return [];
   const users = await getDynamicUsers();
@@ -658,27 +1217,38 @@ export async function listEmployeesForStoreIds(storeIds: string[]) {
 
 async function refreshExpiredInvites() {
   const invites = await readInvites();
-  let changed = false;
-  const refreshed = invites.map((invite) => {
-    if (invite.usedAt) return invite;
-    const expired = new Date(invite.expiresAt).getTime() < Date.now();
-    if (!expired) return invite;
-    changed = true;
-    return {
-      ...invite,
-      id: randomUUID(),
-      code: generateInviteCode(prefixForRole(invite.role)),
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      usedAt: undefined,
-      usedBy: undefined,
-      usedByIds: [],
-    };
-  });
-  if (changed) {
-    await writeInvites(refreshed);
+  const now = Date.now();
+  const expiredIds: string[] = [];
+  const active: SignupInvite[] = [];
+
+  for (const invite of invites) {
+    // Cap employee invites at 3 hours from creation, even if older data had longer expiries.
+    const createdAtMs = new Date(invite.createdAt).getTime();
+    const storedExpiryMs = new Date(invite.expiresAt).getTime();
+    const cappedExpiryMs =
+      invite.role === "employee"
+        ? Math.min(storedExpiryMs, createdAtMs + 3 * 60 * 60 * 1000)
+        : storedExpiryMs;
+
+    const isExpired = cappedExpiryMs < now;
+    if (!invite.usedAt && isExpired) {
+      expiredIds.push(invite.id);
+      continue;
+    }
+    // Keep used invites (for history) and active ones.
+    active.push(invite);
   }
-  return refreshed;
+
+  if (expiredIds.length) {
+    if (useSupabase && supabase) {
+      const { error } = await supabase.from("invites").delete().in("id", expiredIds);
+      if (error) console.error("supabase delete expired invites error", error);
+    } else {
+      await writeInvites(active);
+    }
+  }
+
+  return active;
 }
 
 export async function deleteEmployeeAccount(employeeId: string) {
@@ -775,16 +1345,28 @@ export async function deleteStoreAndAccounts(storeId: string) {
   }
 
   const remainingStores = stores.filter((store) => store.storeId !== storeId);
-  await writeStores(remainingStores);
+  if (useSupabase && supabase) {
+    const { error } = await supabase.from("stores").delete().eq("store_id", storeId);
+    if (error) console.error("supabase delete store error", error);
+  } else {
+    await writeStores(remainingStores);
+  }
   return true;
 }
 
-export async function createManagerInvite(createdBy: string) {
+export async function createManagerInvite(createdBy: string, store?: {
+  storeId: string;
+  storeName?: string;
+  storeAddress?: string;
+}) {
   const invites = await readManagerInvites();
   const invite: ManagerInvite = {
     id: randomUUID(),
     code: generateInviteCode("MGR"),
     createdBy,
+    storeId: store?.storeId,
+    storeName: store?.storeName,
+    storeAddress: store?.storeAddress,
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
   };
@@ -796,15 +1378,34 @@ export async function createManagerInvite(createdBy: string) {
 export async function listManagerInvites() {
   const invites = await readManagerInvites();
   const now = Date.now();
-  const active = invites.filter((invite) => {
-    if (!invite.usedBy && new Date(invite.expiresAt).getTime() < now) {
-      return true; // still show expired but available for regen
+  const active: ManagerInvite[] = [];
+  const expiredIds: string[] = [];
+
+  for (const invite of invites) {
+    // Safety: hide legacy stray code that can't be deleted in DB.
+    if (invite.code?.toUpperCase() === "MGR-CW7LTL") {
+      expiredIds.push(invite.id);
+      continue;
     }
-    return true;
-  });
-  if (active.length !== invites.length) {
-    await writeManagerInvites(active);
+
+    const expired = new Date(invite.expiresAt).getTime() < now;
+    // Drop anything expired OR already used; only keep active, unused codes.
+    if (expired || invite.usedAt) {
+      expiredIds.push(invite.id);
+      continue;
+    }
+    active.push(invite);
   }
+
+  if (expiredIds.length) {
+    if (useSupabase && supabase) {
+      const { error } = await supabase.from("manager_invites").delete().in("id", expiredIds);
+      if (error) console.error("supabase delete expired manager invites error", error);
+    } else {
+      await writeManagerInvites(active);
+    }
+  }
+
   return active;
 }
 
@@ -877,11 +1478,20 @@ export async function deleteManagerAccount(managerId: string) {
   const stores = await readStores();
   const ownedStores = stores.filter((store) => store.managerId === managerId);
   for (const store of ownedStores) {
-    await deleteInvitesForStore(store.storeId);
+    await deleteStoreAndAccounts(store.storeId);
+  }
+
+  if (useSupabase && supabase) {
+    const { error } = await supabase.from("users").delete().eq("id", managerId);
+    if (error) {
+      console.error("supabase delete manager error", error);
+      return { success: false, removedStores: [] as string[] };
+    }
+    return { success: true, removedStores: ownedStores.map((s) => s.storeId) };
   }
 
   const remainingUsers = dynamicUsers.filter((user) => user.id !== managerId);
-  await writeJson(USERS_PATH, remainingUsers);
+  await writeJson(USERS_FILE, remainingUsers);
   return { success: true, removedStores: ownedStores.map((s) => s.storeId) };
 }
 
@@ -890,10 +1500,28 @@ export async function regenerateInviteCode(options: {
   role: InviteRole;
 }): Promise<SignupInvite | null> {
   const invites = await readInvites();
-  const invite = invites.find(
+  let invite = invites.find(
     (entry) => entry.storeId === options.storeId && entry.role === options.role,
   );
-  if (!invite) return null;
+  if (!invite) {
+    const stores = await readStores();
+    const store = stores.find((entry) => entry.storeId === options.storeId);
+    if (!store) return null;
+    invite = {
+      id: randomUUID(),
+      code: generateInviteCode(prefixForRole(options.role)),
+      role: options.role,
+      storeId: store.storeId,
+      storeName: store.name,
+      storeAddress: store.address,
+      managerId: store.managerId,
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
+    };
+    invites.push(invite);
+    await writeInvites(invites);
+    return invite;
+  }
   invite.id = randomUUID();
   invite.code = generateInviteCode(prefixForRole(options.role));
   invite.createdAt = new Date().toISOString();
@@ -903,4 +1531,131 @@ export async function regenerateInviteCode(options: {
   invite.usedByIds = [];
   await writeInvites(invites);
   return invite;
+}
+
+export async function createPasswordReset(email: string) {
+  const normalized = email.trim().toLowerCase();
+  const allUsers = await getDynamicUsers();
+  const exists = allUsers.some((u) => u.email.toLowerCase() === normalized);
+  // Always proceed to avoid email existence leaks.
+  const token = crypto.randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
+
+  const resets = await readPasswordResets();
+  resets.push({
+    id: randomUUID(),
+    email: normalized,
+    token,
+    expires_at: expiresAt,
+    used_at: null,
+  });
+  await writePasswordResets(resets);
+
+  return exists ? { token, expiresAt } : { token: null, expiresAt };
+}
+
+export async function usePasswordResetToken(token: string, newPassword: string) {
+  const resets = await readPasswordResets();
+  const now = Date.now();
+  const reset = resets.find(
+    (entry) =>
+      entry.token === token &&
+      (!entry.used_at) &&
+      new Date(entry.expires_at).getTime() > now,
+  );
+  if (!reset) return false;
+
+  const users = await getDynamicUsers();
+  const target = users.find((u) => u.email.toLowerCase() === reset.email);
+  if (!target) {
+    return false;
+  }
+
+  // Update password in users table/storage
+  target.password = newPassword;
+  if (useSupabase && supabase) {
+    const { error } = await supabase
+      .from("users")
+      .update({ password: newPassword })
+      .eq("email", reset.email);
+    if (error) {
+      console.error("supabase password reset update error", error);
+      return false;
+    }
+  } else {
+    await writeJson(USERS_FILE, users);
+  }
+
+  reset.used_at = new Date().toISOString();
+  await writePasswordResets(resets);
+  return true;
+}
+
+function generateResetCode(length = 8) {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let out = "";
+  for (let i = 0; i < length; i += 1) {
+    out += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
+  }
+  return out;
+}
+
+export async function createPasswordResetCode(
+  email: string,
+  ttlMinutes = 60,
+): Promise<{ code: string; expiresAt: string }> {
+  const normalized = email.trim().toLowerCase();
+  const code = generateResetCode(8);
+  const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000).toISOString();
+  const resets = await readPasswordResets();
+  resets.push({
+    id: randomUUID(),
+    email: normalized,
+    token: code,
+    expires_at: expiresAt,
+    used_at: null,
+  });
+  await writePasswordResets(resets);
+  return { code, expiresAt };
+}
+
+export async function resetPasswordWithCode(params: {
+  email: string;
+  code: string;
+  newPassword: string;
+}): Promise<boolean> {
+  const normalized = params.email.trim().toLowerCase();
+  const resets = await readPasswordResets();
+  const now = Date.now();
+  const reset = resets.find(
+    (entry) =>
+      entry.email.toLowerCase() === normalized &&
+      entry.token === params.code.trim() &&
+      !entry.used_at &&
+      new Date(entry.expires_at).getTime() > now,
+  );
+  if (!reset) return false;
+
+  const users = await getDynamicUsers();
+  const target = users.find((u) => u.email.toLowerCase() === normalized);
+  if (!target) return false;
+
+  target.password = params.newPassword;
+
+  if (useSupabase && supabase) {
+    const { error } = await supabase
+      .from("users")
+      .update({ password: params.newPassword })
+      .eq("email", normalized);
+    if (error) {
+      console.error("supabase reset-with-code update error", error);
+      return false;
+    }
+  } else {
+    await writeJson(USERS_FILE, users);
+  }
+
+  reset.used_at = new Date().toISOString();
+  await writePasswordResets(resets);
+  return true;
 }

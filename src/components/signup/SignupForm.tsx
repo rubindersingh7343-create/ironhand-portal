@@ -8,6 +8,7 @@ export default function SignupForm() {
     phone: "",
     email: "",
     password: "",
+    confirmPassword: "",
     code: "",
   });
   const [status, setStatus] = useState<"idle" | "submitting">("idle");
@@ -19,6 +20,10 @@ export default function SignupForm() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (form.password !== form.confirmPassword) {
+      setMessage("Passwords do not match.");
+      return;
+    }
     setStatus("submitting");
     setMessage(null);
     try {
@@ -33,14 +38,8 @@ export default function SignupForm() {
         throw new Error(error?.error ?? "Unable to sign up.");
       }
 
-      setMessage("Account created! You can now sign in.");
-      setForm({
-        name: "",
-        phone: "",
-        email: "",
-        password: "",
-        code: "",
-      });
+      setMessage("Account created! Signing you in...");
+      window.location.assign("/");
     } catch (error) {
       if (error instanceof Error) {
         setMessage(error.message);
@@ -112,19 +111,35 @@ export default function SignupForm() {
             placeholder="••••••••"
           />
         </div>
+        <div className="space-y-2">
+          <label
+            className="text-sm font-medium text-slate-200"
+            htmlFor="confirmPassword"
+          >
+            Re-enter password
+          </label>
+          <input
+            id="confirmPassword"
+            type="password"
+            value={form.confirmPassword}
+            onChange={(event) => updateField("confirmPassword", event.target.value)}
+            required
+            className="w-full rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-slate-100 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+            placeholder="••••••••"
+          />
+        </div>
       </div>
 
       <div className="space-y-2">
         <label className="text-sm font-medium text-slate-200" htmlFor="code">
-          Invite code
+          Invite code (optional for owner portal)
         </label>
         <input
           id="code"
           value={form.code}
           onChange={(event) => updateField("code", event.target.value)}
-          required
           className="w-full rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-slate-100 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
-          placeholder="CLI-XXXXXX / EMP-XXXXXX"
+          placeholder="Leave blank for owner portal"
         />
       </div>
 

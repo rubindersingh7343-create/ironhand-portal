@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { getSessionUser, createSessionToken } from "@/lib/auth";
+import {
+  SESSION_MAX_AGE_SECONDS,
+  createSessionToken,
+  getSessionUser,
+} from "@/lib/auth";
 import { SESSION_COOKIE } from "@/lib/users";
 import {
   updateUserAccount,
@@ -82,7 +86,8 @@ export async function PATCH(request: Request) {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 12,
+    maxAge: SESSION_MAX_AGE_SECONDS,
+    secure: process.env.NODE_ENV === "production",
   });
 
   return response;

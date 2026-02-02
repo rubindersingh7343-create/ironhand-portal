@@ -36,7 +36,6 @@ export default function ScratchersAdminPanel({
   const [baselineSnapshot, setBaselineSnapshot] = useState<BaselineSnapshot | null>(null);
   const [baselineLoading, setBaselineLoading] = useState(false);
   const [baselineDirty, setBaselineDirty] = useState(false);
-  const [showInactiveSlots, setShowInactiveSlots] = useState(false);
   const baselineDirtyRef = useRef(false);
 
   const loadBundle = useCallback(async () => {
@@ -275,35 +274,13 @@ export default function ScratchersAdminPanel({
           <div className="text-sm text-slate-300">Loading scratcher setup…</div>
         ) : (
           <div className="space-y-3 overflow-y-auto pr-2">
-            <div className="rounded-2xl border border-white/10 bg-[#0f1a33] p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-300">
-                    Slots overview
-                  </p>
-                  <p className="mt-2 text-sm text-slate-200">
-                    Each slot keeps its label, price, active status, and baseline start ticket.
-                  </p>
-                  {baselineSnapshot && (
-                    <p className="mt-1 text-xs text-slate-400">
-                      Baseline last saved {new Date(baselineSnapshot.createdAt).toLocaleString()}
-                    </p>
-                  )}
-                </div>
-                <label className="inline-flex items-center gap-2 text-xs text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={showInactiveSlots}
-                    onChange={(event) => setShowInactiveSlots(event.target.checked)}
-                  />
-                  Show inactive slots
-                </label>
+            {baselineSnapshot && (
+              <div className="rounded-2xl border border-white/10 bg-[#0f1a33] px-4 py-2 text-xs text-slate-300">
+                Baseline last saved {new Date(baselineSnapshot.createdAt).toLocaleString()}
               </div>
-            </div>
+            )}
 
-            {(activeSlots.filter((slot) =>
-              showInactiveSlots ? true : slot.isActive,
-            )).map((slot) => {
+            {activeSlots.map((slot) => {
               const draft = slotDrafts[slot.id] ?? {
                 label: slot.label ?? "",
                 isActive: slot.isActive,
@@ -347,7 +324,7 @@ export default function ScratchersAdminPanel({
                           },
                         }))
                       }
-                      placeholder="Name"
+                      placeholder="Name (optional)"
                       className="ui-field"
                     />
                     <select

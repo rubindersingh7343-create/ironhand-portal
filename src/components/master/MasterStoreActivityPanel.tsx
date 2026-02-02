@@ -1,9 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { CombinedRecord } from "@/lib/types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CombinedRecord, StoredFile } from "@/lib/types";
+import IHModal from "@/components/ui/IHModal";
 
-type CategoryKey = "shift" | "daily" | "weekly" | "monthly" | "surveillance";
+type CategoryKey =
+  | "shift"
+  | "daily"
+  | "weekly"
+  | "monthly"
+  | "surveillance"
+  | "invoice";
 
 interface StoreOption {
   id: string;
@@ -22,6 +29,7 @@ const CATEGORY_SECTIONS: Array<{
   { key: "weekly", label: "Weekly orders", description: "Restock + supply lists" },
   { key: "monthly", label: "Monthly reports", description: "Documents & audits" },
   { key: "surveillance", label: "Surveillance", description: "Remote footage + notes" },
+  { key: "invoice", label: "Invoices", description: "Invoices sent by employees" },
 ];
 
 export default function MasterStoreActivityPanel() {
@@ -38,6 +46,7 @@ export default function MasterStoreActivityPanel() {
     weekly: false,
     monthly: false,
     surveillance: false,
+    invoice: false,
   });
 
   const mergeStores = useCallback(
@@ -46,12 +55,12 @@ export default function MasterStoreActivityPanel() {
       setStoreOptions((prev) => {
         const map = new Map(prev.map((entry) => [entry.id, entry]));
         incoming.forEach((store) => {
-          const existing = map.get(store.id) ?? {};
+          const existing = map.get(store.id);
           map.set(store.id, {
             id: store.id,
-            name: store.name ?? existing.name ?? `Store ${store.id}`,
-            address: store.address ?? existing.address,
-            manager: store.manager ?? existing.manager,
+            name: store.name ?? existing?.name ?? `Store ${store.id}`,
+            address: store.address ?? existing?.address,
+            manager: store.manager ?? existing?.manager,
           });
         });
         const sorted = Array.from(map.values()).sort((a, b) =>
@@ -196,6 +205,7 @@ export default function MasterStoreActivityPanel() {
       weekly: [],
       monthly: [],
       surveillance: [],
+      invoice: [],
     };
     records.forEach((record) => {
       if ((grouped as any)[record.category]) {
@@ -204,6 +214,7 @@ export default function MasterStoreActivityPanel() {
     });
     return grouped;
   }, [records]);
+  const [viewerFile, setViewerFile] = useState<StoredFile | null>(null);
 
   const changeDay = (direction: "prev" | "next") => {
     const current = new Date(selectedDate);
@@ -218,7 +229,7 @@ export default function MasterStoreActivityPanel() {
   };
 
   return (
-    <section className="rounded-[32px] border border-white/10 bg-[rgba(9,16,30,0.95)] p-6 shadow-2xl shadow-slate-950/40">
+    <section className="ui-card text-white">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
@@ -290,9 +301,18 @@ export default function MasterStoreActivityPanel() {
       </div>
 
       {loading && (
-        <p className="rounded-2xl bg-white/5 px-4 py-3 text-sm text-slate-200">
-          Loading files…
-        </p>
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div
+              key={`store-activity-skeleton-${index}`}
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
+            >
+              <div className="ui-skeleton h-4 w-40" />
+              <div className="mt-2 ui-skeleton h-3 w-32" />
+              <div className="mt-3 ui-skeleton h-10 w-full" />
+            </div>
+          ))}
+        </div>
       )}
       {error && (
         <p className="rounded-2xl bg-red-500/10 px-4 py-3 text-sm text-red-200">
@@ -366,22 +386,28 @@ export default function MasterStoreActivityPanel() {
                                 No files attached.
                               </p>
                             ) : (
-                              record.attachments.map((file) => (
-                                <a
-                                  key={file.id}
-                                  href={file.path}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-blue-200 transition hover:border-blue-400 hover:text-blue-100"
-                                >
-                                  <p className="font-semibold text-white">
-                                    {file.label ?? "Attachment"}
-                                  </p>
-                                  <p className="truncate text-[11px] text-slate-300">
-                                    {file.originalName}
-                                  </p>
-                                </a>
-                              ))
+                              record.attachments.map((file) => {
+                                const src = `/api/uploads/proxy?path=${encodeURIComponent(
+                                  file.path ?? file.id,
+                                )}&id=${encodeURIComponent(file.id)}&name=${encodeURIComponent(
+                                  file.originalName ?? file.label ?? "file",
+                                )}`;
+                                return (
+                                  <button
+                                    type="button"
+                                    key={file.id}
+                                    onClick={() => setViewerFile(file)}
+                                    className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-left text-xs text-blue-200 transition hover:border-blue-400 hover:text-blue-100"
+                                  >
+                                    <p className="font-semibold text-white">
+                                      {file.label ?? "Attachment"}
+                                    </p>
+                                    <p className="truncate text-[11px] text-slate-300">
+                                      {file.originalName}
+                                    </p>
+                                  </button>
+                                );
+                              })
                             )}
                           </div>
                         </div>
@@ -394,6 +420,195 @@ export default function MasterStoreActivityPanel() {
           })}
         </div>
       )}
+      <FileViewer file={viewerFile} onClose={() => setViewerFile(null)} />
     </section>
+  );
+}
+
+function FileViewer({
+  file,
+  onClose,
+}: {
+  file: StoredFile | null;
+  onClose: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [scale, setScale] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const pinchStartDist = useRef<number | null>(null);
+  const pinchStartScale = useRef(1);
+  const lastTouch = useRef<{ x: number; y: number } | null>(null);
+  if (!file) return null;
+  const clamp = (val: number, min: number, max: number) =>
+    Math.min(max, Math.max(min, val));
+  const getDistance = (touches: TouchList | React.TouchList) => {
+    const [a, b] = [touches[0] as Touch, touches[1] as Touch];
+    const dx = a.clientX - b.clientX;
+    const dy = a.clientY - b.clientY;
+    return Math.hypot(dx, dy);
+  };
+  const showSpinner = file.kind !== "video";
+  useEffect(() => {
+    if (!showSpinner) {
+      setLoading(false);
+      setLoadError(false);
+      return;
+    }
+    setLoading(true);
+    setLoadError(false);
+    const timer = setTimeout(() => {
+      setLoading(false);
+      setLoadError(true);
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [file?.id, showSpinner]);
+  const src = `/api/uploads/proxy?path=${encodeURIComponent(
+    file.path ?? file.id,
+  )}&id=${encodeURIComponent(file.id)}&name=${encodeURIComponent(
+    file.originalName ?? file.label ?? "file",
+  )}`;
+  const isImage = file.kind === "image";
+  const isVideo = file.kind === "video";
+  const contentStyle = {
+    transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+    transformOrigin: "center center",
+    transition: "transform 80ms ease",
+  };
+  const zoomIn = () => setScale((prev) => Math.min(4, parseFloat((prev + 0.25).toFixed(2))));
+  const zoomOut = () => setScale((prev) => Math.max(0.5, parseFloat((prev - 0.25).toFixed(2))));
+
+  return (
+    <IHModal isOpen onClose={onClose} allowOutsideClose panelClassName="max-w-4xl">
+      <div className="relative flex max-h-[82vh] flex-col gap-3">
+        <div className="absolute right-2 top-10 flex gap-2">
+          <button
+            type="button"
+            onClick={zoomOut}
+            className="rounded-full border border-white/20 px-3 py-1 text-xs text-white hover:bg-white/10"
+          >
+            -
+          </button>
+          <button
+            type="button"
+            onClick={zoomIn}
+            className="rounded-full border border-white/20 px-3 py-1 text-xs text-white hover:bg-white/10"
+          >
+            +
+          </button>
+        </div>
+        <div className="space-y-1 pr-12">
+          <p className="text-lg font-semibold text-white">
+            {file.label || file.originalName || "File"}
+          </p>
+          <p className="text-xs text-slate-300">{file.originalName}</p>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <div
+            className="relative max-h-[70vh] overflow-hidden rounded-xl border border-white/10 bg-black/20 p-2"
+            onTouchStart={(event) => {
+              if (event.touches.length === 2) {
+                pinchStartDist.current = getDistance(event.touches);
+                pinchStartScale.current = scale;
+              } else if (event.touches.length === 1) {
+                lastTouch.current = {
+                  x: event.touches[0].clientX,
+                  y: event.touches[0].clientY,
+                };
+              }
+            }}
+            onTouchMove={(event) => {
+              if (event.touches.length === 2 && pinchStartDist.current) {
+                const dist = getDistance(event.touches);
+                const nextScale = clamp(
+                  pinchStartScale.current * (dist / pinchStartDist.current),
+                  1,
+                  4,
+                );
+                setScale(nextScale);
+              } else if (
+                event.touches.length === 1 &&
+                lastTouch.current &&
+                scale > 1
+              ) {
+                const { clientX, clientY } = event.touches[0];
+                const deltaX = clientX - lastTouch.current.x;
+                const deltaY = clientY - lastTouch.current.y;
+                setOffset((prev) => ({
+                  x: prev.x + deltaX,
+                  y: prev.y + deltaY,
+                }));
+                lastTouch.current = { x: clientX, y: clientY };
+              }
+            }}
+            onTouchEnd={() => {
+              pinchStartDist.current = null;
+              lastTouch.current = null;
+            }}
+            style={{ touchAction: "none" }}
+          >
+            {showSpinner && loading && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/20">
+                <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              </div>
+            )}
+            {showSpinner && loadError && (
+              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-black/40 text-sm text-red-200">
+                <p>Unable to load this file.</p>
+                <a
+                  href={src}
+                  className="rounded-md bg-white/10 px-3 py-1 text-xs text-white hover:bg-white/20"
+                >
+                  Download / open directly
+                </a>
+              </div>
+            )}
+            {isImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={src}
+                alt={file.originalName}
+                loading="lazy"
+                onLoad={() => setLoading(false)}
+                onError={() => {
+                  setLoading(false);
+                  setLoadError(true);
+                }}
+                className="mx-auto block h-auto max-h-[64vh] w-auto"
+                style={contentStyle}
+              />
+            ) : isVideo ? (
+              <>
+                <video
+                  controls
+                  src={src}
+                  playsInline
+                  preload="metadata"
+                  onLoadedData={() => setLoading(false)}
+                  className="mx-auto block h-auto max-h-[64vh] w-auto max-w-none rounded-lg bg-black"
+                  style={contentStyle}
+                />
+                <div className="mt-3 text-center text-xs text-slate-300">
+                  <a
+                    href={src}
+                    className="text-blue-200 underline underline-offset-4 hover:text-white"
+                  >
+                    Open directly / download
+                  </a>
+                </div>
+              </>
+            ) : (
+              <iframe
+                src={src}
+                title={file.originalName}
+                onLoad={() => setLoading(false)}
+                className="h-[60vh] w-full rounded-lg bg-white"
+                style={{ ...contentStyle, height: "60vh" }}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    </IHModal>
   );
 }
