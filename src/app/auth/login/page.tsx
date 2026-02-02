@@ -36,9 +36,10 @@ export default async function LoginPage({
           <Image
             src="/logowriting2.png"
             alt="Iron Hand logo"
-            width={125}
-            height={125}
-            className="object-contain"
+            width={96}
+            height={96}
+            sizes="(max-width: 640px) 72px, 96px"
+            className="h-16 w-auto object-contain sm:h-20"
             priority
           />
         </div>
