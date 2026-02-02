@@ -2,6 +2,7 @@ import LogoutButton from "@/components/LogoutButton";
 import SettingsButton from "@/components/SettingsButton";
 import EmployeeUploadForm from "@/components/employee/EmployeeUploadForm";
 import EmployeeBottomBar from "@/components/employee/EmployeeBottomBar";
+import EmployeeSurveillanceSection from "@/components/employee/EmployeeSurveillanceSection";
 import IronHandReportForm from "@/components/ironhand/IronHandReportForm";
 import InvitePanel from "@/components/ironhand/InvitePanel";
 import OwnerPortalDashboard from "@/components/client/OwnerPortalDashboard";
@@ -74,7 +75,10 @@ export default async function DashboardShell({ user }: { user: SessionUser }) {
           { id: "ironhand-records", label: "Records" },
         ]
       : user.role === "employee"
-        ? [{ id: "employee-uploads", label: "Uploads" }]
+        ? [
+            { id: "employee-surveillance", label: "Surveillance" },
+            { id: "employee-uploads", label: "Uploads" },
+          ]
         : [];
 
   return (
@@ -115,6 +119,9 @@ export default async function DashboardShell({ user }: { user: SessionUser }) {
         {user.role === "employee" && (
           <>
             <EmployeeBottomBar user={user} />
+            <div className="portal-section" id="employee-surveillance">
+              <EmployeeSurveillanceSection user={user} />
+            </div>
             <div className="portal-section" id="employee-uploads">
               <EmployeeUploadForm user={user} className="max-w-3xl" />
             </div>
