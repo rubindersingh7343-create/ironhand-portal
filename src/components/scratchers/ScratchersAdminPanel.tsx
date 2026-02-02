@@ -36,6 +36,7 @@ export default function ScratchersAdminPanel({
   const [baselineSnapshot, setBaselineSnapshot] = useState<BaselineSnapshot | null>(null);
   const [baselineLoading, setBaselineLoading] = useState(false);
   const [baselineDirty, setBaselineDirty] = useState(false);
+  const [showInactiveSlots, setShowInactiveSlots] = useState(false);
   const baselineDirtyRef = useRef(false);
 
   const loadBundle = useCallback(async () => {
@@ -197,7 +198,7 @@ export default function ScratchersAdminPanel({
     const slots = (bundle?.slots ?? []).filter((slot) =>
       showInactiveSlots ? true : slot.isActive,
     );
-    const requiredSlots = (bundle?.slots ?? []).filter((slot) => slot.isActive);
+    const requiredSlots = slots.filter((slot) => slot.isActive);
     const missingRequired = requiredSlots.filter(
       (slot) => !baselineItems[slot.id]?.trim(),
     );
@@ -259,8 +260,15 @@ export default function ScratchersAdminPanel({
               Maintain catalog, slots, and the baseline start snapshot used to audit shifts.
             </p>
           </div>
-          <div className="pr-6 text-xs uppercase tracking-[0.35em] text-slate-400">
-            Owner & Manager
+          <div className="flex items-center gap-3 pr-6 text-xs uppercase tracking-[0.35em] text-slate-400">
+            <button
+              type="button"
+              onClick={() => setShowInactiveSlots((prev) => !prev)}
+              className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[0.6rem] font-semibold uppercase tracking-[0.25em] text-slate-200 transition hover:bg-white/20"
+            >
+              {showInactiveSlots ? "Hide inactive" : "Show inactive"}
+            </button>
+            <span>Owner & Manager</span>
           </div>
         </div>
 
