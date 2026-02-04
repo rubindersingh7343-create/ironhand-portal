@@ -558,7 +558,7 @@ export default function FullDayReportsPanel({
                     const missingLabel = isRange
                       ? "No reports in range"
                       : "";
-                    const canInvestigate = Boolean(activeRecord && !isRange);
+                    const canInvestigate = Boolean(activeRecord);
                     const reportId = activeRecord?.id ?? "";
                     return (
                       <tr

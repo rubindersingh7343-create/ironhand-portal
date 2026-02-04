@@ -642,6 +642,7 @@ export default function ShiftReportsPanel({
                       displayRows.map((row) => {
                         const report = row.primaryReport;
                         const hasDiscrepancy = Boolean(report?.hasDiscrepancy);
+                        const canInvestigate = Boolean(report);
                         return (
                           <tr
                             key={row.key}
@@ -667,7 +668,7 @@ export default function ShiftReportsPanel({
                               );
                             })}
                             <td className="sticky right-0 bg-[#0f1a33] px-2 py-4 text-right md:px-3">
-                              {report && hasDiscrepancy && !isRange ? (
+                              {canInvestigate ? (
                                 <button
                                   type="button"
                                   onClick={() => openInvestigate(report)}
@@ -677,7 +678,9 @@ export default function ShiftReportsPanel({
                                       : getStatus(report) === "sent" ||
                                           getStatus(report) === "in_progress"
                                         ? "border-amber-300/60 text-amber-200"
-                                        : "border-white/20 text-white hover:border-white/60"
+                                        : hasDiscrepancy
+                                          ? "border-white/20 text-white hover:border-white/60"
+                                          : "border-white/10 text-slate-300 hover:border-white/40"
                                   }`}
                                   aria-label="Investigate"
                                 >
