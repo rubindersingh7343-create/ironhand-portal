@@ -122,6 +122,14 @@ export default function SurveillanceInvestigateModal({
   const [disciplineOpen, setDisciplineOpen] = useState(false);
   const [disciplineOption, setDisciplineOption] = useState("Verbal warning");
   const [disciplineNotes, setDisciplineNotes] = useState("");
+  const [disciplineNoticeOpen, setDisciplineNoticeOpen] = useState(false);
+  const [disciplineNoticeOption, setDisciplineNoticeOption] =
+    useState("Coaching notice");
+  const [disciplineNoticeNotes, setDisciplineNoticeNotes] = useState("");
+  const [disciplineNoticeSending, setDisciplineNoticeSending] = useState(false);
+  const [disciplineNoticeError, setDisciplineNoticeError] = useState<string | null>(
+    null,
+  );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const isRoutine = report.surveillanceLabel?.toLowerCase() === "routine";
@@ -177,6 +185,9 @@ export default function SurveillanceInvestigateModal({
     setMessage("");
     setDisciplineOpen(false);
     setDisciplineNotes("");
+    setDisciplineNoticeOpen(false);
+    setDisciplineNoticeNotes("");
+    setDisciplineNoticeError(null);
     setErrorMessage(null);
   }, [report.id]);
 
@@ -280,6 +291,63 @@ export default function SurveillanceInvestigateModal({
       setErrorMessage(
         error instanceof Error ? error.message : "Unable to request discipline.",
       );
+    }
+  };
+
+  const buildDisciplineNotice = () => {
+    const reportDate = formatTimestamp(report.createdAt);
+    const label = badgeKey === "routine" ? "routine review" : badgeKey;
+    const gradeLine = grade ? `Behavior grade: ${grade}.` : "";
+    const base = `This is a ${disciplineNoticeOption.toLowerCase()} regarding the ${label} surveillance report on ${reportDate} at ${storeName}.`;
+    const summaryLine = `Summary: ${summary}`;
+    const closing =
+      "Please review expectations and reply in this chat if you have context to share.";
+    const note = disciplineNoticeNotes.trim();
+    const noteLine = note ? `Owner note: ${note}` : "";
+    return [base, gradeLine, summaryLine, closing, noteLine]
+      .filter(Boolean)
+      .join(" ");
+  };
+
+  const handleSendDisciplineNotice = async () => {
+    const messageText = buildDisciplineNotice();
+    setDisciplineNoticeSending(true);
+    setDisciplineNoticeError(null);
+    try {
+      const response = await fetch("/api/chat/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storeId: report.storeNumber,
+          type: "owner",
+          message: messageText,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error ?? "Unable to send discipline notice.");
+      }
+      const systemMessage: InvestigationMessage = {
+        id: buildMessageId(),
+        role: "system",
+        text: `Owner sent discipline notice (${disciplineNoticeOption}).`,
+        timestamp: new Date().toISOString(),
+      };
+      const nextMessages = [...threadMessages, systemMessage];
+      await persistThread("in_progress", nextMessages, systemMessage.text);
+      setThreadMessages(nextMessages);
+      setStatus("in_progress");
+      setDisciplineNoticeOpen(false);
+      setDisciplineNoticeNotes("");
+    } catch (error) {
+      console.error("Failed to send discipline notice", error);
+      setDisciplineNoticeError(
+        error instanceof Error
+          ? error.message
+          : "Unable to send discipline notice.",
+      );
+    } finally {
+      setDisciplineNoticeSending(false);
     }
   };
 
@@ -463,6 +531,14 @@ export default function SurveillanceInvestigateModal({
               </button>
               <button
                 type="button"
+                onClick={() => setDisciplineNoticeOpen(true)}
+                disabled={!hasInvestigationAPI}
+                className="rounded-full border border-blue-400/50 px-4 py-2 text-xs font-semibold text-blue-100 transition hover:border-blue-300 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Discipline Employee
+              </button>
+              <button
+                type="button"
                 onClick={() => setDisciplineOpen(true)}
                 disabled={!hasInvestigationAPI}
                 className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold text-white transition hover:border-white/50 disabled:cursor-not-allowed disabled:opacity-60"
@@ -540,6 +616,86 @@ export default function SurveillanceInvestigateModal({
                   className="rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-blue-500"
                 >
                   Confirm
+                </button>
+              </div>
+            </div>
+          </div>
+        </IHModal>
+      )}
+      {disciplineNoticeOpen && (
+        <IHModal
+          isOpen
+          onClose={() => setDisciplineNoticeOpen(false)}
+          allowOutsideClose
+          backdropClassName="z-[10000]"
+          panelClassName="max-w-lg"
+        >
+          <div className="flex flex-col overflow-hidden">
+            <div className="border-b border-white/10 px-5 py-4">
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-300">
+                Discipline Notice
+              </p>
+            </div>
+            <div className="space-y-4 px-5 py-4">
+              <div className="grid gap-2 sm:grid-cols-2">
+                {[
+                  "Coaching notice",
+                  "Written warning",
+                  "Final warning",
+                  "Suspension review",
+                ].map((option) => (
+                  <label
+                    key={option}
+                    className={`flex cursor-pointer items-center justify-between rounded-2xl border px-3 py-2 text-sm ${
+                      disciplineNoticeOption === option
+                        ? "border-blue-400/40 bg-blue-500/10"
+                        : "border-white/10 bg-white/5"
+                    }`}
+                  >
+                    <span>{option}</span>
+                    <input
+                      type="radio"
+                      name="discipline-notice-surv"
+                      value={option}
+                      checked={disciplineNoticeOption === option}
+                      onChange={() => setDisciplineNoticeOption(option)}
+                      className="h-3 w-3 accent-blue-500"
+                    />
+                  </label>
+                ))}
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs uppercase tracking-[0.3em] text-slate-300">
+                  Owner note (optional)
+                </label>
+                <textarea
+                  value={disciplineNoticeNotes}
+                  onChange={(event) => setDisciplineNoticeNotes(event.target.value)}
+                  placeholder="Add a short note for the employee..."
+                  className="min-h-[90px] w-full rounded-2xl border border-white/10 bg-[#0b152a] px-3 py-2 text-sm text-white placeholder:text-slate-400"
+                />
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-[#0f1a33] px-4 py-3 text-sm text-slate-200">
+                <p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">
+                  Message Preview
+                </p>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-white">
+                  {buildDisciplineNotice()}
+                </p>
+              </div>
+              {disciplineNoticeError ? (
+                <div className="rounded-2xl border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
+                  {disciplineNoticeError}
+                </div>
+              ) : null}
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleSendDisciplineNotice}
+                  disabled={disciplineNoticeSending}
+                  className="rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {disciplineNoticeSending ? "Sending..." : "Send Notice"}
                 </button>
               </div>
             </div>
