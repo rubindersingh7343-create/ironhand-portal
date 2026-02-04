@@ -21,12 +21,20 @@ export type OwnerPortalStoreSummary = {
   hasSurveillance?: boolean;
 };
 
+type OwnerPortalDateRange = {
+  startDate: string;
+  endDate: string;
+};
+
 type OwnerPortalStoreContextValue = {
   stores: OwnerPortalStoreSummary[];
   selectedStoreId: string;
   setSelectedStoreId: (storeId: string) => void;
   activeStore: OwnerPortalStoreSummary | null;
   ready: boolean;
+  manualDateRange: OwnerPortalDateRange | null;
+  setManualDateRange: (range: OwnerPortalDateRange) => void;
+  clearManualDateRange: () => void;
 };
 
 const OwnerPortalStoreContext =
@@ -263,6 +271,8 @@ export function OwnerPortalStoreProvider({
     return stored ?? user.storeNumber ?? "";
   });
   const [ready, setReady] = useState(false);
+  const [manualDateRange, setManualDateRangeState] =
+    useState<OwnerPortalDateRange | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -332,6 +342,24 @@ export function OwnerPortalStoreProvider({
     [stores, selectedStoreId],
   );
 
+  const setManualDateRange = useCallback((range: OwnerPortalDateRange) => {
+    if (!range.startDate || !range.endDate) return;
+    setManualDateRangeState((prev) => {
+      if (
+        prev &&
+        prev.startDate === range.startDate &&
+        prev.endDate === range.endDate
+      ) {
+        return prev;
+      }
+      return { ...range };
+    });
+  }, []);
+
+  const clearManualDateRange = useCallback(() => {
+    setManualDateRangeState(null);
+  }, []);
+
   const value = useMemo(
     () => ({
       stores,
@@ -339,8 +367,19 @@ export function OwnerPortalStoreProvider({
       setSelectedStoreId,
       activeStore,
       ready,
+      manualDateRange,
+      setManualDateRange,
+      clearManualDateRange,
     }),
-    [stores, selectedStoreId, activeStore, ready],
+    [
+      stores,
+      selectedStoreId,
+      activeStore,
+      ready,
+      manualDateRange,
+      setManualDateRange,
+      clearManualDateRange,
+    ],
   );
 
   return (

@@ -65,6 +65,8 @@ export default function WeeklyOrdersSection({ user }: { user: SessionUser }) {
   const activeTab: OrderPeriod = "weekly";
   const ownerStore = useOwnerPortalStore();
   const hasSharedStore = Boolean(ownerStore);
+  const manualDateRange = ownerStore?.manualDateRange ?? null;
+  const setManualDateRange = ownerStore?.setManualDateRange;
   const [stores, setStores] = useState<StoreSummary[]>(
     ownerStore?.stores ?? [],
   );
@@ -130,6 +132,13 @@ export default function WeeklyOrdersSection({ user }: { user: SessionUser }) {
     };
     loadStores();
   }, [ownerStore, ownerStore?.stores, ownerStore?.selectedStoreId, user.storeNumber]);
+
+  useEffect(() => {
+    if (!manualDateRange?.startDate) return;
+    if (manualDateRange.startDate !== periodStart) {
+      setPeriodStart(manualDateRange.startDate);
+    }
+  }, [manualDateRange, periodStart]);
 
   const loadUnseen = useCallback(
     async (storeOverride?: string) => {
@@ -313,7 +322,11 @@ export default function WeeklyOrdersSection({ user }: { user: SessionUser }) {
           type="date"
           className="ui-field--slim"
           value={periodStart}
-          onChange={(event) => setPeriodStart(event.target.value)}
+          onChange={(event) => {
+            const next = event.target.value;
+            setPeriodStart(next);
+            setManualDateRange?.({ startDate: next, endDate: next });
+          }}
         />
       </div>
 

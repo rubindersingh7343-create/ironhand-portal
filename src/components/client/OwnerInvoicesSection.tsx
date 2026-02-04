@@ -48,6 +48,8 @@ function formatDate(value?: string) {
 export default function OwnerInvoicesSection({ user }: { user: SessionUser }) {
   const ownerStore = useOwnerPortalStore();
   const hasSharedStore = Boolean(ownerStore);
+  const manualDateRange = ownerStore?.manualDateRange ?? null;
+  const setManualDateRange = ownerStore?.setManualDateRange;
   const [stores, setStores] = useState<StoreSummary[]>(
     ownerStore?.stores ?? [],
   );
@@ -108,6 +110,17 @@ export default function OwnerInvoicesSection({ user }: { user: SessionUser }) {
     setStartDate(start.toISOString().slice(0, 10));
     setEndDate(today.toISOString().slice(0, 10));
   }, []);
+
+  useEffect(() => {
+    if (!manualDateRange) return;
+    if (
+      manualDateRange.startDate !== startDate ||
+      manualDateRange.endDate !== endDate
+    ) {
+      setStartDate(manualDateRange.startDate);
+      setEndDate(manualDateRange.endDate);
+    }
+  }, [manualDateRange, startDate, endDate]);
 
   const loadUnseen = useCallback(
     async (storeOverride?: string) => {
@@ -300,7 +313,11 @@ export default function OwnerInvoicesSection({ user }: { user: SessionUser }) {
             type="date"
             className="ui-field--slim w-full min-w-0"
             value={startDate}
-            onChange={(event) => setStartDate(event.target.value)}
+            onChange={(event) => {
+              const next = event.target.value;
+              setStartDate(next);
+              setManualDateRange?.({ startDate: next, endDate });
+            }}
           />
           <span className="text-xs uppercase tracking-[0.2em] text-slate-400">
             to
@@ -309,7 +326,11 @@ export default function OwnerInvoicesSection({ user }: { user: SessionUser }) {
             type="date"
             className="ui-field--slim w-full min-w-0"
             value={endDate}
-            onChange={(event) => setEndDate(event.target.value)}
+            onChange={(event) => {
+              const next = event.target.value;
+              setEndDate(next);
+              setManualDateRange?.({ startDate, endDate: next });
+            }}
           />
         </div>
       </div>

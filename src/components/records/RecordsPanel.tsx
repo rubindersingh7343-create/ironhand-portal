@@ -75,6 +75,8 @@ export default function RecordsPanel({
   variant = "default",
 }: RecordsPanelProps) {
   const ownerStore = useOwnerPortalStore();
+  const manualDateRange = ownerStore?.manualDateRange ?? null;
+  const setManualDateRange = ownerStore?.setManualDateRange;
   const initialFilters = useMemo(
     () => ({
       category: "all",
@@ -117,6 +119,23 @@ export default function RecordsPanel({
       }));
     }
   }, [ownerStore, ownerStore?.stores, ownerStore?.selectedStoreId, role]);
+
+  useEffect(() => {
+    if (!manualDateRange) return;
+    setFilters((prev) => {
+      if (
+        prev.startDate === manualDateRange.startDate &&
+        prev.endDate === manualDateRange.endDate
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        startDate: manualDateRange.startDate,
+        endDate: manualDateRange.endDate,
+      };
+    });
+  }, [manualDateRange]);
   const [viewerFile, setViewerFile] = useState<StoredFile | null>(null);
   const [storeNames, setStoreNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -1033,17 +1052,37 @@ export default function RecordsPanel({
                   <input
                     type="date"
                     value={filters.startDate}
-                    onChange={(event) =>
-                      setFilters((prev) => ({ ...prev, startDate: event.target.value }))
-                    }
+                    onChange={(event) => {
+                      const next = event.target.value;
+                      const nextEnd = filters.endDate || next;
+                      setFilters((prev) => ({
+                        ...prev,
+                        startDate: next,
+                        endDate: nextEnd,
+                      }));
+                      setManualDateRange?.({
+                        startDate: next,
+                        endDate: nextEnd,
+                      });
+                    }}
                     className="ui-field w-1/2 min-w-0 md:w-full"
                   />
                   <input
                     type="date"
                     value={filters.endDate}
-                    onChange={(event) =>
-                      setFilters((prev) => ({ ...prev, endDate: event.target.value }))
-                    }
+                    onChange={(event) => {
+                      const next = event.target.value;
+                      const nextStart = filters.startDate || next;
+                      setFilters((prev) => ({
+                        ...prev,
+                        startDate: nextStart,
+                        endDate: next,
+                      }));
+                      setManualDateRange?.({
+                        startDate: nextStart,
+                        endDate: next,
+                      });
+                    }}
                     className="ui-field w-1/2 min-w-0 md:w-full"
                   />
                 </div>

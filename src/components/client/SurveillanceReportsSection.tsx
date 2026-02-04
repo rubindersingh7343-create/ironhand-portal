@@ -90,6 +90,8 @@ export default function SurveillanceReportsSection({
 }) {
   const ownerStore = useOwnerPortalStore();
   const hasSharedStore = Boolean(ownerStore);
+  const manualDateRange = ownerStore?.manualDateRange ?? null;
+  const setManualDateRange = ownerStore?.setManualDateRange;
   const [stores, setStores] = useState<StoreSummary[]>(
     ownerStore?.stores ?? [],
   );
@@ -314,6 +316,14 @@ export default function SurveillanceReportsSection({
     }
   }, [dateTouched, latestRecordDate, selectedDate]);
 
+  useEffect(() => {
+    if (!manualDateRange?.startDate) return;
+    if (manualDateRange.startDate !== selectedDate) {
+      setSelectedDate(manualDateRange.startDate);
+    }
+    if (!dateTouched) setDateTouched(true);
+  }, [manualDateRange, selectedDate, dateTouched]);
+
   const routineRecords = useMemo(() => {
     const labeledRoutine = recordsForDate.filter(
       (record) => record.surveillanceLabel?.toLowerCase() === "routine",
@@ -439,8 +449,10 @@ export default function SurveillanceReportsSection({
           <button
             type="button"
             onClick={() => {
+              const next = shiftDate(selectedDate, -1);
               setDateTouched(true);
-              setSelectedDate((value) => shiftDate(value, -1));
+              setSelectedDate(next);
+              setManualDateRange?.({ startDate: next, endDate: next });
             }}
             className="ui-date-step"
             aria-label="Previous day"
@@ -451,16 +463,20 @@ export default function SurveillanceReportsSection({
             type="date"
             value={selectedDate}
             onChange={(event) => {
+              const next = event.target.value;
               setDateTouched(true);
-              setSelectedDate(event.target.value);
+              setSelectedDate(next);
+              setManualDateRange?.({ startDate: next, endDate: next });
             }}
             className="ui-field ui-field--slim"
           />
           <button
             type="button"
             onClick={() => {
+              const next = shiftDate(selectedDate, 1);
               setDateTouched(true);
-              setSelectedDate((value) => shiftDate(value, 1));
+              setSelectedDate(next);
+              setManualDateRange?.({ startDate: next, endDate: next });
             }}
             className="ui-date-step"
             aria-label="Next day"

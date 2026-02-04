@@ -86,6 +86,8 @@ export default function ShiftReportsPanel({
   const today = useMemo(() => getLocalDate(), []);
   const ownerStore = useOwnerPortalStore();
   const hasSharedStore = Boolean(ownerStore);
+  const manualDateRange = ownerStore?.manualDateRange ?? null;
+  const setManualDateRange = ownerStore?.setManualDateRange;
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
   const [stores, setStores] = useState<StoreSummary[]>(
@@ -139,6 +141,17 @@ export default function ShiftReportsPanel({
     };
     loadStores();
   }, [ownerStore, ownerStore?.stores, ownerStore?.selectedStoreId, user.storeNumber]);
+
+  useEffect(() => {
+    if (!manualDateRange) return;
+    if (
+      manualDateRange.startDate !== startDate ||
+      manualDateRange.endDate !== endDate
+    ) {
+      setStartDate(manualDateRange.startDate);
+      setEndDate(manualDateRange.endDate);
+    }
+  }, [manualDateRange, startDate, endDate]);
 
   useEffect(() => {
     if (!storeId) return;
@@ -200,7 +213,12 @@ export default function ShiftReportsPanel({
         setReports([]);
         return;
       }
-      if (!isRange && data?.effectiveDate && data.effectiveDate !== startDate) {
+      if (
+        !manualDateRange &&
+        !isRange &&
+        data?.effectiveDate &&
+        data.effectiveDate !== startDate
+      ) {
         setStartDate(data.effectiveDate);
         setEndDate(data.effectiveDate);
       }
@@ -476,6 +494,7 @@ export default function ShiftReportsPanel({
     const nextEnd = shiftDate(endDate, delta);
     setStartDate(nextStart);
     setEndDate(nextEnd);
+    setManualDateRange?.({ startDate: nextStart, endDate: nextEnd });
   };
 
   const Container = embedded ? "div" : "section";
@@ -537,8 +556,10 @@ export default function ShiftReportsPanel({
               value={startDate}
               onChange={(event) => {
                 const next = event.target.value;
+                const nextEnd = next > endDate ? next : endDate;
                 setStartDate(next);
-                if (next > endDate) setEndDate(next);
+                if (nextEnd !== endDate) setEndDate(nextEnd);
+                setManualDateRange?.({ startDate: next, endDate: nextEnd });
               }}
               className="ui-field ui-field--slim"
             />
@@ -550,8 +571,10 @@ export default function ShiftReportsPanel({
               value={endDate}
               onChange={(event) => {
                 const next = event.target.value;
+                const nextStart = next < startDate ? next : startDate;
                 setEndDate(next);
-                if (next < startDate) setStartDate(next);
+                if (nextStart !== startDate) setStartDate(nextStart);
+                setManualDateRange?.({ startDate: nextStart, endDate: next });
               }}
               className="ui-field ui-field--slim"
             />
