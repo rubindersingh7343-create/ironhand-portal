@@ -154,6 +154,9 @@ body.ui-modal-open {
   max-height: 82vh;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   border-radius: 28px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: #0e1730;
@@ -741,7 +744,7 @@ select.ui-field--slim {
 
 
 .owner-portal-shell {
-  padding-top: calc(env(safe-area-inset-top) + 72px) !important;
+  padding-top: calc(env(safe-area-inset-top) + 36px) !important;
 }
 
 body:has(.owner-portal-shell) {

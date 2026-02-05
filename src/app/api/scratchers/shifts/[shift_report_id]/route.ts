@@ -1,6 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { getScratcherShiftCalculation } from "@/lib/dataStore";
+import {
+  getScratcherShiftCalculation,
+  getShiftReportById,
+  recalculateScratcherShift,
+} from "@/lib/dataStore";
 
 const hasStoreAccess = (user: Awaited<ReturnType<typeof getSessionUser>>, storeId: string) => {
   if (!user) return false;
@@ -24,14 +28,29 @@ export async function GET(
   }
 
   const { shift_report_id } = await context.params;
-  const calculation = await getScratcherShiftCalculation(shift_report_id);
-  if (!calculation) {
-    return NextResponse.json({ calculation: null });
+  let calculation = await getScratcherShiftCalculation(shift_report_id);
+  const report = await getShiftReportById(shift_report_id);
+  if (!calculation && !report) {
+    return NextResponse.json({ calculation: null, report: null });
   }
 
-  if (!hasStoreAccess(user, calculation.storeId)) {
+  const storeId = calculation?.storeId ?? report?.storeId ?? "";
+  if (!storeId || !hasStoreAccess(user, storeId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  return NextResponse.json({ calculation });
+  if (
+    user.role !== "employee" &&
+    calculation?.flags?.some((flag) => flag.startsWith("missing_product_"))
+  ) {
+    const updated = await recalculateScratcherShift({
+      shiftReportId: shift_report_id,
+      storeId,
+    });
+    if (updated) {
+      calculation = updated;
+    }
+  }
+
+  return NextResponse.json({ calculation: calculation ?? null, report: report ?? null });
 }
