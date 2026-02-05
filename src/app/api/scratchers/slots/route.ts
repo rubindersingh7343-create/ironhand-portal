@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { listScratcherSlotBundle } from "@/lib/dataStore";
+import {
+  getLatestScratcherStartSnapshotByStore,
+  listScratcherSlotBundle,
+} from "@/lib/dataStore";
 
 const hasStoreAccess = (user: Awaited<ReturnType<typeof getSessionUser>>, storeId: string) => {
   if (!user) return false;
@@ -26,6 +29,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const bundle = await listScratcherSlotBundle(storeId);
-  return NextResponse.json(bundle);
+  const [bundle, baseline] = await Promise.all([
+    listScratcherSlotBundle(storeId),
+    getLatestScratcherStartSnapshotByStore(storeId),
+  ]);
+  return NextResponse.json({ ...bundle, baseline });
 }

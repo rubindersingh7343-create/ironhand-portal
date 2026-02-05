@@ -5,6 +5,8 @@ import IHModal from "@/components/ui/IHModal";
 import type {
   ScratcherPackEvent,
   ScratcherProduct,
+  ScratcherShiftSnapshot,
+  ScratcherShiftSnapshotItem,
   ScratcherSlot,
   SessionUser,
   StoredFile,
@@ -16,6 +18,10 @@ interface SlotBundle {
   slots: ScratcherSlot[];
   packs: Array<{ id: string; slotId: string; productId: string; status: string }>;
   products: ScratcherProduct[];
+  baseline?: {
+    snapshot: ScratcherShiftSnapshot;
+    items: ScratcherShiftSnapshotItem[];
+  } | null;
 }
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -47,8 +53,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     startTicket: "",
     receipt: null as File | null,
   });
-  const [addingProduct, setAddingProduct] = useState(false);
-  const [newProduct, setNewProduct] = useState({ name: "", price: "" });
   const [rolloverSlots, setRolloverSlots] = useState<
     Array<{ slotId: string; slotNumber: number }>
   >([]);
@@ -70,6 +74,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
         slots: Array.isArray(data.slots) ? data.slots : [],
         packs: Array.isArray(data.packs) ? data.packs : [],
         products: Array.isArray(data.products) ? data.products : [],
+        baseline: data.baseline ?? null,
       });
       const eventsRes = await fetch(
         `/api/scratchers/packs/events?store_id=${encodeURIComponent(user.storeNumber)}`,
@@ -100,6 +105,13 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     () => new Map((bundle?.packs ?? []).map((pack) => [pack.id, pack])),
     [bundle?.packs],
   );
+  const baselineMap = useMemo(
+    () =>
+      new Map(
+        (bundle?.baseline?.items ?? []).map((item) => [item.slotId, item]),
+      ),
+    [bundle?.baseline?.items],
+  );
 
   const visibleSlots = useMemo(() => {
     const slots = bundle?.slots ?? [];
@@ -107,15 +119,15 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   }, [bundle?.slots, showInactive]);
 
   const openActivationForSlot = (slotId: string) => {
+    const slot = bundle?.slots?.find((entry) => entry.id === slotId);
+    const defaultProductId = slot?.defaultProductId ?? "";
     setActivationSlotId(slotId);
     setActivationData({
-      productId: "",
+      productId: defaultProductId,
       packCode: "",
       startTicket: "",
       receipt: null,
     });
-    setAddingProduct(false);
-    setNewProduct({ name: "", price: "" });
     setActivationOpen(true);
   };
 
@@ -307,27 +319,17 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     );
   }, [activationData.productId, activationData.startTicket, productMap]);
 
-  const handleAddProduct = async () => {
-    const price = Number(newProduct.price);
-    if (!newProduct.name.trim() || !Number.isFinite(price)) {
-      setNotice("Enter a product name and price.");
-      return;
-    }
-    const response = await fetch("/api/scratchers/products/upsert", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newProduct.name.trim(), price, storeId: user.storeNumber }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setNotice(data?.error ?? "Unable to add scratcher product.");
-      return;
-    }
-    setActivationData((prev) => ({ ...prev, productId: data.product?.id ?? "" }));
-    setAddingProduct(false);
-    setNewProduct({ name: "", price: "" });
-    await loadBundle();
-  };
+  const productOptions = useMemo(() => {
+    const seen = new Set<number>();
+    return (bundle?.products ?? [])
+      .filter((product) => product.isActive && product.price > 0)
+      .filter((product) => {
+        if (seen.has(product.price)) return false;
+        seen.add(product.price);
+        return true;
+      })
+      .sort((a, b) => a.price - b.price);
+  }, [bundle?.products]);
 
   return (
     <section className="ui-card space-y-4 text-white">
@@ -441,8 +443,34 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
           {visibleSlots.map((slot) => {
             const packId = slot.activePackId ?? null;
             const pack = packId ? packMap.get(packId) : null;
-            const product = pack ? productMap.get(pack.productId) : null;
-            const price = product ? `$${product.price}` : "—";
+            const baselineItem = baselineMap.get(slot.id);
+            const baselineProduct = slot.defaultProductId
+              ? productMap.get(slot.defaultProductId)
+              : null;
+            const baselineActive = !pack && Boolean(baselineItem);
+            const needsActivation = rolloverSlots.some(
+              (entry) => entry.slotId === slot.id,
+            );
+            const product = pack
+              ? productMap.get(pack.productId)
+              : baselineActive
+                ? baselineProduct
+                : null;
+            const label =
+              product?.name ?? (baselineActive ? "Baseline pack" : "No active pack");
+            const price = product
+              ? `$${product.price}`
+              : baselineActive
+                ? "Price not set"
+                : "—";
+            const statusLabel =
+              pack?.status === "active"
+                ? "active"
+                : needsActivation
+                  ? "activation needed"
+                  : baselineActive
+                    ? "baseline"
+                    : "inactive";
             return (
               <div key={slot.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -451,12 +479,12 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
                       Slot {slot.slotNumber}
                     </p>
                     <p className="text-xs text-slate-300">
-                      {product?.name ?? "No active pack"} {product ? `• ${price}` : ""}
+                      {label} {price !== "—" ? `• ${price}` : ""}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-slate-200">
-                      {pack?.status ?? "inactive"}
+                      {statusLabel}
                     </span>
                     {pack?.status === "active" ? (
                       <button
@@ -466,15 +494,15 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
                       >
                         Return pack
                       </button>
-                    ) : (
+                    ) : !baselineActive || needsActivation ? (
                       <button
                         type="button"
-                        className="ui-button ui-button-ghost"
+                        className={`ui-button ${needsActivation ? "ui-button-primary" : "ui-button-ghost"}`}
                         onClick={() => openActivationForSlot(slot.id)}
                       >
                         Activate pack
                       </button>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -502,48 +530,13 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
               className="ui-field"
             >
               <option value="">Select product</option>
-              {(bundle?.products ?? [])
-                .filter((product) => product.isActive)
-                .map((product) => (
-                  <option key={product.id} value={product.id}>
-                    ${product.price}
-                  </option>
-                ))}
+              {productOptions.map((product) => (
+                <option key={product.id} value={product.id}>
+                  ${product.price}
+                </option>
+              ))}
             </select>
           </label>
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              className="ui-button ui-button-ghost"
-              onClick={() => setAddingProduct((prev) => !prev)}
-            >
-              {addingProduct ? "Cancel new scratcher" : "Add new scratcher"}
-            </button>
-            {addingProduct && (
-              <div className="grid w-full gap-3 sm:grid-cols-[2fr,1fr,auto]">
-                <input
-                  value={newProduct.name}
-                  onChange={(event) =>
-                    setNewProduct((prev) => ({ ...prev, name: event.target.value }))
-                  }
-                  placeholder="Scratcher name"
-                  className="ui-field"
-                />
-                <input
-                  value={newProduct.price}
-                  onChange={(event) =>
-                    setNewProduct((prev) => ({ ...prev, price: event.target.value }))
-                  }
-                  placeholder="Price"
-                  inputMode="decimal"
-                  className="ui-field"
-                />
-                <button type="button" className="ui-button" onClick={handleAddProduct}>
-                  Save
-                </button>
-              </div>
-            )}
-          </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-2 text-sm text-slate-200">
               <span>Pack code</span>

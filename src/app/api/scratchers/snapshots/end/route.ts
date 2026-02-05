@@ -108,7 +108,10 @@ export async function POST(request: Request) {
     if (startValue === null || endValue === null || !startItem) return;
     if (endValue < startValue) {
       const activePackId = slot?.activePackId ?? null;
-      const samePack = activePackId && activePackId === (startItem.packId ?? null);
+      const startPackId = startItem.packId ?? null;
+      const baselinePack = !activePackId && !startPackId && Boolean(slot?.defaultProductId);
+      const samePack =
+        (activePackId && activePackId === startPackId) || baselinePack;
       if (samePack) {
         rolloverSlots.push({ slotId, slotNumber: slot?.slotNumber ?? 0 });
       }
