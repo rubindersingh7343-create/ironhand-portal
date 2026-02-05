@@ -5514,7 +5514,12 @@ export async function recalculateScratcherShift(payload: {
     const endTicket = parseTicketNumber(endTicketRaw);
     const startPack = startItem?.packId ? packMap.get(startItem.packId) : undefined;
     const endPack = endItem?.packId ? packMap.get(endItem.packId) : undefined;
-    const product = (endPack ?? startPack) ? productMap.get((endPack ?? startPack)?.productId ?? "") : undefined;
+    const packProductId = endPack?.productId ?? startPack?.productId ?? null;
+    const packProduct = packProductId ? productMap.get(packProductId) : undefined;
+    const defaultProduct = !packProduct && slot?.defaultProductId
+      ? productMap.get(slot.defaultProductId)
+      : undefined;
+    const product = packProduct ?? defaultProduct;
     let sold = 0;
     let soldOld = 0;
     let soldNew = 0;

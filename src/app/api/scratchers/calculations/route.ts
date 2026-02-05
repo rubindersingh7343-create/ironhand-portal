@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { listScratcherCalculations } from "@/lib/dataStore";
+import {
+  getShiftReportById,
+  listScratcherCalculations,
+  recalculateScratcherShift,
+} from "@/lib/dataStore";
 
 const hasStoreAccess = (user: Awaited<ReturnType<typeof getSessionUser>>, storeId: string) => {
   if (!user) return false;
@@ -26,6 +30,43 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const calculations = await listScratcherCalculations(storeId);
-  return NextResponse.json({ calculations });
+  let calculations = await listScratcherCalculations(storeId);
+  if (user.role !== "employee") {
+    const needsRecalc = calculations.filter((calc) =>
+      calc.flags.some((flag) => flag.startsWith("missing_product_")),
+    );
+    if (needsRecalc.length) {
+      const recalculated = await Promise.all(
+        needsRecalc.map((calc) =>
+          recalculateScratcherShift({
+            shiftReportId: calc.shiftReportId,
+            storeId,
+          }),
+        ),
+      );
+      const updatedByShift = new Map(
+        recalculated
+          .filter((calc): calc is NonNullable<typeof calc> => Boolean(calc))
+          .map((calc) => [calc.shiftReportId, calc]),
+      );
+      if (updatedByShift.size) {
+        calculations = calculations.map(
+          (calc) => updatedByShift.get(calc.shiftReportId) ?? calc,
+        );
+      }
+    }
+  }
+  const reports = await Promise.all(
+    calculations.map((calc) => getShiftReportById(calc.shiftReportId)),
+  );
+  const reportByShift = new Map(
+    reports
+      .filter((report) => report)
+      .map((report) => [report!.id, report!]),
+  );
+  const hydrated = calculations.map((calc) => ({
+    ...calc,
+    report: reportByShift.get(calc.shiftReportId) ?? null,
+  }));
+  return NextResponse.json({ calculations: hydrated });
 }
