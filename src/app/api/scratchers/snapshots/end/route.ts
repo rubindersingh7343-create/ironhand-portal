@@ -109,7 +109,7 @@ export async function POST(request: Request) {
     if (endValue < startValue) {
       const activePackId = slot?.activePackId ?? null;
       const startPackId = startItem.packId ?? null;
-      const baselinePack = !activePackId && !startPackId && Boolean(slot?.defaultProductId);
+      const baselinePack = !activePackId && !startPackId;
       const samePack =
         (activePackId && activePackId === startPackId) || baselinePack;
       if (samePack) {
