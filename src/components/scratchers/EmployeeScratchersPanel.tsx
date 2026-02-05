@@ -112,6 +112,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       ),
     [bundle?.baseline?.items],
   );
+  const baselineExists = Boolean(bundle?.baseline?.snapshot);
 
   const visibleSlots = useMemo(() => {
     const slots = bundle?.slots ?? [];
@@ -447,7 +448,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
             const baselineProduct = slot.defaultProductId
               ? productMap.get(slot.defaultProductId)
               : null;
-            const baselineActive = !pack && Boolean(baselineItem);
+            const baselineActive = !pack && baselineExists;
             const needsActivation = rolloverSlots.some(
               (entry) => entry.slotId === slot.id,
             );
@@ -469,7 +470,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
                 : needsActivation
                   ? "activation needed"
                   : baselineActive
-                    ? "baseline"
+                    ? "active"
                     : "inactive";
             return (
               <div key={slot.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -505,6 +506,11 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
                     ) : null}
                   </div>
                 </div>
+                {baselineActive && !baselineItem && (
+                  <p className="mt-2 text-xs text-amber-200/90">
+                    Baseline ticket missing for this slot. Ask a manager to refresh the baseline.
+                  </p>
+                )}
               </div>
             );
           })}
