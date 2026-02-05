@@ -3982,11 +3982,12 @@ export async function createBaselineShiftReport(params: {
   createdById: string;
   createdByName?: string;
 }): Promise<ShiftReport> {
-  const date = `baseline-${new Date().toISOString()}`;
+  const date = "1970-01-01";
+  const baselineEmployeeId = `baseline:${params.storeId}`;
   return upsertShiftReport({
     storeId: params.storeId,
-    employeeId: params.createdById,
-    employeeName: params.createdByName,
+    employeeId: baselineEmployeeId,
+    employeeName: params.createdByName ?? "Baseline Snapshot",
     date,
     grossAmount: 0,
     liquorAmount: 0,
@@ -4060,6 +4061,138 @@ export async function upsertScratcherProduct(payload: {
   storage.scratcherProducts = list;
   await writeStorage(storage);
   return record;
+}
+
+export async function upsertScratcherBaselineSnapshot(payload: {
+  shiftReportId: string;
+  storeId: string;
+  createdByUserId: string;
+  items: Array<{ slotId: string; ticketValue: string; photoFileId?: string | null }>;
+}): Promise<{
+  snapshot: ScratcherShiftSnapshot;
+  items: ScratcherShiftSnapshotItem[];
+} | null> {
+  const createdAt = new Date().toISOString();
+  const { slots } = await listScratcherSlotBundle(payload.storeId);
+  const slotPackMap = new Map(slots.map((slot) => [slot.id, slot.activePackId ?? null]));
+
+  if (USE_SUPABASE && supabase) {
+    const existing = await supabase
+      .from("scratcher_shift_snapshots")
+      .select("id")
+      .eq("shift_report_id", payload.shiftReportId)
+      .eq("snapshot_type", "start")
+      .maybeSingle();
+
+    const snapshotId = existing.data?.id ?? randomUUID();
+
+    if (!existing.data?.id) {
+      const insertSnapshot = await supabase.from("scratcher_shift_snapshots").insert({
+        id: snapshotId,
+        shift_report_id: payload.shiftReportId,
+        store_id: payload.storeId,
+        employee_user_id: payload.createdByUserId,
+        snapshot_type: "start",
+      });
+      if (insertSnapshot.error) {
+        console.error("Supabase baseline snapshot insert error:", insertSnapshot.error);
+        return null;
+      }
+    } else {
+      const deleteItems = await supabase
+        .from("scratcher_shift_snapshot_items")
+        .delete()
+        .eq("snapshot_id", snapshotId);
+      if (deleteItems.error) {
+        console.error("Supabase baseline snapshot items delete error:", deleteItems.error);
+        return null;
+      }
+    }
+
+    const rows = payload.items.map((item) => ({
+      id: randomUUID(),
+      snapshot_id: snapshotId,
+      slot_id: item.slotId,
+      pack_id: slotPackMap.get(item.slotId) ?? null,
+      ticket_value: item.ticketValue,
+      photo_file_id: item.photoFileId ?? null,
+    }));
+    if (rows.length) {
+      const insertItems = await supabase
+        .from("scratcher_shift_snapshot_items")
+        .insert(rows);
+      if (insertItems.error) {
+        console.error("Supabase baseline snapshot items insert error:", insertItems.error);
+        return null;
+      }
+    }
+
+    const snapshot: ScratcherShiftSnapshot = {
+      id: snapshotId,
+      shiftReportId: payload.shiftReportId,
+      storeId: payload.storeId,
+      employeeUserId: payload.createdByUserId,
+      snapshotType: "start",
+      createdAt,
+    };
+    const items: ScratcherShiftSnapshotItem[] = payload.items.map((item) => ({
+      id: randomUUID(),
+      snapshotId,
+      slotId: item.slotId,
+      packId: slotPackMap.get(item.slotId) ?? null,
+      ticketValue: item.ticketValue,
+      photoFileId: item.photoFileId ?? null,
+      createdAt,
+    }));
+    return { snapshot, items };
+  }
+
+  const storage = await readStorage();
+  const snapshots = storage.scratcherShiftSnapshots ?? [];
+  let snapshot = snapshots.find(
+    (snap) => snap.shiftReportId === payload.shiftReportId && snap.snapshotType === "start",
+  );
+  if (!snapshot) {
+    snapshot = {
+      id: randomUUID(),
+      shiftReportId: payload.shiftReportId,
+      storeId: payload.storeId,
+      employeeUserId: payload.createdByUserId,
+      snapshotType: "start",
+      createdAt,
+    };
+    snapshots.push(snapshot);
+    storage.scratcherShiftSnapshots = snapshots;
+  } else {
+    snapshot.createdAt = createdAt;
+  }
+
+  const items = storage.scratcherShiftSnapshotItems ?? [];
+  const remaining = items.filter((item) => item.snapshotId !== snapshot!.id);
+  payload.items.forEach((item) => {
+    remaining.push({
+      id: randomUUID(),
+      snapshotId: snapshot!.id,
+      slotId: item.slotId,
+      packId: slotPackMap.get(item.slotId) ?? null,
+      ticketValue: item.ticketValue,
+      photoFileId: item.photoFileId ?? null,
+      createdAt,
+    });
+  });
+  storage.scratcherShiftSnapshotItems = remaining;
+  await writeStorage(storage);
+
+  const savedItems: ScratcherShiftSnapshotItem[] = payload.items.map((item) => ({
+    id: randomUUID(),
+    snapshotId: snapshot!.id,
+    slotId: item.slotId,
+    packId: slotPackMap.get(item.slotId) ?? null,
+    ticketValue: item.ticketValue,
+    photoFileId: item.photoFileId ?? null,
+    createdAt,
+  }));
+  return { snapshot, items: savedItems };
 }
 
 const STANDARD_SCRATCHER_PRICES = [1, 2, 3, 5, 10, 20, 25, 30, 40];
@@ -4875,7 +5008,7 @@ export async function getLatestScratcherStartSnapshotByStore(
       if (error) {
         console.error("Supabase scratcher latest start snapshot error:", error);
       }
-      return null;
+      return getBaselineScratcherSnapshotByStore(storeId);
     }
     const { data: itemData, error: itemError } = await supabase
       .from("scratcher_shift_snapshot_items")
@@ -4907,6 +5040,91 @@ export async function getLatestScratcherStartSnapshotByStore(
   const storage = await readStorage();
   const snapshots = (storage.scratcherShiftSnapshots ?? [])
     .filter((snap) => snap.storeId === storeId && snap.snapshotType === "start")
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  const snapshot = snapshots[0];
+  if (!snapshot) return getBaselineScratcherSnapshotByStore(storeId);
+  const items = (storage.scratcherShiftSnapshotItems ?? []).filter(
+    (item) => item.snapshotId === snapshot.id,
+  );
+  return { snapshot, items };
+}
+
+export async function getBaselineScratcherSnapshotByStore(
+  storeId: string,
+): Promise<{
+  snapshot: ScratcherShiftSnapshot;
+  items: ScratcherShiftSnapshotItem[];
+} | null> {
+  const baselineEmployeeId = `baseline:${storeId}`;
+
+  if (USE_SUPABASE && supabase) {
+    const { data: reportData, error: reportError } = await supabase
+      .from("shift_reports")
+      .select("id")
+      .eq("store_id", storeId)
+      .eq("employee_id", baselineEmployeeId)
+      .eq("date", "1970-01-01")
+      .maybeSingle();
+    if (reportError || !reportData) {
+      if (reportError) {
+        console.error("Supabase baseline shift report error:", reportError);
+      }
+      return null;
+    }
+
+    const { data: snapshotData, error: snapshotError } = await supabase
+      .from("scratcher_shift_snapshots")
+      .select("*")
+      .eq("shift_report_id", reportData.id)
+      .eq("snapshot_type", "start")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (snapshotError || !snapshotData) {
+      if (snapshotError) {
+        console.error("Supabase baseline scratcher snapshot error:", snapshotError);
+      }
+      return null;
+    }
+
+    const { data: itemData, error: itemError } = await supabase
+      .from("scratcher_shift_snapshot_items")
+      .select("*")
+      .eq("snapshot_id", snapshotData.id);
+    if (itemError) {
+      console.error("Supabase baseline scratcher items error:", itemError);
+    }
+
+    const snapshot: ScratcherShiftSnapshot = {
+      id: snapshotData.id,
+      shiftReportId: snapshotData.shift_report_id,
+      storeId: snapshotData.store_id,
+      employeeUserId: snapshotData.employee_user_id,
+      snapshotType: "start",
+      createdAt: snapshotData.created_at ?? new Date().toISOString(),
+    };
+    const items: ScratcherShiftSnapshotItem[] = (itemData ?? []).map((item) => ({
+      id: item.id,
+      snapshotId: item.snapshot_id,
+      slotId: item.slot_id,
+      packId: item.pack_id ?? null,
+      ticketValue: item.ticket_value,
+      photoFileId: item.photo_file_id ?? null,
+      createdAt: item.created_at ?? new Date().toISOString(),
+    }));
+    return { snapshot, items };
+  }
+
+  const storage = await readStorage();
+  const report = (storage.shiftReports ?? []).find(
+    (shiftReport) =>
+      shiftReport.storeId === storeId &&
+      shiftReport.employeeId === baselineEmployeeId &&
+      shiftReport.date === "1970-01-01",
+  );
+  if (!report) return null;
+  const snapshots = (storage.scratcherShiftSnapshots ?? [])
+    .filter((snap) => snap.shiftReportId === report.id && snap.snapshotType === "start")
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   const snapshot = snapshots[0];
   if (!snapshot) return null;
