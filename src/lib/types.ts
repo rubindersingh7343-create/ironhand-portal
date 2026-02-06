@@ -32,9 +32,45 @@ export interface ShiftSubmission {
   createdAt: string;
   shiftNotes?: string;
   reportDetails?: Record<string, unknown>;
-  scratcherVideo: StoredFile;
+  // Legacy: older shift submissions used a single scratcher count video.
+  scratcherVideo?: StoredFile;
+  // New: one photo per scratcher row (8 total for 32 slots).
+  scratcherPhotos?: StoredFile[];
   cashPhoto: StoredFile;
   salesPhoto: StoredFile;
+}
+
+export interface EmployeeHoursEntry {
+  id: string;
+  storeId: string;
+  employeeId: string;
+  employeeName: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  breakMinutes: number;
+  hours: number;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface EmployeeHourlyRate {
+  id: string;
+  storeId: string;
+  employeeId: string;
+  hourlyRate: number;
+  updatedAt: string;
+}
+
+export interface EmployeeHoursPayment {
+  id: string;
+  storeId: string;
+  employeeId: string;
+  month: string;
+  totalHours: number;
+  hourlyRate: number;
+  totalPay: number;
+  paidAt: string;
 }
 
 export type ReportType = "daily" | "weekly" | "monthly";

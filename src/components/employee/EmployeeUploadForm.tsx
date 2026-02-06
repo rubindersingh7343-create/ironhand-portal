@@ -18,7 +18,6 @@ interface EmployeeUploadFormProps {
 }
 
 const requiredFiles = [
-  { id: "scratcherVideo", label: "Scratcher Count Video", accept: "video/*" },
   { id: "cashPhoto", label: "Cash Count Photo", accept: "image/*" },
   { id: "salesPhoto", label: "Sales Report Photo", accept: "image/*" },
 ];
@@ -55,13 +54,77 @@ export default function EmployeeUploadForm({
   const [invoiceOtherDetails, setInvoiceOtherDetails] = useState("");
   const [savedCardLast4, setSavedCardLast4] = useState<string[]>([]);
   const [uploadingShift, setUploadingShift] = useState(false);
-  const [scratcherFile, setScratcherFile] = useState<File | null>(null);
+  const [scratcherRowPhotos, setScratcherRowPhotos] = useState<Array<File | null>>(
+    () => Array.from({ length: 8 }).map(() => null),
+  );
+  const [scratcherRowPreviewUrls, setScratcherRowPreviewUrls] = useState<
+    Array<string | null>
+  >(() => Array.from({ length: 8 }).map(() => null));
+  const [scratcherCaptureOpen, setScratcherCaptureOpen] = useState(false);
+  const [scratcherCaptureRow, setScratcherCaptureRow] = useState<number>(0);
+  const [scratcherPreviewUrl, setScratcherPreviewUrl] = useState<string | null>(
+    null,
+  );
+  const [scratcherTempFile, setScratcherTempFile] = useState<File | null>(null);
+  const scratcherCaptureInputRef = useRef<HTMLInputElement | null>(null);
+  const scratcherTempUrlRef = useRef<string | null>(null);
+  const scratcherRowPreviewUrlsRef = useRef<Array<string | null>>(
+    Array.from({ length: 8 }).map(() => null),
+  );
   const [reportConfig, setReportConfig] = useState<ReportItemConfig[]>(
     getDefaultReportItems(),
   );
   const [reportValues, setReportValues] = useState<Record<string, string>>({});
   const [customValues, setCustomValues] = useState<Record<string, string>>({});
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const scratcherCapturedCount = useMemo(
+    () => scratcherRowPhotos.filter(Boolean).length,
+    [scratcherRowPhotos],
+  );
+  const scratcherFirstMissingRow = useMemo(() => {
+    const idx = scratcherRowPhotos.findIndex((file) => !file);
+    return idx >= 0 ? idx : 0;
+  }, [scratcherRowPhotos]);
+
+  useEffect(() => {
+    return () => {
+      if (scratcherTempUrlRef.current) {
+        URL.revokeObjectURL(scratcherTempUrlRef.current);
+        scratcherTempUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    scratcherRowPreviewUrlsRef.current = scratcherRowPreviewUrls;
+  }, [scratcherRowPreviewUrls]);
+
+  useEffect(() => {
+    return () => {
+      scratcherRowPreviewUrlsRef.current.forEach((url) => {
+        if (url) URL.revokeObjectURL(url);
+      });
+    };
+  }, []);
+
+  const openScratcherCapture = () => {
+    setScratcherTempFile(null);
+    if (scratcherTempUrlRef.current) {
+      URL.revokeObjectURL(scratcherTempUrlRef.current);
+      scratcherTempUrlRef.current = null;
+    }
+    setScratcherPreviewUrl(null);
+    setScratcherCaptureRow(scratcherFirstMissingRow);
+    setScratcherCaptureOpen(true);
+  };
+
+  const triggerScratcherCamera = () => {
+    const input = scratcherCaptureInputRef.current;
+    if (!input) return;
+    input.value = "";
+    input.click();
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -297,12 +360,14 @@ export default function EmployeeUploadForm({
       return;
     }
 
-    const scratcher = scratcherFile ?? formElement.scratcherVideo?.files?.[0];
     const cash = formElement.cashPhoto?.files?.[0];
     const sales = formElement.salesPhoto?.files?.[0];
-    if (!scratcher || !cash || !sales) {
+    const scratcherPhotos = scratcherRowPhotos.filter(
+      (file): file is File => Boolean(file),
+    );
+    if (scratcherPhotos.length !== 8 || !cash || !sales) {
       setStatus("error");
-      setErrorMessage("All three files are required.");
+      setErrorMessage("Please upload 8 scratcher row photos, plus cash + sales photos.");
       setUploadingShift(false);
       return;
     }
@@ -314,8 +379,12 @@ export default function EmployeeUploadForm({
       return;
     }
 
-      const files = [
-      { file: scratcher, label: "Scratcher Count Video", field: "scratcherVideo" },
+    const files = [
+      ...scratcherPhotos.map((file, index) => ({
+        file,
+        label: `Scratcher Row ${index + 1}`,
+        field: `scratcherRow${index + 1}`,
+      })),
       { file: cash, label: "Cash Count Photo", field: "cashPhoto" },
       { file: sales, label: "Sales Report Photo", field: "salesPhoto" },
     ];
@@ -374,37 +443,40 @@ export default function EmployeeUploadForm({
       .filter((field) => field.label);
 
     // Build metadata and submit JSON payload
+    const scratcherPhotosMeta = uploads
+      .slice(0, 8)
+      .map((upload: any, index: number) => ({
+        id: upload.path,
+        path: upload.path,
+        originalName: files[index].file.name,
+        mimeType: files[index].file.type,
+        size: files[index].file.size,
+        label: files[index].label,
+        kind: "image" as const,
+      }));
     const payload = {
       shiftNotes: formElement.shiftNotes?.value ?? "",
       reportFields,
       customFields,
       storeId: isOwner ? user.storeNumber : undefined,
       files: {
-        scratcherVideo: {
-          id: uploads[0].path,
-          path: uploads[0].path,
-          originalName: files[0].file.name,
-          mimeType: files[0].file.type,
-          size: files[0].file.size,
-          label: files[0].label,
-          kind: files[0].file.type.startsWith("video") ? "video" : "image",
-        },
+        scratcherPhotos: scratcherPhotosMeta,
         cashPhoto: {
-          id: uploads[1].path,
-          path: uploads[1].path,
-          originalName: files[1].file.name,
-          mimeType: files[1].file.type,
-          size: files[1].file.size,
-          label: files[1].label,
+          id: uploads[8].path,
+          path: uploads[8].path,
+          originalName: files[8].file.name,
+          mimeType: files[8].file.type,
+          size: files[8].file.size,
+          label: files[8].label,
           kind: "image",
         },
         salesPhoto: {
-          id: uploads[2].path,
-          path: uploads[2].path,
-          originalName: files[2].file.name,
-          mimeType: files[2].file.type,
-          size: files[2].file.size,
-          label: files[2].label,
+          id: uploads[9].path,
+          path: uploads[9].path,
+          originalName: files[9].file.name,
+          mimeType: files[9].file.type,
+          size: files[9].file.size,
+          label: files[9].label,
           kind: "image",
         },
       },
@@ -423,7 +495,13 @@ export default function EmployeeUploadForm({
     }
 
     formElement.reset();
-    setScratcherFile(null);
+    setScratcherRowPhotos(Array.from({ length: 8 }).map(() => null));
+    setScratcherRowPreviewUrls((prev) => {
+      prev.forEach((url) => {
+        if (url) URL.revokeObjectURL(url);
+      });
+      return Array.from({ length: 8 }).map(() => null);
+    });
     setStatus("success");
     fetchRecentUploads();
     setTimeout(() => setStatus("idle"), 6000);
@@ -577,6 +655,63 @@ export default function EmployeeUploadForm({
           />
         </div>
 
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-300">
+                Scratcher Count
+              </p>
+              <h3 className="mt-1 text-lg font-semibold text-white">
+                8 photos (one per row)
+              </h3>
+              <p className="mt-1 text-sm text-slate-300">
+                Take one clear photo per scratcher row so the tiny ticket numbers are readable.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="ui-button"
+              onClick={openScratcherCapture}
+            >
+              {scratcherCapturedCount === 0
+                ? "Start photos"
+                : scratcherCapturedCount === 8
+                  ? "Review photos"
+                  : `Continue (${scratcherCapturedCount}/8)`}
+            </button>
+          </div>
+
+          <div className="mt-4 grid gap-2 sm:grid-cols-4">
+            {Array.from({ length: 8 }).map((_, index) => {
+              const hasPhoto = Boolean(scratcherRowPhotos[index]);
+              return (
+                <button
+                  key={`scratcher-row-chip-${index}`}
+                  type="button"
+                  onClick={() => {
+                    setScratcherCaptureRow(index);
+                    setScratcherTempFile(null);
+                    if (scratcherTempUrlRef.current) {
+                      URL.revokeObjectURL(scratcherTempUrlRef.current);
+                      scratcherTempUrlRef.current = null;
+                    }
+                    setScratcherPreviewUrl(null);
+                    setScratcherCaptureOpen(true);
+                  }}
+                  className={clsx(
+                    "rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition",
+                    hasPhoto
+                      ? "border-emerald-300/40 bg-emerald-500/10 text-emerald-100 hover:border-emerald-300/70"
+                      : "border-white/15 bg-white/5 text-slate-200 hover:border-white/40",
+                  )}
+                >
+                  Row {index + 1}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="grid gap-4 md:grid-cols-3">
           {requiredFiles.map((file) => (
             <label
@@ -592,18 +727,185 @@ export default function EmployeeUploadForm({
                 type="file"
                 accept={file.accept}
                 name={file.id}
-                // iOS sometimes defaults to the front camera for video capture; force back camera.
-                capture={file.id === "scratcherVideo" ? "environment" : undefined}
                 className="mt-4 w-full min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-slate-300 file:mr-3 file:rounded-full file:border file:border-white/20 file:bg-white/5 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-100"
-                onChange={(e) => {
-                  if (file.id === "scratcherVideo") {
-                    setScratcherFile(e.target.files?.[0] ?? null);
-                  }
-                }}
+                onChange={() => {}}
               />
             </label>
           ))}
         </div>
+
+        {scratcherCaptureOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+            <div className="ui-card w-full max-w-2xl space-y-4 text-white">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-300">
+                    Scratcher row photo
+                  </p>
+                  <p className="mt-2 text-sm text-slate-200">
+                    Row <span className="font-semibold">{scratcherCaptureRow + 1}</span> of{" "}
+                    <span className="font-semibold">8</span> (slots{" "}
+                    {scratcherCaptureRow * 4 + 1}–{scratcherCaptureRow * 4 + 4})
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white transition hover:border-white/50"
+                  onClick={() => {
+                    setScratcherTempFile(null);
+                    if (scratcherTempUrlRef.current) {
+                      URL.revokeObjectURL(scratcherTempUrlRef.current);
+                      scratcherTempUrlRef.current = null;
+                    }
+                    setScratcherPreviewUrl(null);
+                    setScratcherCaptureOpen(false);
+                  }}
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-4">
+                {Array.from({ length: 8 }).map((_, index) => {
+                  const hasPhoto = Boolean(scratcherRowPhotos[index]);
+                  const active = index === scratcherCaptureRow;
+                  return (
+                    <button
+                      key={`scratcher-row-select-${index}`}
+                      type="button"
+                      onClick={() => {
+                        setScratcherCaptureRow(index);
+                        setScratcherTempFile(null);
+                        if (scratcherTempUrlRef.current) {
+                          URL.revokeObjectURL(scratcherTempUrlRef.current);
+                          scratcherTempUrlRef.current = null;
+                        }
+                        setScratcherPreviewUrl(null);
+                      }}
+                      className={clsx(
+                        "rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] transition",
+                        active
+                          ? "border-blue-400/60 bg-blue-500/10 text-blue-100"
+                          : hasPhoto
+                            ? "border-emerald-300/40 bg-emerald-500/10 text-emerald-100 hover:border-emerald-300/70"
+                            : "border-white/15 bg-white/5 text-slate-200 hover:border-white/40",
+                      )}
+                    >
+                      Row {index + 1}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <input
+                ref={scratcherCaptureInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(event) => {
+                  const next = event.target.files?.[0] ?? null;
+                  if (!next) return;
+                  if (scratcherTempUrlRef.current) {
+                    URL.revokeObjectURL(scratcherTempUrlRef.current);
+                    scratcherTempUrlRef.current = null;
+                  }
+                  setScratcherTempFile(next);
+                  const url = URL.createObjectURL(next);
+                  scratcherTempUrlRef.current = url;
+                  setScratcherPreviewUrl(url);
+                }}
+              />
+
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                {scratcherPreviewUrl ? (
+                  // Preview freshly captured photo (before confirming)
+                  <img
+                    src={scratcherPreviewUrl}
+                    alt={`Scratcher row ${scratcherCaptureRow + 1}`}
+                    className="w-full rounded-xl object-contain"
+                  />
+                ) : scratcherRowPreviewUrls[scratcherCaptureRow] ? (
+                  <img
+                    src={scratcherRowPreviewUrls[scratcherCaptureRow] as string}
+                    alt={`Scratcher row ${scratcherCaptureRow + 1}`}
+                    className="w-full rounded-xl object-contain"
+                  />
+                ) : (
+                  <div className="flex min-h-[220px] items-center justify-center text-sm text-slate-300">
+                    No photo yet. Tap “Take photo”.
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScratcherTempFile(null);
+                    if (scratcherTempUrlRef.current) {
+                      URL.revokeObjectURL(scratcherTempUrlRef.current);
+                      scratcherTempUrlRef.current = null;
+                    }
+                    setScratcherPreviewUrl(null);
+                    triggerScratcherCamera();
+                  }}
+                  className="ui-button ui-button-ghost"
+                >
+                  {scratcherRowPhotos[scratcherCaptureRow] || scratcherTempFile
+                    ? "Retake"
+                    : "Take photo"}
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={!scratcherTempFile}
+                    onClick={() => {
+                      if (!scratcherTempFile || !scratcherPreviewUrl) return;
+                      const row = scratcherCaptureRow;
+                      const tempFile = scratcherTempFile;
+                      const tempUrl = scratcherPreviewUrl;
+
+                      setScratcherRowPhotos((prev) => {
+                        const next = [...prev];
+                        next[row] = tempFile;
+                        const nextMissing = next.findIndex(
+                          (file, index) => index > row && !file,
+                        );
+                        const fallback = next.findIndex((file) => !file);
+                        const nextRow =
+                          nextMissing >= 0
+                            ? nextMissing
+                            : fallback >= 0
+                              ? fallback
+                              : row;
+                        setScratcherCaptureRow(nextRow);
+                        if (fallback < 0) setScratcherCaptureOpen(false);
+                        return next;
+                      });
+
+                      setScratcherRowPreviewUrls((prev) => {
+                        const next = [...prev];
+                        if (next[row]) URL.revokeObjectURL(next[row] as string);
+                        next[row] = tempUrl;
+                        return next;
+                      });
+
+                      setScratcherTempFile(null);
+                      setScratcherPreviewUrl(null);
+                      scratcherTempUrlRef.current = null; // ownership moved to scratcherRowPreviewUrls
+                    }}
+                    className="ui-button ui-button-primary disabled:opacity-60"
+                  >
+                    Use photo
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {message && (
           <div
@@ -993,6 +1295,7 @@ export default function EmployeeUploadForm({
             if (item.type === "shift") {
               const submission = item.submission;
               const attachments = [
+                ...(submission.scratcherPhotos ?? []),
                 submission.scratcherVideo,
                 submission.cashPhoto,
                 submission.salesPhoto,

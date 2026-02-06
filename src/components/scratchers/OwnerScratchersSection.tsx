@@ -257,7 +257,7 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
     }
   }, [eventFile, eventNote, eventPackId, eventType, loadData]);
 
-  const openScratcherVideo = useCallback(
+  const openScratcherCountMedia = useCallback(
     async (calc: ScratcherShiftCalculation & { report?: ShiftReport | null }) => {
       if (!activeStoreId) return;
       const reportDate = normalizeDate(calc.report?.date);
@@ -281,23 +281,30 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
         });
         const data = await response.json().catch(() => ({}));
         const files = Array.isArray(data.files) ? data.files : [];
-        const video =
-          files.find((file: StoredFile) =>
-            (file.label ?? "").toLowerCase().includes("scratcher"),
-          ) ?? files.find((file: StoredFile) => file.kind === "video");
-        if (!video) {
+        const scratcherFiles = files.filter((file: StoredFile) =>
+          (file.label ?? "").toLowerCase().includes("scratcher"),
+        );
+        const getRow = (file: StoredFile) => {
+          const match = (file.label ?? "").match(/row\\s*(\\d+)/i);
+          if (!match) return Number.POSITIVE_INFINITY;
+          const parsed = Number(match[1]);
+          return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
+        };
+        scratcherFiles.sort((a: StoredFile, b: StoredFile) => getRow(a) - getRow(b));
+        const media = scratcherFiles[0] ?? files.find((file: StoredFile) => file.kind === "video");
+        if (!media) {
           setVideoErrors((prev) => ({
             ...prev,
-            [calc.id]: "No scratcher video found for this shift.",
+            [calc.id]: "No scratcher count upload found for this shift.",
           }));
           return;
         }
-        setActiveFile(video);
+        setActiveFile(media);
       } catch (error) {
-        console.error("Failed to load scratcher video", error);
+        console.error("Failed to load scratcher count upload", error);
         setVideoErrors((prev) => ({
           ...prev,
-          [calc.id]: "Unable to load scratcher video.",
+          [calc.id]: "Unable to load scratcher count upload.",
         }));
       } finally {
         setVideoLoadingId((prev) => (prev === calc.id ? null : prev));
@@ -541,9 +548,9 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
                     <button
                       type="button"
                       className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 text-white transition hover:border-white/50 disabled:cursor-not-allowed disabled:opacity-60"
-                      onClick={() => openScratcherVideo(calc)}
+                      onClick={() => openScratcherCountMedia(calc)}
                       disabled={videoLoadingId === calc.id}
-                      aria-label="View scratcher video"
+                      aria-label="View scratcher count upload"
                     >
                       <svg
                         viewBox="0 0 24 24"

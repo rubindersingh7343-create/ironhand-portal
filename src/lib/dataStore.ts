@@ -169,6 +169,36 @@ interface StorageSchema {
   storeReportConfigs?: StoreReportConfig[];
   storeChats?: Array<{ id: string; storeId: string; chatType: string; ownerId: string; participantId?: string | null }>;
   storeChatMessages?: Array<{ id: string; threadId: string; storeId: string; chatType: string; ownerId: string; senderRole: string }>;
+  employeeHours?: Array<{
+    id: string;
+    storeId: string;
+    employeeId: string;
+    employeeName: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    breakMinutes: number;
+    hours: number;
+    notes?: string;
+    createdAt: string;
+  }>;
+  employeeHourlyRates?: Array<{
+    id: string;
+    storeId: string;
+    employeeId: string;
+    hourlyRate: number;
+    updatedAt: string;
+  }>;
+  employeeHoursPayments?: Array<{
+    id: string;
+    storeId: string;
+    employeeId: string;
+    month: string;
+    totalHours: number;
+    hourlyRate: number;
+    totalPay: number;
+    paidAt: string;
+  }>;
 }
 
 async function ensureUploadsDir(subFolder: string) {
@@ -261,6 +291,15 @@ async function readStorage(): Promise<StorageSchema> {
       storeChatMessages: Array.isArray((parsed as any)?.storeChatMessages)
         ? ((parsed as any).storeChatMessages as StorageSchema["storeChatMessages"])
         : [],
+      employeeHours: Array.isArray((parsed as any)?.employeeHours)
+        ? ((parsed as any).employeeHours as StorageSchema["employeeHours"])
+        : [],
+      employeeHourlyRates: Array.isArray((parsed as any)?.employeeHourlyRates)
+        ? ((parsed as any).employeeHourlyRates as StorageSchema["employeeHourlyRates"])
+        : [],
+      employeeHoursPayments: Array.isArray((parsed as any)?.employeeHoursPayments)
+        ? ((parsed as any).employeeHoursPayments as StorageSchema["employeeHoursPayments"])
+        : [],
     };
 
     // If running on Vercel and storage is empty, hydrate from bundled defaults.
@@ -338,6 +377,15 @@ async function readStorage(): Promise<StorageSchema> {
       base.storeChatMessages = Array.isArray((parsedBundled as any)?.storeChatMessages)
         ? ((parsedBundled as any).storeChatMessages as StorageSchema["storeChatMessages"])
         : [];
+      base.employeeHours = Array.isArray((parsedBundled as any)?.employeeHours)
+        ? ((parsedBundled as any).employeeHours as StorageSchema["employeeHours"])
+        : [];
+      base.employeeHourlyRates = Array.isArray((parsedBundled as any)?.employeeHourlyRates)
+        ? ((parsedBundled as any).employeeHourlyRates as StorageSchema["employeeHourlyRates"])
+        : [];
+      base.employeeHoursPayments = Array.isArray((parsedBundled as any)?.employeeHoursPayments)
+        ? ((parsedBundled as any).employeeHoursPayments as StorageSchema["employeeHoursPayments"])
+        : [];
       } catch {
         // ignore
       }
@@ -359,6 +407,9 @@ async function readStorage(): Promise<StorageSchema> {
       orderMessages: [],
       invoices: [],
       ownerSeenItems: [],
+      employeeHours: [],
+      employeeHourlyRates: [],
+      employeeHoursPayments: [],
     };
     await writeStorage(fallback);
     return fallback;
@@ -477,11 +528,12 @@ export async function addShiftSubmission(
 ): Promise<ShiftSubmission> {
   if (USE_SUPABASE && supabase) {
     const recordId = randomUUID();
-    const attachments = [
-      payload.scratcherVideo,
+    const attachments: StoredFile[] = [
+      ...(Array.isArray(payload.scratcherPhotos) ? payload.scratcherPhotos : []),
+      ...(payload.scratcherVideo ? [payload.scratcherVideo] : []),
       payload.cashPhoto,
       payload.salesPhoto,
-    ];
+    ].filter(Boolean) as StoredFile[];
     await supabase.from("records").insert({
       id: recordId,
       store_number: payload.storeNumber,
@@ -927,7 +979,8 @@ export async function getCombinedRecords(
       createdAt: submission.createdAt,
       shiftNotes: submission.shiftNotes,
       attachments: [
-        { ...submission.scratcherVideo },
+        ...(submission.scratcherPhotos ?? []).map((file) => ({ ...file })),
+        ...(submission.scratcherVideo ? [{ ...submission.scratcherVideo }] : []),
         { ...submission.cashPhoto },
         { ...submission.salesPhoto },
       ],
@@ -1300,7 +1353,25 @@ export async function getRecentShiftSubmissions(options: {
 
     return data.map((record: any) => {
       const files = fileMap.get(record.id) ?? [];
-      const scratcherVideo = mapFile(files, "Scratcher", "video");
+      const scratcherFiles = files.filter((f) =>
+        (f.label ?? "").toLowerCase().includes("scratcher"),
+      );
+      const scratcherRowPhotos = scratcherFiles.filter((f) => f.kind === "image");
+      const getRowNumber = (file: StoredFile) => {
+        const match = (file.label ?? "").match(/row\\s*(\\d+)/i);
+        if (!match) return Number.POSITIVE_INFINITY;
+        const parsed = Number(match[1]);
+        return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
+      };
+      const scratcherPhotos =
+        scratcherRowPhotos.length > 1
+          ? [...scratcherRowPhotos].sort((a, b) => getRowNumber(a) - getRowNumber(b))
+          : undefined;
+      const scratcherVideo = scratcherPhotos
+        ? undefined
+        : scratcherFiles.length
+          ? mapFile(scratcherFiles, "Scratcher", "video")
+          : undefined;
       const cashPhoto = mapFile(files, "Cash", "image");
       const salesPhoto = mapFile(files, "Sales", "image");
       return {
@@ -1309,6 +1380,7 @@ export async function getRecentShiftSubmissions(options: {
         storeNumber: record.store_number,
         createdAt: record.created_at,
         shiftNotes: record.shift_notes ?? undefined,
+        scratcherPhotos,
         scratcherVideo,
         cashPhoto,
         salesPhoto,
@@ -1434,9 +1506,12 @@ export async function listShiftSubmissionUploadsByDate(options: {
       id: submission.id,
       employeeName: submission.employeeName,
       createdAt: submission.createdAt,
-      files: [submission.scratcherVideo, submission.cashPhoto, submission.salesPhoto].filter(
-        Boolean,
-      ) as StoredFile[],
+      files: [
+        ...(submission.scratcherPhotos ?? []),
+        ...(submission.scratcherVideo ? [submission.scratcherVideo] : []),
+        submission.cashPhoto,
+        submission.salesPhoto,
+      ].filter(Boolean) as StoredFile[],
     }));
 }
 
@@ -3372,7 +3447,8 @@ export async function deleteRecordById(id: string) {
     const [removed] = storage.shiftSubmissions.splice(shiftIndex, 1);
     await writeStorage(storage);
     await Promise.all([
-      deleteStoredFile(removed.scratcherVideo.path),
+      ...(removed.scratcherPhotos ?? []).map((file) => deleteStoredFile(file.path)),
+      ...(removed.scratcherVideo ? [deleteStoredFile(removed.scratcherVideo.path)] : []),
       deleteStoredFile(removed.cashPhoto.path),
       deleteStoredFile(removed.salesPhoto.path),
     ]);
@@ -3425,7 +3501,8 @@ export async function deleteRecordsForStore(storeNumber: string) {
     if (submission.storeNumber === storeNumber) {
       changed = true;
       await Promise.all([
-        deleteStoredFile(submission.scratcherVideo.path),
+        ...(submission.scratcherPhotos ?? []).map((file) => deleteStoredFile(file.path)),
+        ...(submission.scratcherVideo ? [deleteStoredFile(submission.scratcherVideo.path)] : []),
         deleteStoredFile(submission.cashPhoto.path),
         deleteStoredFile(submission.salesPhoto.path),
       ]);
@@ -5606,4 +5683,370 @@ export async function recalculateScratcherShift(payload: {
   }
 
   return saved;
+}
+
+export async function createEmployeeHoursEntry(payload: {
+  storeId: string;
+  employeeId: string;
+  employeeName: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  breakMinutes: number;
+  hours: number;
+  notes?: string;
+}) {
+  if (USE_SUPABASE && supabase) {
+    const { error } = await supabase.from("records").insert({
+      store_number: payload.storeId,
+      employee_name: payload.employeeName,
+      category: "hours",
+      notes: payload.notes ?? "",
+      text_content: JSON.stringify({
+        employeeId: payload.employeeId,
+        date: payload.date,
+        startTime: payload.startTime,
+        endTime: payload.endTime,
+        breakMinutes: payload.breakMinutes,
+        hours: payload.hours,
+      }),
+    });
+    if (error) {
+      console.error("Supabase hours insert error:", error);
+      throw error;
+    }
+    return;
+  }
+
+  const storage = await readStorage();
+  const next = {
+    id: randomUUID(),
+    storeId: payload.storeId,
+    employeeId: payload.employeeId,
+    employeeName: payload.employeeName,
+    date: payload.date,
+    startTime: payload.startTime,
+    endTime: payload.endTime,
+    breakMinutes: payload.breakMinutes,
+    hours: payload.hours,
+    notes: payload.notes,
+    createdAt: new Date().toISOString(),
+  };
+  await writeStorage({
+    ...storage,
+    employeeHours: [...(storage.employeeHours ?? []), next],
+  });
+}
+
+export async function listEmployeeHoursEntries(params: {
+  storeId: string;
+  month: string;
+  employeeId?: string;
+}): Promise<
+  Array<{
+    id: string;
+    storeId: string;
+    employeeId: string;
+    employeeName: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    breakMinutes: number;
+    hours: number;
+    notes?: string;
+    createdAt: string;
+  }>
+> {
+  const { storeId, month, employeeId } = params;
+  if (USE_SUPABASE && supabase) {
+    const { data, error } = await supabase
+      .from("records")
+      .select("id, store_number, employee_name, notes, text_content, created_at")
+      .eq("category", "hours")
+      .eq("store_number", storeId)
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.error("Supabase hours fetch error:", error);
+      return [];
+    }
+    const entries = (data ?? [])
+      .map((row: any) => {
+        let parsed: any = {};
+        try {
+          parsed = row.text_content ? JSON.parse(row.text_content) : {};
+        } catch {
+          parsed = {};
+        }
+        return {
+          id: row.id,
+          storeId: row.store_number,
+          employeeId: parsed.employeeId ?? "",
+          employeeName: row.employee_name ?? "",
+          date: parsed.date ?? "",
+          startTime: parsed.startTime ?? "",
+          endTime: parsed.endTime ?? "",
+          breakMinutes: Number(parsed.breakMinutes ?? 0),
+          hours: Number(parsed.hours ?? 0),
+          notes: row.notes ?? undefined,
+          createdAt: row.created_at ?? new Date().toISOString(),
+        };
+      })
+      .filter((entry: any) => entry.date?.startsWith(month));
+    return employeeId
+      ? entries.filter((entry) => entry.employeeId === employeeId)
+      : entries;
+  }
+
+  const storage = await readStorage();
+  const entries = (storage.employeeHours ?? [])
+    .filter((entry) => entry.storeId === storeId)
+    .filter((entry) => entry.date.startsWith(month));
+  return employeeId
+    ? entries.filter((entry) => entry.employeeId === employeeId)
+    : entries;
+}
+
+export async function upsertEmployeeHourlyRate(payload: {
+  storeId: string;
+  employeeId: string;
+  hourlyRate: number;
+}) {
+  if (USE_SUPABASE && supabase) {
+    const { data, error } = await supabase
+      .from("records")
+      .select("id, text_content")
+      .eq("category", "hours-rate")
+      .eq("store_number", payload.storeId);
+    if (error) {
+      console.error("Supabase hours rate fetch error:", error);
+      throw error;
+    }
+    const existing = (data ?? []).find((row: any) => {
+      try {
+        const parsed = row.text_content ? JSON.parse(row.text_content) : {};
+        return parsed.employeeId === payload.employeeId;
+      } catch {
+        return false;
+      }
+    });
+    if (existing) {
+      const { error: updateError } = await supabase
+        .from("records")
+        .update({
+          text_content: JSON.stringify({
+            employeeId: payload.employeeId,
+            hourlyRate: payload.hourlyRate,
+          }),
+        })
+        .eq("id", existing.id);
+      if (updateError) {
+        console.error("Supabase hours rate update error:", updateError);
+        throw updateError;
+      }
+      return existing.id;
+    }
+    const { data: inserted, error: insertError } = await supabase
+      .from("records")
+      .insert({
+        store_number: payload.storeId,
+        employee_name: "",
+        category: "hours-rate",
+        notes: "",
+        text_content: JSON.stringify({
+          employeeId: payload.employeeId,
+          hourlyRate: payload.hourlyRate,
+        }),
+      })
+      .select("id")
+      .single();
+    if (insertError) {
+      console.error("Supabase hours rate insert error:", insertError);
+      throw insertError;
+    }
+    return inserted?.id;
+  }
+
+  const storage = await readStorage();
+  const next = [...(storage.employeeHourlyRates ?? [])];
+  const existingIndex = next.findIndex(
+    (entry) =>
+      entry.storeId === payload.storeId &&
+      entry.employeeId === payload.employeeId,
+  );
+  const updated = {
+    id: existingIndex === -1 ? randomUUID() : next[existingIndex].id,
+    storeId: payload.storeId,
+    employeeId: payload.employeeId,
+    hourlyRate: payload.hourlyRate,
+    updatedAt: new Date().toISOString(),
+  };
+  if (existingIndex === -1) next.push(updated);
+  else next[existingIndex] = updated;
+  await writeStorage({ ...storage, employeeHourlyRates: next });
+  return updated.id;
+}
+
+export async function listEmployeeHourlyRates(storeId: string) {
+  if (USE_SUPABASE && supabase) {
+    const { data, error } = await supabase
+      .from("records")
+      .select("id, text_content, created_at")
+      .eq("category", "hours-rate")
+      .eq("store_number", storeId);
+    if (error) {
+      console.error("Supabase hours rate fetch error:", error);
+      return [];
+    }
+    return (data ?? [])
+      .map((row: any) => {
+        let parsed: any = {};
+        try {
+          parsed = row.text_content ? JSON.parse(row.text_content) : {};
+        } catch {
+          parsed = {};
+        }
+        return {
+          id: row.id,
+          storeId,
+          employeeId: parsed.employeeId ?? "",
+          hourlyRate: Number(parsed.hourlyRate ?? 0),
+          updatedAt: row.created_at ?? new Date().toISOString(),
+        };
+      })
+      .filter((entry) => entry.employeeId);
+  }
+
+  const storage = await readStorage();
+  return (storage.employeeHourlyRates ?? []).filter(
+    (entry) => entry.storeId === storeId,
+  );
+}
+
+export async function upsertEmployeeHoursPayment(payload: {
+  storeId: string;
+  employeeId: string;
+  month: string;
+  totalHours: number;
+  hourlyRate: number;
+  totalPay: number;
+}) {
+  if (USE_SUPABASE && supabase) {
+    const { data, error } = await supabase
+      .from("records")
+      .select("id, text_content")
+      .eq("category", "hours-payment")
+      .eq("store_number", payload.storeId);
+    if (error) {
+      console.error("Supabase hours payment fetch error:", error);
+      throw error;
+    }
+    const existing = (data ?? []).find((row: any) => {
+      try {
+        const parsed = row.text_content ? JSON.parse(row.text_content) : {};
+        return (
+          parsed.employeeId === payload.employeeId &&
+          parsed.month === payload.month
+        );
+      } catch {
+        return false;
+      }
+    });
+    const record = {
+      employeeId: payload.employeeId,
+      month: payload.month,
+      totalHours: payload.totalHours,
+      hourlyRate: payload.hourlyRate,
+      totalPay: payload.totalPay,
+      paidAt: new Date().toISOString(),
+    };
+    if (existing) {
+      const { error: updateError } = await supabase
+        .from("records")
+        .update({ text_content: JSON.stringify(record) })
+        .eq("id", existing.id);
+      if (updateError) {
+        console.error("Supabase hours payment update error:", updateError);
+        throw updateError;
+      }
+      return existing.id;
+    }
+    const { data: inserted, error: insertError } = await supabase
+      .from("records")
+      .insert({
+        store_number: payload.storeId,
+        employee_name: "",
+        category: "hours-payment",
+        notes: "",
+        text_content: JSON.stringify(record),
+      })
+      .select("id")
+      .single();
+    if (insertError) {
+      console.error("Supabase hours payment insert error:", insertError);
+      throw insertError;
+    }
+    return inserted?.id;
+  }
+
+  const storage = await readStorage();
+  const next = [...(storage.employeeHoursPayments ?? [])];
+  const existingIndex = next.findIndex(
+    (entry) =>
+      entry.storeId === payload.storeId &&
+      entry.employeeId === payload.employeeId &&
+      entry.month === payload.month,
+  );
+  const updated = {
+    id: existingIndex === -1 ? randomUUID() : next[existingIndex].id,
+    storeId: payload.storeId,
+    employeeId: payload.employeeId,
+    month: payload.month,
+    totalHours: payload.totalHours,
+    hourlyRate: payload.hourlyRate,
+    totalPay: payload.totalPay,
+    paidAt: new Date().toISOString(),
+  };
+  if (existingIndex === -1) next.push(updated);
+  else next[existingIndex] = updated;
+  await writeStorage({ ...storage, employeeHoursPayments: next });
+  return updated.id;
+}
+
+export async function listEmployeeHoursPayments(storeId: string, month: string) {
+  if (USE_SUPABASE && supabase) {
+    const { data, error } = await supabase
+      .from("records")
+      .select("id, text_content")
+      .eq("category", "hours-payment")
+      .eq("store_number", storeId);
+    if (error) {
+      console.error("Supabase hours payment fetch error:", error);
+      return [];
+    }
+    return (data ?? [])
+      .map((row: any) => {
+        let parsed: any = {};
+        try {
+          parsed = row.text_content ? JSON.parse(row.text_content) : {};
+        } catch {
+          parsed = {};
+        }
+        return {
+          id: row.id,
+          storeId,
+          employeeId: parsed.employeeId ?? "",
+          month: parsed.month ?? "",
+          totalHours: Number(parsed.totalHours ?? 0),
+          hourlyRate: Number(parsed.hourlyRate ?? 0),
+          totalPay: Number(parsed.totalPay ?? 0),
+          paidAt: parsed.paidAt ?? "",
+        };
+      })
+      .filter((entry) => entry.month === month && entry.employeeId);
+  }
+
+  const storage = await readStorage();
+  return (storage.employeeHoursPayments ?? [])
+    .filter((entry) => entry.storeId === storeId)
+    .filter((entry) => entry.month === month);
 }

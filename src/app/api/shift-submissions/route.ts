@@ -36,6 +36,9 @@ export async function POST(request: Request) {
       const body = await request.json().catch(() => null);
       const files = body?.files ?? {};
       const scratcherVideo = files.scratcherVideo as any;
+      const scratcherPhotos = Array.isArray(files.scratcherPhotos)
+        ? (files.scratcherPhotos as any[])
+        : null;
       const cashPhoto = files.cashPhoto as any;
       const salesPhoto = files.salesPhoto as any;
       const shiftNotes = body?.shiftNotes?.toString() ?? "";
@@ -45,9 +48,19 @@ export async function POST(request: Request) {
         ? body.customFields
         : [];
 
-      if (!scratcherVideo || !cashPhoto || !salesPhoto) {
+      const hasScratcherMedia =
+        (Array.isArray(scratcherPhotos) && scratcherPhotos.length > 0) ||
+        Boolean(scratcherVideo);
+      if (!hasScratcherMedia || !cashPhoto || !salesPhoto) {
         return NextResponse.json(
           { error: "All end-of-shift files are required." },
+          { status: 400 },
+        );
+      }
+
+      if (Array.isArray(scratcherPhotos) && scratcherPhotos.length !== 8) {
+        return NextResponse.json(
+          { error: "Please upload 8 scratcher row photos (one per row)." },
           { status: 400 },
         );
       }
@@ -117,7 +130,8 @@ export async function POST(request: Request) {
         storeNumber: storeId,
         shiftNotes,
         reportDetails,
-        scratcherVideo,
+        scratcherPhotos: Array.isArray(scratcherPhotos) ? scratcherPhotos : undefined,
+        scratcherVideo: scratcherPhotos ? undefined : scratcherVideo,
         cashPhoto,
         salesPhoto,
       });

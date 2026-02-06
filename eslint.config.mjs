@@ -12,6 +12,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Repo-local generated / non-app content:
+    "mobile/**",
+    "assets/**",
+    "docs/**",
+    "screenshots/**",
+    "public/uploads/**",
   ]),
 ]);
 
