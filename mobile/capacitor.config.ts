@@ -5,9 +5,14 @@ const config: CapacitorConfig = {
   appName: "Iron Hand",
   webDir: "../.next",
   server: {
-    url: "https://ironhand.net",
+    url: "https://ironhand.net/auth/login",
     cleartext: false,
-    allowNavigation: ["ironhand.net", "*.ironhand.net"],
+    allowNavigation: [
+      "https://ironhand.net",
+      "https://*.ironhand.net",
+      "ironhand.net",
+      "*.ironhand.net",
+    ],
   },
   bundledWebRuntime: false,
 };
