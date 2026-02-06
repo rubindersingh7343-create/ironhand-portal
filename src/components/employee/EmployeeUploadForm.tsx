@@ -592,6 +592,8 @@ export default function EmployeeUploadForm({
                 type="file"
                 accept={file.accept}
                 name={file.id}
+                // iOS sometimes defaults to the front camera for video capture; force back camera.
+                capture={file.id === "scratcherVideo" ? "environment" : undefined}
                 className="mt-4 w-full min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-slate-300 file:mr-3 file:rounded-full file:border file:border-white/20 file:bg-white/5 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-100"
                 onChange={(e) => {
                   if (file.id === "scratcherVideo") {
