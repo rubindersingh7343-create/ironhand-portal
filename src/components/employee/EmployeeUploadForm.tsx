@@ -868,23 +868,9 @@ export default function EmployeeUploadForm({
                       const tempFile = scratcherTempFile;
                       const tempUrl = scratcherPreviewUrl;
 
-                      setScratcherRowPhotos((prev) => {
-                        const next = [...prev];
-                        next[row] = tempFile;
-                        const nextMissing = next.findIndex(
-                          (file, index) => index > row && !file,
-                        );
-                        const fallback = next.findIndex((file) => !file);
-                        const nextRow =
-                          nextMissing >= 0
-                            ? nextMissing
-                            : fallback >= 0
-                              ? fallback
-                              : row;
-                        setScratcherCaptureRow(nextRow);
-                        if (fallback < 0) setScratcherCaptureOpen(false);
-                        return next;
-                      });
+                      const nextPhotos = [...scratcherRowPhotos];
+                      nextPhotos[row] = tempFile;
+                      setScratcherRowPhotos(nextPhotos);
 
                       setScratcherRowPreviewUrls((prev) => {
                         const next = [...prev];
@@ -896,10 +882,24 @@ export default function EmployeeUploadForm({
                       setScratcherTempFile(null);
                       setScratcherPreviewUrl(null);
                       scratcherTempUrlRef.current = null; // ownership moved to scratcherRowPreviewUrls
+
+                      const nextMissing = nextPhotos.findIndex(
+                        (file, index) => index > row && !file,
+                      );
+                      const fallback = nextPhotos.findIndex((file) => !file);
+                      const done = fallback < 0;
+                      if (done) {
+                        setScratcherCaptureOpen(false);
+                        return;
+                      }
+                      const nextRow = nextMissing >= 0 ? nextMissing : fallback;
+                      setScratcherCaptureRow(nextRow);
+                      // Convenience: once confirmed, immediately open camera for the next row.
+                      triggerScratcherCamera();
                     }}
                     className="ui-button ui-button-primary disabled:opacity-60"
                   >
-                    Use photo
+                    Looks good
                   </button>
                 </div>
               </div>
