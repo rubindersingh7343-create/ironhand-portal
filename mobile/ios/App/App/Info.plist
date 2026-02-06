@@ -39,6 +39,8 @@
 	<string>Allow Iron Hand to select receipt photos from your library.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Allow Iron Hand to save receipt photos to your library.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Allow Iron Hand to record audio when capturing scratcher videos.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
