@@ -45,6 +45,8 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
   const [eventType, setEventType] = useState<"note" | "return_receipt">("note");
   const [logbookOpen, setLogbookOpen] = useState(false);
   const [investigateShiftId, setInvestigateShiftId] = useState<string | null>(null);
+  const [videoLoadingId, setVideoLoadingId] = useState<string | null>(null);
+  const [videoErrors, setVideoErrors] = useState<Record<string, string>>({});
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [dateTouched, setDateTouched] = useState(false);
@@ -254,6 +256,55 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
       await loadData();
     }
   }, [eventFile, eventNote, eventPackId, eventType, loadData]);
+
+  const openScratcherVideo = useCallback(
+    async (calc: ScratcherShiftCalculation & { report?: ShiftReport | null }) => {
+      if (!activeStoreId) return;
+      const reportDate = normalizeDate(calc.report?.date);
+      if (!reportDate) {
+        setVideoErrors((prev) => ({
+          ...prev,
+          [calc.id]: "Missing shift date for this report.",
+        }));
+        return;
+      }
+      setVideoLoadingId(calc.id);
+      setVideoErrors((prev) => ({ ...prev, [calc.id]: "" }));
+      try {
+        const params = new URLSearchParams({
+          store_id: activeStoreId,
+          date: reportDate,
+          employee_name: calc.report?.employeeName ?? "",
+        });
+        const response = await fetch(`/api/owner/shift-uploads?${params.toString()}`, {
+          cache: "no-store",
+        });
+        const data = await response.json().catch(() => ({}));
+        const files = Array.isArray(data.files) ? data.files : [];
+        const video =
+          files.find((file: StoredFile) =>
+            (file.label ?? "").toLowerCase().includes("scratcher"),
+          ) ?? files.find((file: StoredFile) => file.kind === "video");
+        if (!video) {
+          setVideoErrors((prev) => ({
+            ...prev,
+            [calc.id]: "No scratcher video found for this shift.",
+          }));
+          return;
+        }
+        setActiveFile(video);
+      } catch (error) {
+        console.error("Failed to load scratcher video", error);
+        setVideoErrors((prev) => ({
+          ...prev,
+          [calc.id]: "Unable to load scratcher video.",
+        }));
+      } finally {
+        setVideoLoadingId((prev) => (prev === calc.id ? null : prev));
+      }
+    },
+    [activeStoreId, normalizeDate],
+  );
 
   const openEventModal = (options: {
     packId: string;
@@ -489,6 +540,26 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
                     </p>
                     <button
                       type="button"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 text-white transition hover:border-white/50 disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={() => openScratcherVideo(calc)}
+                      disabled={videoLoadingId === calc.id}
+                      aria-label="View scratcher video"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        className="h-4 w-4"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M10 8.5 16 12l-6 3.5z" fill="currentColor" />
+                        <rect x="4" y="5" width="16" height="14" rx="2" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
                       className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 text-white transition hover:border-white/50"
                       onClick={() => setInvestigateShiftId(calc.shiftReportId)}
                       aria-label="Investigate scratcher shift"
@@ -507,6 +578,11 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
                       </svg>
                     </button>
                   </div>
+                  {videoErrors[calc.id] ? (
+                    <p className="mt-2 text-xs text-amber-200">
+                      {videoErrors[calc.id]}
+                    </p>
+                  ) : null}
                 </div>
               )})}
             </div>
