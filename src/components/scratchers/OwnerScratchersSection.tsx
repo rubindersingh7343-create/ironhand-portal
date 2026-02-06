@@ -9,8 +9,10 @@ import type {
 } from "@/lib/types";
 import { useOwnerPortalStore } from "@/components/client/OwnerPortalStoreContext";
 import ScratchersAdminPanel from "@/components/scratchers/ScratchersAdminPanel";
+import ScratchersInvestigationModal from "@/components/scratchers/ScratchersInvestigationModal";
 import ScratchersLogbookModal from "@/components/scratchers/ScratchersLogbookModal";
 import FileViewer from "@/components/records/FileViewer";
+import type { ShiftReport } from "@/lib/types";
 
 const formatMoney = (value: number) =>
   new Intl.NumberFormat("en-US", {
@@ -24,9 +26,15 @@ const formatMoney = (value: number) =>
 export default function OwnerScratchersSection({ user }: { user: SessionUser }) {
   const ownerStore = useOwnerPortalStore();
   const activeStoreId = ownerStore?.selectedStoreId ?? user.storeNumber;
-  const [discrepancies, setDiscrepancies] = useState<ScratcherShiftCalculation[]>([]);
+  const manualDateRange = ownerStore?.manualDateRange ?? null;
+  const setManualDateRange = ownerStore?.setManualDateRange;
+  const [discrepancies, setDiscrepancies] = useState<
+    Array<ScratcherShiftCalculation & { report?: ShiftReport | null }>
+  >([]);
   const [events, setEvents] = useState<ScratcherPackEvent[]>([]);
-  const [calculations, setCalculations] = useState<ScratcherShiftCalculation[]>([]);
+  const [calculations, setCalculations] = useState<
+    Array<ScratcherShiftCalculation & { report?: ShiftReport | null }>
+  >([]);
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [setupOpen, setSetupOpen] = useState(false);
   const [activeFile, setActiveFile] = useState<StoredFile | null>(null);
@@ -36,6 +44,10 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
   const [eventFile, setEventFile] = useState<File | null>(null);
   const [eventType, setEventType] = useState<"note" | "return_receipt">("note");
   const [logbookOpen, setLogbookOpen] = useState(false);
+  const [investigateShiftId, setInvestigateShiftId] = useState<string | null>(null);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [dateTouched, setDateTouched] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!activeStoreId) return;
@@ -75,6 +87,74 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
     loadData();
   }, [loadData]);
 
+  const normalizeDate = (value?: string | null) => {
+    if (!value) return "";
+    if (value.includes("T")) {
+      return new Date(value).toLocaleDateString("en-CA");
+    }
+    return value;
+  };
+
+  const latestReportDate = useMemo(() => {
+    if (!calculations.length) return "";
+    let latestValue = "";
+    let latestTime = 0;
+    calculations.forEach((calc) => {
+      const rawDate = calc.report?.date ?? calc.updatedAt ?? calc.createdAt;
+      if (!rawDate) return;
+      const time = new Date(rawDate).getTime();
+      if (!Number.isNaN(time) && time >= latestTime) {
+        latestTime = time;
+        latestValue = rawDate;
+      }
+    });
+    return normalizeDate(latestValue);
+  }, [calculations]);
+
+  useEffect(() => {
+    if (!dateTouched && latestReportDate) {
+      if (startDate !== latestReportDate) setStartDate(latestReportDate);
+      if (endDate !== latestReportDate) setEndDate(latestReportDate);
+    }
+  }, [dateTouched, latestReportDate, startDate, endDate]);
+
+  useEffect(() => {
+    if (!manualDateRange?.startDate) return;
+    const nextStart = manualDateRange.startDate;
+    const nextEnd = manualDateRange.endDate ?? manualDateRange.startDate;
+    if (nextStart !== startDate) setStartDate(nextStart);
+    if (nextEnd !== endDate) setEndDate(nextEnd);
+    if (!dateTouched) setDateTouched(true);
+  }, [manualDateRange, startDate, endDate, dateTouched]);
+
+  const shiftDate = (value: string, delta: number) => {
+    if (!value) return value;
+    const date = new Date(`${value}T00:00:00`);
+    date.setDate(date.getDate() + delta);
+    return date.toISOString().slice(0, 10);
+  };
+
+  const shiftRange = (delta: number) => {
+    if (!startDate) return;
+    const nextStart = shiftDate(startDate, delta);
+    const nextEnd = shiftDate(endDate || startDate, delta);
+    setStartDate(nextStart);
+    setEndDate(nextEnd);
+    setDateTouched(true);
+    setManualDateRange?.({ startDate: nextStart, endDate: nextEnd });
+  };
+
+  const inRange = useCallback(
+    (value?: string | null) => {
+      const date = normalizeDate(value);
+      if (!date) return false;
+      if (startDate && date < startDate) return false;
+      if (endDate && date > endDate) return false;
+      return true;
+    },
+    [startDate, endDate],
+  );
+
   const sortedEvents = useMemo(
     () =>
       [...events].sort(
@@ -83,13 +163,65 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
     [events],
   );
 
+  const filteredDiscrepancies = useMemo(
+    () =>
+      discrepancies.filter((calc) =>
+        inRange(calc.report?.date ?? calc.updatedAt ?? calc.createdAt),
+      ),
+    [discrepancies, inRange],
+  );
+
+  const filteredCalculations = useMemo(
+    () =>
+      calculations.filter((calc) =>
+        inRange(calc.report?.date ?? calc.updatedAt ?? calc.createdAt),
+      ),
+    [calculations, inRange],
+  );
+
   const sortedCalculations = useMemo(
     () =>
-      [...calculations].sort(
+      [...filteredCalculations].sort(
         (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
       ),
-    [calculations],
+    [filteredCalculations],
   );
+
+  const recentUploads = useMemo(() => {
+    const entries = filteredCalculations
+      .map((calc) => {
+        const reportDate = normalizeDate(calc.report?.date ?? calc.updatedAt ?? calc.createdAt);
+        return {
+          calc,
+          reportDate,
+        };
+      })
+      .filter((entry) => entry.reportDate);
+
+    entries.sort(
+      (a, b) => new Date(b.reportDate).getTime() - new Date(a.reportDate).getTime(),
+    );
+
+    const seen = new Set<string>();
+    const rows: Array<{
+      key: string;
+      employeeName: string;
+      reportDate: string;
+      expectedValue: number;
+    }> = [];
+    entries.forEach(({ calc, reportDate }) => {
+      const employeeName = calc.report?.employeeName ?? "Employee";
+      if (seen.has(employeeName)) return;
+      seen.add(employeeName);
+      rows.push({
+        key: calc.id,
+        employeeName,
+        reportDate,
+        expectedValue: calc.expectedTotalValue,
+      });
+    });
+    return rows;
+  }, [filteredCalculations]);
 
   const openReceipt = useCallback(async (fileId?: string | null) => {
     if (!fileId) return;
@@ -139,18 +271,75 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-slate-300">
-            Scratchers (Anti-Theft)
-          </p>
-          <h2 className="mt-2 text-xl font-semibold text-white">
-            Variance & activations
-          </h2>
-          <p className="text-sm text-slate-300">
-            Review flagged shifts and recent pack activity for this store.
+            Scratchers Reports
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button type="button" className="ui-button" onClick={loadData}>
-            Refresh
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="reports-date-range">
+            <button
+              type="button"
+              onClick={() => shiftRange(-1)}
+              className="ui-date-step"
+              aria-label="Previous day"
+            >
+              ‹
+            </button>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(event) => {
+                const next = event.target.value;
+                const nextEnd = endDate && endDate >= next ? endDate : next;
+                setStartDate(next);
+                setEndDate(nextEnd);
+                setDateTouched(true);
+                setManualDateRange?.({ startDate: next, endDate: nextEnd });
+              }}
+              className="ui-field ui-field--slim"
+            />
+            <span className="text-[11px] uppercase tracking-[0.18em] text-slate-400">
+              To
+            </span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(event) => {
+                const next = event.target.value;
+                const nextStart = startDate && startDate <= next ? startDate : next;
+                setEndDate(next);
+                setStartDate(nextStart);
+                setDateTouched(true);
+                setManualDateRange?.({ startDate: nextStart, endDate: next });
+              }}
+              className="ui-field ui-field--slim"
+            />
+            <button
+              type="button"
+              onClick={() => shiftRange(1)}
+              className="ui-date-step"
+              aria-label="Next day"
+            >
+              ›
+            </button>
+          </div>
+          <button
+            type="button"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/20 text-white transition hover:border-white/60"
+            onClick={loadData}
+            aria-label="Refresh scratcher data"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+              <path d="M20 4v6h-6" />
+            </svg>
           </button>
           <button
             type="button"
@@ -173,10 +362,22 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
           </button>
           <button
             type="button"
-            className="ui-button ui-button-ghost"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/20 text-white transition hover:border-white/60"
             onClick={() => setSetupOpen(true)}
+            aria-label="Manage scratchers"
           >
-            Manage scratchers
+            <svg
+              viewBox="0 0 24 24"
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z" />
+              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.05.05a2 2 0 1 1-2.83 2.83l-.05-.05A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .33 1.7 1.7 0 0 0-.67.87l-.02.06a2 2 0 1 1-3.63 0l-.02-.06a1.7 1.7 0 0 0-.67-.87 1.7 1.7 0 0 0-1-.33 1.7 1.7 0 0 0-1.87.34l-.05.05a2 2 0 1 1-2.83-2.83l.05-.05A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.33-1 1.7 1.7 0 0 0-.87-.67l-.06-.02a2 2 0 1 1 0-3.63l.06-.02a1.7 1.7 0 0 0 .87-.67 1.7 1.7 0 0 0 .33-1 1.7 1.7 0 0 0-.34-1.87l-.05-.05a2 2 0 1 1 2.83-2.83l.05.05A1.7 1.7 0 0 0 9 4.6c.33 0 .66-.11.95-.29a1.7 1.7 0 0 0 .67-.87l.02-.06a2 2 0 1 1 3.63 0l.02.06c.12.35.36.67.67.87.29.18.62.29.95.29a1.7 1.7 0 0 0 1.87-.34l.05-.05a2 2 0 1 1 2.83 2.83l-.05.05a1.7 1.7 0 0 0-.34 1.87c.18.29.29.62.29.95 0 .33-.11.66-.29.95a1.7 1.7 0 0 0-.34 1.87Z" />
+            </svg>
           </button>
         </div>
       </div>
@@ -190,45 +391,124 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
       <div className="mt-4 space-y-4">
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
           <p className="text-xs uppercase tracking-[0.24em] text-slate-300">
+            Recent uploads
+          </p>
+          {status === "loading" ? (
+            <p className="mt-3 text-sm text-slate-400">Loading uploads…</p>
+          ) : recentUploads.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-400">
+              No scratcher uploads found for this date.
+            </p>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {recentUploads.slice(0, 6).map((upload) => (
+                <div
+                  key={upload.key}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#0f1a33] px-4 py-3 text-sm text-slate-200"
+                >
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                      {upload.employeeName}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-200">
+                      Uploaded {upload.reportDate}
+                    </p>
+                  </div>
+                  <p className="ui-tabular text-sm text-white">
+                    {formatMoney(upload.expectedValue)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <p className="text-xs uppercase tracking-[0.24em] text-slate-300">
             Discrepancies
           </p>
           {status === "loading" ? (
             <p className="mt-3 text-sm text-slate-400">Loading discrepancies…</p>
-          ) : discrepancies.length === 0 ? (
+          ) : filteredDiscrepancies.length === 0 ? (
             <p className="mt-3 text-sm text-slate-400">
               No scratcher discrepancies for this store.
             </p>
           ) : (
             <div className="mt-3 space-y-3">
-              {discrepancies.map((calc) => (
+              {filteredDiscrepancies.map((calc) => {
+                const missingStart = calc.flags?.includes("missing_start_snapshot");
+                const missingEnd = calc.flags?.includes("missing_end_snapshot");
+                const blocked = missingStart || missingEnd;
+                return (
                 <div
                   key={calc.id}
                   className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#0f1a33] px-4 py-3 text-sm text-slate-200"
                 >
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
-                      Shift {calc.shiftReportId.slice(0, 8)}
+                      {calc.report?.employeeName ?? "Employee"} ·{" "}
+                      {calc.report?.date ?? calc.shiftReportId.slice(0, 8)}
                     </p>
-                    <p className="mt-1 text-sm text-slate-200">
-                      Expected {formatMoney(calc.expectedTotalValue)} · Reported{" "}
-                      {formatMoney(calc.reportedScrValue ?? 0)}
-                    </p>
+                    {blocked ? (
+                      <div className="mt-1 space-y-1 text-sm text-amber-200">
+                        <p>Blocked: missing snapshots</p>
+                        {missingStart && (
+                          <p className="text-xs text-amber-100">
+                            Set a baseline start snapshot to use Scratchers.
+                          </p>
+                        )}
+                        {missingEnd && (
+                          <p className="text-xs text-amber-100">
+                            Employee must submit the end snapshot for this shift.
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        <p className="mt-1 text-sm text-slate-200">
+                          Expected {formatMoney(calc.expectedTotalValue)} · Reported{" "}
+                          {formatMoney(calc.reportedScrValue ?? 0)}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-300">
+                          Sold tickets: {calc.expectedTotalTickets}
+                        </p>
+                      </>
+                    )}
                     {calc.flags?.length ? (
                       <p className="mt-1 text-xs text-amber-200">
                         Flags: {calc.flags.join(", ")}
                       </p>
                     ) : null}
                   </div>
-                  <div className="text-right">
+                  <div className="flex items-center gap-3 text-right">
                     <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
                       Variance
                     </p>
                     <p className="ui-tabular text-sm text-white">
-                      {formatMoney(calc.varianceValue)}
+                      {blocked ? "—" : formatMoney(calc.varianceValue)}
                     </p>
+                    <button
+                      type="button"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 text-white transition hover:border-white/50"
+                      onClick={() => setInvestigateShiftId(calc.shiftReportId)}
+                      aria-label="Investigate scratcher shift"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        className="h-4 w-4"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <circle cx="11" cy="11" r="6" />
+                        <path d="m20 20-3.5-3.5" />
+                      </svg>
+                    </button>
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           )}
         </div>
@@ -245,30 +525,75 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
             </p>
           ) : (
             <div className="mt-3 space-y-2">
-              {sortedCalculations.slice(0, 6).map((calc) => (
+              {sortedCalculations.slice(0, 6).map((calc) => {
+                const missingStart = calc.flags?.includes("missing_start_snapshot");
+                const missingEnd = calc.flags?.includes("missing_end_snapshot");
+                const blocked = missingStart || missingEnd;
+                return (
                 <div
                   key={calc.id}
                   className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#0f1a33] px-4 py-3 text-sm text-slate-200"
                 >
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
-                      Shift {calc.shiftReportId.slice(0, 8)}
+                      {calc.report?.employeeName ?? "Employee"} ·{" "}
+                      {calc.report?.date ?? calc.shiftReportId.slice(0, 8)}
                     </p>
-                    <p className="mt-1 text-sm text-slate-200">
-                      Expected {formatMoney(calc.expectedTotalValue)} · Reported{" "}
-                      {formatMoney(calc.reportedScrValue ?? 0)}
-                    </p>
+                    {blocked ? (
+                      <div className="mt-1 space-y-1 text-sm text-amber-200">
+                        <p>Blocked: missing snapshots</p>
+                        {missingStart && (
+                          <p className="text-xs text-amber-100">
+                            Set a baseline start snapshot to use Scratchers.
+                          </p>
+                        )}
+                        {missingEnd && (
+                          <p className="text-xs text-amber-100">
+                            Employee must submit the end snapshot for this shift.
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        <p className="mt-1 text-sm text-slate-200">
+                          Expected {formatMoney(calc.expectedTotalValue)} · Reported{" "}
+                          {formatMoney(calc.reportedScrValue ?? 0)}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-300">
+                          Sold tickets: {calc.expectedTotalTickets}
+                        </p>
+                      </>
+                    )}
                   </div>
-                  <div className="text-right">
+                  <div className="flex items-center gap-3 text-right">
                     <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
                       Variance
                     </p>
                     <p className="ui-tabular text-sm text-white">
-                      {formatMoney(calc.varianceValue)}
+                      {blocked ? "—" : formatMoney(calc.varianceValue)}
                     </p>
+                    <button
+                      type="button"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 text-white transition hover:border-white/50"
+                      onClick={() => setInvestigateShiftId(calc.shiftReportId)}
+                      aria-label="Investigate scratcher shift"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        className="h-4 w-4"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <circle cx="11" cy="11" r="6" />
+                        <path d="m20 20-3.5-3.5" />
+                      </svg>
+                    </button>
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           )}
         </div>
@@ -280,6 +605,12 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
         isOpen={setupOpen}
         onClose={() => setSetupOpen(false)}
         onRefresh={loadData}
+      />
+
+      <ScratchersInvestigationModal
+        isOpen={Boolean(investigateShiftId)}
+        shiftReportId={investigateShiftId}
+        onClose={() => setInvestigateShiftId(null)}
       />
 
       <ScratchersLogbookModal
