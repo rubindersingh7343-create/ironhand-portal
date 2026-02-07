@@ -759,7 +759,9 @@ export default function EmployeeUploadForm({
           type="file"
           accept="image/*"
           capture="environment"
-          className="hidden"
+          // iOS Safari/Capacitor can block programmatic clicks on `display:none` inputs.
+          // Keep it visually hidden but still in the layout tree.
+          className="sr-only"
           onChange={(event) => {
             const next = event.target.files?.[0] ?? null;
             if (!next) return;
