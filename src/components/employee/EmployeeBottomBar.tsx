@@ -23,6 +23,27 @@ export default function EmployeeBottomBar({ user }: { user: SessionUser }) {
             <div className="portal-bottom-bar__label">
               <button
                 type="button"
+                onClick={() => {
+                  document
+                    .getElementById("employee-hours")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+                className="portal-bottom-bar__icon"
+                aria-label="Hours"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-5 w-5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                >
+                  <path d="M12 7v6l3 2" />
+                  <path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+              </button>
+              <button
+                type="button"
                 onClick={() => setActiveChat("manager")}
                 className="portal-bottom-bar__icon"
                 aria-label="Manager chat"
