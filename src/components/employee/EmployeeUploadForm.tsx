@@ -7,6 +7,7 @@ import type {
   SessionUser,
   ShiftSubmission,
 } from "@/lib/types";
+import type { StoredFile } from "@/lib/types";
 import { supabasePublic, publicBucket } from "@/lib/supabaseClient";
 import clsx from "clsx";
 import { getDefaultReportItems, normalizeReportItems } from "@/lib/reportConfig";
@@ -1299,7 +1300,7 @@ export default function EmployeeUploadForm({
                 submission.scratcherVideo,
                 submission.cashPhoto,
                 submission.salesPhoto,
-              ].filter(Boolean);
+              ].filter((file): file is StoredFile => Boolean(file));
               return (
                 <div
                   key={`shift-${submission.id}`}
