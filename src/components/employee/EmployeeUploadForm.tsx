@@ -14,6 +14,7 @@ import { getDefaultReportItems, normalizeReportItems } from "@/lib/reportConfig"
 import EmployeeScratchersPanel from "@/components/scratchers/EmployeeScratchersPanel";
 import IHModal from "@/components/ui/IHModal";
 import InvoiceUploadCard from "@/components/invoices/InvoiceUploadCard";
+import EmployeeHoursSection from "@/components/employee/EmployeeHoursSection";
 
 interface EmployeeUploadFormProps {
   user: SessionUser;
@@ -885,6 +886,11 @@ export default function EmployeeUploadForm({
         </button>
       </form>
 
+      {user.role === "employee" && (
+        <div id="employee-hours-upload" className="mt-6">
+          <EmployeeHoursSection user={user} />
+        </div>
+      )}
 
       {showInvoiceUpload && (
         <InvoiceUploadCard storeId={isOwner ? user.storeNumber : undefined} />

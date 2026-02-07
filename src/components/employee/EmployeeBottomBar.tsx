@@ -25,7 +25,7 @@ export default function EmployeeBottomBar({ user }: { user: SessionUser }) {
                 type="button"
                 onClick={() => {
                   document
-                    .getElementById("employee-hours")
+                    .getElementById("employee-hours-upload")
                     ?.scrollIntoView({ behavior: "smooth", block: "start" });
                 }}
                 className="portal-bottom-bar__icon"
