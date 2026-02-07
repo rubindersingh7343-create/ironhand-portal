@@ -5697,7 +5697,11 @@ export async function createEmployeeHoursEntry(payload: {
   notes?: string;
 }) {
   if (USE_SUPABASE && supabase) {
+    // `records.id` is required in some deployments (no default on the column),
+    // so always provide one to avoid hours inserts failing (which blocks shift uploads).
+    const recordId = randomUUID();
     const { error } = await supabase.from("records").insert({
+      id: recordId,
       store_number: payload.storeId,
       employee_name: payload.employeeName,
       category: "hours",
