@@ -119,6 +119,11 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     return showInactive ? slots : slots.filter((slot) => slot.isActive);
   }, [bundle?.slots, showInactive]);
 
+  const snapshotSlots = useMemo(
+    () => (bundle?.slots ?? []).filter((slot) => slot.isActive),
+    [bundle?.slots],
+  );
+
   const openActivationForSlot = (slotId: string) => {
     const slot = bundle?.slots?.find((entry) => entry.id === slotId);
     const defaultProductId = slot?.defaultProductId ?? "";
@@ -144,7 +149,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     values: Record<string, string>,
   ) => {
     setNotice(null);
-    const items = visibleSlots
+    const items = snapshotSlots
       .map((slot) => ({
         slotId: slot.id,
         ticketValue: values[slot.id] ?? "",
@@ -380,45 +385,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
         </div>
       )}
 
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-        <div className="space-y-2">
-          <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-200">
-            End snapshot
-          </h4>
-          <p className="text-xs text-slate-300">
-            Enter the ending ticket number for each active slot.
-          </p>
-        </div>
-        <div className="mt-4 grid gap-3">
-          {visibleSlots.map((slot) => (
-            <label key={slot.id} className="flex flex-col gap-2 text-sm text-slate-200">
-              <span>Slot {slot.slotNumber}</span>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={endValues[slot.id] ?? ""}
-                onChange={(event) =>
-                  setEndValues((prev) => ({
-                    ...prev,
-                    [slot.id]: event.target.value,
-                  }))
-                }
-                className="ui-field"
-              />
-            </label>
-          ))}
-        </div>
-        <div className="mt-4 flex justify-end">
-          <button
-            type="button"
-            className="ui-button ui-button-primary"
-            onClick={() => handleSnapshotSubmit("end", endValues)}
-          >
-            Save end snapshot
-          </button>
-        </div>
-      </div>
-
       <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
         <label className="inline-flex items-center gap-2">
           <input
@@ -429,6 +395,20 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
           Show inactive slots
         </label>
         <span className="text-slate-400">Shift report ID: {shiftReportId ?? "—"}</span>
+        <span className="hidden text-slate-400 sm:inline">•</span>
+        <span className="text-slate-200">
+          End snapshot:{" "}
+          <span className="text-slate-300">
+            fill the end ticket inside each active slot
+          </span>
+        </span>
+        <button
+          type="button"
+          className="ui-button ui-button-primary ml-auto"
+          onClick={() => handleSnapshotSubmit("end", endValues)}
+        >
+          Save end snapshot
+        </button>
       </div>
 
       {loading ? (
@@ -506,6 +486,29 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
                     ) : null}
                   </div>
                 </div>
+
+                {slot.isActive && (
+                  <div className="mt-3">
+                    <label className="flex flex-col gap-2 text-sm text-slate-200">
+                      <span className="text-xs uppercase tracking-[0.2em] text-slate-300">
+                        End ticket
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={endValues[slot.id] ?? ""}
+                        onChange={(event) =>
+                          setEndValues((prev) => ({
+                            ...prev,
+                            [slot.id]: event.target.value,
+                          }))
+                        }
+                        placeholder="Ending ticket number"
+                        className="ui-field ui-field--slim"
+                      />
+                    </label>
+                  </div>
+                )}
                 {baselineActive && !baselineItem && (
                   <p className="mt-2 text-xs text-amber-200/90">
                     Baseline ticket missing for this slot. Ask a manager to refresh the baseline.
