@@ -33,7 +33,7 @@ export async function GET(request: Request) {
   let calculations = await listScratcherCalculations(storeId);
   if (user.role !== "employee") {
     const needsRecalc = calculations.filter((calc) =>
-      calc.flags.some((flag) => flag.startsWith("missing_product_")),
+      calc.flags.some((flag: string) => flag.startsWith("missing_product_")),
     );
     if (needsRecalc.length) {
       const recalculated = await Promise.all(
