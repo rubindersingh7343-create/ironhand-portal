@@ -135,7 +135,7 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
         };
       }
       const response = await fetch(
-        `/api/owner/hours?storeId=${storeId}&month=${targetMonth}`,
+        `/api/owner/hours?storeId=${encodeURIComponent(storeId)}&month=${encodeURIComponent(targetMonth)}`,
         { cache: "no-store" },
       );
       const data = await response.json().catch(() => ({}));

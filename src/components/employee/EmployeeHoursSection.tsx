@@ -95,7 +95,7 @@ export default function EmployeeHoursSection({ user }: { user: SessionUser }) {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/employee/hours?month=${targetMonth}`, {
+      const response = await fetch(`/api/employee/hours?month=${encodeURIComponent(targetMonth)}`, {
         cache: "no-store",
       });
       const data = await response.json().catch(() => ({}));
