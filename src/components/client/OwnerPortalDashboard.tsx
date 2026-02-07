@@ -5,6 +5,7 @@ import type { SessionUser } from "@/lib/types";
 import OwnerReportsSection from "@/components/client/OwnerReportsSection";
 import SurveillanceReportsSection from "@/components/client/SurveillanceReportsSection";
 import OwnerInvoicesSection from "@/components/client/OwnerInvoicesSection";
+import OwnerInvoiceUploadSection from "@/components/client/OwnerInvoiceUploadSection";
 import OpenInvestigationsSection from "@/components/client/OpenInvestigationsSection";
 import WeeklyOrdersSection from "@/components/client/WeeklyOrdersSection";
 import RecordsPanel from "@/components/records/RecordsPanel";
@@ -12,6 +13,7 @@ import OwnerScratchersSection from "@/components/scratchers/OwnerScratchersSecti
 import { OwnerPortalStoreProvider, useOwnerPortalStore } from "@/components/client/OwnerPortalStoreContext";
 import TopBarNav from "@/components/TopBarNav";
 import EmployeeUploadForm from "@/components/employee/EmployeeUploadForm";
+import OwnerHoursSection from "@/components/client/OwnerHoursSection";
 
 function OwnerPortalDashboardContent({ user }: { user: SessionUser }) {
   const ownerStore = useOwnerPortalStore();
@@ -29,9 +31,11 @@ function OwnerPortalDashboardContent({ user }: { user: SessionUser }) {
   const sections = useMemo(
     () => [
       { id: "owner-employee-uploads", label: "My Shift" },
+      { id: "owner-hours", label: "Hours" },
       { id: "owner-reports", label: "Reports" },
       { id: "owner-scratchers", label: "Scratchers" },
       { id: "owner-surveillance", label: "Surveillance" },
+      { id: "owner-invoice-upload", label: "Upload Invoices" },
       { id: "owner-invoices", label: "Invoices" },
       { id: "owner-orders", label: "Orders" },
       { id: "owner-investigations", label: "Investigations" },
@@ -71,9 +75,16 @@ function OwnerPortalDashboardContent({ user }: { user: SessionUser }) {
           </div>
           {showEmployeeUploads && selectedStoreId && (
             <div className="mt-4">
-              <EmployeeUploadForm user={employeeUser} className="max-w-3xl" />
+              <EmployeeUploadForm
+                user={employeeUser}
+                className="max-w-3xl"
+                showInvoiceUpload={false}
+              />
             </div>
           )}
+        </div>
+        <div className="owner-portal-section" id="owner-hours">
+          <OwnerHoursSection user={user} />
         </div>
         <div className="owner-portal-section" id="owner-reports">
           <OwnerReportsSection user={user} />
@@ -83,6 +94,9 @@ function OwnerPortalDashboardContent({ user }: { user: SessionUser }) {
         </div>
         <div className="owner-portal-section" id="owner-surveillance">
           <SurveillanceReportsSection user={user} />
+        </div>
+        <div className="owner-portal-section" id="owner-invoice-upload">
+          <OwnerInvoiceUploadSection user={user} />
         </div>
         <div className="owner-portal-section" id="owner-invoices">
           <OwnerInvoicesSection user={user} />
