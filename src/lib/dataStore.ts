@@ -1358,7 +1358,7 @@ export async function getRecentShiftSubmissions(options: {
       );
       const scratcherRowPhotos = scratcherFiles.filter((f) => f.kind === "image");
       const getRowNumber = (file: StoredFile) => {
-        const match = (file.label ?? "").match(/row\\s*(\\d+)/i);
+        const match = (file.label ?? "").match(/row(?:s)?\\s*(\\d+)/i);
         if (!match) return Number.POSITIVE_INFINITY;
         const parsed = Number(match[1]);
         return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;

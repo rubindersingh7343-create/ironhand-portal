@@ -53,11 +53,11 @@ export default function EmployeeUploadForm({
   const [hoursEndTime, setHoursEndTime] = useState("");
   const [hoursBreakMinutes, setHoursBreakMinutes] = useState<number>(0);
   const [scratcherRowPhotos, setScratcherRowPhotos] = useState<Array<File | null>>(
-    () => Array.from({ length: 8 }).map(() => null),
+    () => Array.from({ length: 2 }).map(() => null),
   );
   const [scratcherRowPreviewUrls, setScratcherRowPreviewUrls] = useState<
     Array<string | null>
-  >(() => Array.from({ length: 8 }).map(() => null));
+  >(() => Array.from({ length: 2 }).map(() => null));
   const [scratcherCaptureOpen, setScratcherCaptureOpen] = useState(false);
   const [scratcherCaptureRow, setScratcherCaptureRow] = useState<number>(0);
   const [scratcherPreviewUrl, setScratcherPreviewUrl] = useState<string | null>(
@@ -67,7 +67,7 @@ export default function EmployeeUploadForm({
   const scratcherCaptureInputRef = useRef<HTMLInputElement | null>(null);
   const scratcherTempUrlRef = useRef<string | null>(null);
   const scratcherRowPreviewUrlsRef = useRef<Array<string | null>>(
-    Array.from({ length: 8 }).map(() => null),
+    Array.from({ length: 2 }).map(() => null),
   );
   const [reportConfig, setReportConfig] = useState<ReportItemConfig[]>(
     getDefaultReportItems(),
@@ -354,9 +354,11 @@ export default function EmployeeUploadForm({
     const scratcherPhotos = scratcherRowPhotos.filter(
       (file): file is File => Boolean(file),
     );
-    if (scratcherPhotos.length !== 8 || !cash || !sales) {
+    if (scratcherPhotos.length !== 2 || !cash || !sales) {
       setStatus("error");
-      setErrorMessage("Please upload 8 scratcher row photos, plus cash + sales photos.");
+      setErrorMessage(
+        "Please upload 2 scratcher photos (rows 1-4 and 5-8), plus cash + sales photos.",
+      );
       setUploadingShift(false);
       return;
     }
@@ -388,7 +390,7 @@ export default function EmployeeUploadForm({
     const files = [
       ...scratcherPhotos.map((file, index) => ({
         file,
-        label: `Scratcher Row ${index + 1}`,
+        label: index === 0 ? "Scratcher Rows 1-4" : "Scratcher Rows 5-8",
         field: `scratcherRow${index + 1}`,
       })),
       { file: cash, label: "Cash Count Photo", field: "cashPhoto" },
@@ -450,7 +452,7 @@ export default function EmployeeUploadForm({
 
     // Build metadata and submit JSON payload
     const scratcherPhotosMeta = uploads
-      .slice(0, 8)
+      .slice(0, 2)
       .map((upload: any, index: number) => ({
         id: upload.path,
         path: upload.path,
@@ -476,21 +478,21 @@ export default function EmployeeUploadForm({
       files: {
         scratcherPhotos: scratcherPhotosMeta,
         cashPhoto: {
-          id: uploads[8].path,
-          path: uploads[8].path,
-          originalName: files[8].file.name,
-          mimeType: files[8].file.type,
-          size: files[8].file.size,
-          label: files[8].label,
+          id: uploads[2].path,
+          path: uploads[2].path,
+          originalName: files[2].file.name,
+          mimeType: files[2].file.type,
+          size: files[2].file.size,
+          label: files[2].label,
           kind: "image",
         },
         salesPhoto: {
-          id: uploads[9].path,
-          path: uploads[9].path,
-          originalName: files[9].file.name,
-          mimeType: files[9].file.type,
-          size: files[9].file.size,
-          label: files[9].label,
+          id: uploads[3].path,
+          path: uploads[3].path,
+          originalName: files[3].file.name,
+          mimeType: files[3].file.type,
+          size: files[3].file.size,
+          label: files[3].label,
           kind: "image",
         },
       },
@@ -515,12 +517,12 @@ export default function EmployeeUploadForm({
       setHoursEndTime("");
       setHoursBreakMinutes(0);
     }
-    setScratcherRowPhotos(Array.from({ length: 8 }).map(() => null));
+    setScratcherRowPhotos(Array.from({ length: 2 }).map(() => null));
     setScratcherRowPreviewUrls((prev) => {
       prev.forEach((url) => {
         if (url) URL.revokeObjectURL(url);
       });
-      return Array.from({ length: 8 }).map(() => null);
+      return Array.from({ length: 2 }).map(() => null);
     });
     setStatus("success");
     fetchRecentUploads();
@@ -745,17 +747,17 @@ export default function EmployeeUploadForm({
                 Scratcher Count
               </p>
               <h3 className="mt-1 text-lg font-semibold text-white">
-                8 photos (one per row)
+                2 photos (rows 1-4 and 5-8)
               </h3>
               <p className="mt-1 text-sm text-slate-300">
-                Take one clear photo per scratcher row so the tiny ticket numbers are readable.
+                Take two clear photos: first for rows 1-4 (slots 1-16), then rows 5-8 (slots 17-32).
               </p>
             </div>
             <button
               type="button"
               className="ui-button"
               onClick={() => {
-                const done = scratcherCapturedCount === 8;
+                const done = scratcherCapturedCount === 2;
                 const row = done ? 0 : scratcherFirstMissingRow;
                 openScratcherCapture(row);
                 if (!done) {
@@ -766,14 +768,14 @@ export default function EmployeeUploadForm({
             >
               {scratcherCapturedCount === 0
                 ? "Start photos"
-                : scratcherCapturedCount === 8
+                : scratcherCapturedCount === 2
                   ? "Review photos"
-                  : `Continue (${scratcherCapturedCount}/8)`}
+                  : `Continue (${scratcherCapturedCount}/2)`}
             </button>
           </div>
 
-          <div className="mt-4 grid gap-2 sm:grid-cols-4">
-            {Array.from({ length: 8 }).map((_, index) => {
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {Array.from({ length: 2 }).map((_, index) => {
               const hasPhoto = Boolean(scratcherRowPhotos[index]);
               return (
                 <button
@@ -794,7 +796,7 @@ export default function EmployeeUploadForm({
                       : "border-white/15 bg-white/5 text-slate-200 hover:border-white/40",
                   )}
                 >
-                  Row {index + 1}
+                  {index === 0 ? "Rows 1-4" : "Rows 5-8"}
                 </button>
               );
             })}
@@ -838,10 +840,39 @@ export default function EmployeeUploadForm({
               URL.revokeObjectURL(scratcherTempUrlRef.current);
               scratcherTempUrlRef.current = null;
             }
-            setScratcherTempFile(next);
             const url = URL.createObjectURL(next);
             scratcherTempUrlRef.current = url;
-            setScratcherPreviewUrl(url);
+
+            const row = scratcherCaptureRow;
+            const nextPhotos = [...scratcherRowPhotos];
+            nextPhotos[row] = next;
+            setScratcherRowPhotos(nextPhotos);
+
+            setScratcherRowPreviewUrls((prev) => {
+              const nextUrls = [...prev];
+              if (nextUrls[row]) URL.revokeObjectURL(nextUrls[row] as string);
+              nextUrls[row] = url;
+              return nextUrls;
+            });
+
+            setScratcherTempFile(null);
+            setScratcherPreviewUrl(null);
+            scratcherTempUrlRef.current = null; // ownership moved to scratcherRowPreviewUrls
+
+            const nextMissing = nextPhotos.findIndex(
+              (file, index) => index > row && !file,
+            );
+            const fallback = nextPhotos.findIndex((file) => !file);
+            const done = fallback < 0;
+            if (done) {
+              setScratcherCaptureOpen(false);
+              return;
+            }
+            const nextRow = nextMissing >= 0 ? nextMissing : fallback;
+            setScratcherCaptureRow(nextRow);
+            triggerScratcherCamera();
+
+            event.currentTarget.value = "";
           }}
         />
 
@@ -858,17 +889,20 @@ export default function EmployeeUploadForm({
                 id="scratcher-capture-title"
                 className="text-xs uppercase tracking-[0.3em] text-slate-300"
               >
-                Scratcher row photo
+                Scratcher photo
               </p>
               <p className="mt-2 text-sm text-slate-200">
-                Row <span className="font-semibold">{scratcherCaptureRow + 1}</span> of{" "}
-                <span className="font-semibold">8</span> (slots{" "}
-                {scratcherCaptureRow * 4 + 1}–{scratcherCaptureRow * 4 + 4})
+                Photo <span className="font-semibold">{scratcherCaptureRow + 1}</span> of{" "}
+                <span className="font-semibold">2</span> ·{" "}
+                <span className="font-semibold">
+                  {scratcherCaptureRow === 0 ? "Rows 1-4" : "Rows 5-8"}
+                </span>{" "}
+                (slots {scratcherCaptureRow === 0 ? "1-16" : "17-32"})
               </p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-4">
-              {Array.from({ length: 8 }).map((_, index) => {
+            <div className="grid gap-3 sm:grid-cols-2">
+              {Array.from({ length: 2 }).map((_, index) => {
                 const hasPhoto = Boolean(scratcherRowPhotos[index]);
                 const active = index === scratcherCaptureRow;
                 return (
@@ -888,7 +922,7 @@ export default function EmployeeUploadForm({
                           : "border-white/15 bg-white/5 text-slate-200 hover:border-white/40",
                     )}
                   >
-                    Row {index + 1}
+                    {index === 0 ? "Rows 1-4" : "Rows 5-8"}
                   </button>
                 );
               })}
@@ -899,13 +933,13 @@ export default function EmployeeUploadForm({
                 // Preview freshly captured photo (before confirming)
                 <img
                   src={scratcherPreviewUrl}
-                  alt={`Scratcher row ${scratcherCaptureRow + 1}`}
+                  alt={`Scratcher photo ${scratcherCaptureRow + 1}`}
                   className="w-full rounded-xl object-contain"
                 />
               ) : scratcherRowPreviewUrls[scratcherCaptureRow] ? (
                 <img
                   src={scratcherRowPreviewUrls[scratcherCaptureRow] as string}
-                  alt={`Scratcher row ${scratcherCaptureRow + 1}`}
+                  alt={`Scratcher photo ${scratcherCaptureRow + 1}`}
                   className="w-full rounded-xl object-contain"
                 />
               ) : (

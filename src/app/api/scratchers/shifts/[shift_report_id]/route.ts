@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import {
   getScratcherShiftCalculation,
   getShiftReportById,
+  listShiftSubmissionUploadsByDate,
   recalculateScratcherShift,
 } from "@/lib/dataStore";
 
@@ -52,5 +53,34 @@ export async function GET(
     }
   }
 
-  return NextResponse.json({ calculation: calculation ?? null, report: report ?? null });
+  let scratcherPhotos: any[] | null = null;
+  try {
+    if (report?.date && report?.storeId) {
+      const uploads = await listShiftSubmissionUploadsByDate({
+        storeNumber: report.storeId,
+        date: report.date,
+        employeeName: report.employeeName ?? undefined,
+      });
+      const files = uploads?.[0]?.files ?? [];
+      const images = files
+        .filter((file) => file?.kind === "image")
+        .filter((file) => (file.label ?? "").toLowerCase().includes("scratcher"));
+      const getRow = (file: any) => {
+        const match = String(file?.label ?? "").match(/row(?:s)?\\s*(\\d+)/i);
+        if (!match) return Number.POSITIVE_INFINITY;
+        const parsed = Number(match[1]);
+        return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
+      };
+      scratcherPhotos = images.length ? [...images].sort((a, b) => getRow(a) - getRow(b)) : null;
+    }
+  } catch (error) {
+    console.error("Unable to load scratcher photos for shift:", error);
+    scratcherPhotos = null;
+  }
+
+  return NextResponse.json({
+    calculation: calculation ?? null,
+    report: report ?? null,
+    scratcherPhotos,
+  });
 }

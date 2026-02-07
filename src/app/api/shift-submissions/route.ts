@@ -61,9 +61,9 @@ export async function POST(request: Request) {
         );
       }
 
-      if (Array.isArray(scratcherPhotos) && scratcherPhotos.length !== 8) {
+      if (Array.isArray(scratcherPhotos) && scratcherPhotos.length !== 2) {
         return NextResponse.json(
-          { error: "Please upload 8 scratcher row photos (one per row)." },
+          { error: "Please upload 2 scratcher photos (rows 1-4 and 5-8)." },
           { status: 400 },
         );
       }
@@ -318,7 +318,9 @@ export async function POST(request: Request) {
         ? error.message
         : typeof error === "string"
           ? error
-          : "Unable to upload shift right now.";
+          : typeof error === "object" && error && "message" in error
+            ? String((error as { message?: unknown }).message ?? "Unable to upload shift right now.")
+            : "Unable to upload shift right now.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

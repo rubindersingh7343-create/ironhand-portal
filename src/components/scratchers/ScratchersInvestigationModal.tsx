@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import IHModal from "@/components/ui/IHModal";
-import type { ScratcherShiftCalculation, ShiftReport } from "@/lib/types";
+import type { ScratcherShiftCalculation, ShiftReport, StoredFile } from "@/lib/types";
 
 const formatMoney = (value: number) =>
   new Intl.NumberFormat("en-US", {
@@ -27,6 +27,7 @@ const formatDate = (value?: string | null) => {
 type ScratcherCalculationResponse = {
   calculation: ScratcherShiftCalculation | null;
   report: ShiftReport | null;
+  scratcherPhotos?: StoredFile[] | null;
 };
 
 export default function ScratchersInvestigationModal({
@@ -60,11 +61,14 @@ export default function ScratchersInvestigationModal({
         setPayload({
           calculation: data?.calculation ?? null,
           report: data?.report ?? null,
+          scratcherPhotos: Array.isArray(data?.scratcherPhotos)
+            ? (data.scratcherPhotos as StoredFile[])
+            : null,
         });
       })
       .catch(() => {
         if (!active) return;
-        setPayload({ calculation: null, report: null });
+        setPayload({ calculation: null, report: null, scratcherPhotos: null });
       })
       .finally(() => {
         if (!active) return;
@@ -84,10 +88,18 @@ export default function ScratchersInvestigationModal({
 
   const calculation = payload?.calculation ?? null;
   const report = payload?.report ?? null;
+  const scratcherPhotos = payload?.scratcherPhotos ?? null;
   const flags = calculation?.flags ?? [];
   const missingStart = flags.includes("missing_start_snapshot");
   const missingEnd = flags.includes("missing_end_snapshot");
   const blocked = missingStart || missingEnd;
+
+  const proxyUrlForFile = (file: StoredFile) => {
+    const path = file.path ?? file.id;
+    return `/api/uploads/proxy?path=${encodeURIComponent(path)}&id=${encodeURIComponent(
+      file.id,
+    )}&name=${encodeURIComponent(file.originalName ?? file.label ?? "file")}`;
+  };
 
   const breakdown = useMemo(() => {
     if (!calculation?.breakdown?.length) return [];
@@ -99,6 +111,15 @@ export default function ScratchersInvestigationModal({
       value: Number(row.value ?? 0),
     }));
   }, [calculation?.breakdown]);
+
+  const breakdownFirstHalf = useMemo(
+    () => breakdown.filter((row) => row.slotNumber > 0 && row.slotNumber <= 16),
+    [breakdown],
+  );
+  const breakdownSecondHalf = useMemo(
+    () => breakdown.filter((row) => row.slotNumber >= 17),
+    [breakdown],
+  );
 
   const buildDisciplineNotice = () => {
     const employee = report?.employeeName ?? "Team member";
@@ -237,30 +258,126 @@ export default function ScratchersInvestigationModal({
                   No slot details available yet.
                 </p>
               ) : (
-                <div className="mt-3 space-y-2 text-sm text-slate-200">
-                  {breakdown.map((row, index) => (
-                    <div
-                      key={`slot-${row.slotNumber}-${index}`}
-                      className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#111b34] px-4 py-2"
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-white">
-                          Slot {row.slotNumber || "—"}
-                        </p>
-                        <p className="text-xs text-slate-400">
-                          Start {row.startTicket || "—"} · End {row.endTicket || "—"}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-slate-400">Sold</p>
-                        <p className="text-sm text-white">{row.sold}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-slate-400">Value</p>
-                        <p className="text-sm text-white">{formatMoney(row.value)}</p>
-                      </div>
+                <div className="mt-3 space-y-4 text-sm text-slate-200">
+                  {!scratcherPhotos?.length ? (
+                    <p className="text-xs text-slate-400">
+                      No scratcher photos were uploaded for this shift.
+                    </p>
+                  ) : null}
+
+                  <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-300">
+                        Slots 1-16 (rows 1-4)
+                      </p>
+                      {scratcherPhotos?.[0] ? (
+                        <a
+                          href={proxyUrlForFile(scratcherPhotos[0])}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs font-semibold text-blue-200 hover:underline"
+                        >
+                          Open photo
+                        </a>
+                      ) : null}
                     </div>
-                  ))}
+                    {scratcherPhotos?.[0] ? (
+                      <a
+                        href={proxyUrlForFile(scratcherPhotos[0])}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-3 block overflow-hidden rounded-xl border border-white/10 bg-black/30"
+                      >
+                        <img
+                          src={proxyUrlForFile(scratcherPhotos[0])}
+                          alt="Scratcher rows 1-4"
+                          className="max-h-[260px] w-full object-contain"
+                        />
+                      </a>
+                    ) : null}
+                    <div className="mt-3 space-y-2">
+                      {breakdownFirstHalf.map((row, index) => (
+                        <div
+                          key={`half-a-${row.slotNumber}-${index}`}
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#111b34] px-4 py-2"
+                        >
+                          <div>
+                            <p className="text-sm font-semibold text-white">
+                              Slot {row.slotNumber || "—"}
+                            </p>
+                            <p className="text-xs text-slate-400">
+                              Start {row.startTicket || "—"} · End {row.endTicket || "—"}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs text-slate-400">Sold</p>
+                            <p className="text-sm text-white">{row.sold}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs text-slate-400">Value</p>
+                            <p className="text-sm text-white">{formatMoney(row.value)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-300">
+                        Slots 17-32 (rows 5-8)
+                      </p>
+                      {scratcherPhotos?.[1] ? (
+                        <a
+                          href={proxyUrlForFile(scratcherPhotos[1])}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs font-semibold text-blue-200 hover:underline"
+                        >
+                          Open photo
+                        </a>
+                      ) : null}
+                    </div>
+                    {scratcherPhotos?.[1] ? (
+                      <a
+                        href={proxyUrlForFile(scratcherPhotos[1])}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-3 block overflow-hidden rounded-xl border border-white/10 bg-black/30"
+                      >
+                        <img
+                          src={proxyUrlForFile(scratcherPhotos[1])}
+                          alt="Scratcher rows 5-8"
+                          className="max-h-[260px] w-full object-contain"
+                        />
+                      </a>
+                    ) : null}
+                    <div className="mt-3 space-y-2">
+                      {breakdownSecondHalf.map((row, index) => (
+                        <div
+                          key={`half-b-${row.slotNumber}-${index}`}
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#111b34] px-4 py-2"
+                        >
+                          <div>
+                            <p className="text-sm font-semibold text-white">
+                              Slot {row.slotNumber || "—"}
+                            </p>
+                            <p className="text-xs text-slate-400">
+                              Start {row.startTicket || "—"} · End {row.endTicket || "—"}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs text-slate-400">Sold</p>
+                            <p className="text-sm text-white">{row.sold}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs text-slate-400">Value</p>
+                            <p className="text-sm text-white">{formatMoney(row.value)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
