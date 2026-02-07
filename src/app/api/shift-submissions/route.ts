@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import {
   addShiftSubmission,
+  createEmployeeHoursEntry,
   recalculateScratcherShift,
   saveUploadedFile,
   upsertShiftReport,
@@ -47,6 +48,8 @@ export async function POST(request: Request) {
       const customFields = Array.isArray(body?.customFields)
         ? body.customFields
         : [];
+      const hoursPayload = body?.hours ?? null;
+      const isEmployee = sessionUser.role === "employee";
 
       const hasScratcherMedia =
         (Array.isArray(scratcherPhotos) && scratcherPhotos.length > 0) ||
@@ -98,8 +101,61 @@ export async function POST(request: Request) {
       const cashAmount = grossAmount - lottoPoAmount - atmAmount;
       const storeAmount = grossAmount - (scrAmount + lottoAmount);
 
+      const toMinutes = (value: string) => {
+        const [h, m] = value.split(":").map((part) => Number(part));
+        if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+        return h * 60 + m;
+      };
+
+      let shiftDate = new Date().toISOString().slice(0, 10);
+      let hoursEntry:
+        | {
+            date: string;
+            startTime: string;
+            endTime: string;
+            breakMinutes: number;
+            hours: number;
+          }
+        | null = null;
+
+      if (isEmployee) {
+        const date = String(hoursPayload?.date ?? "").slice(0, 10);
+        const startTime = String(hoursPayload?.startTime ?? "");
+        const endTime = String(hoursPayload?.endTime ?? "");
+        const breakMinutes = Math.max(0, Number(hoursPayload?.breakMinutes ?? 0));
+        if (!date || !startTime || !endTime) {
+          return NextResponse.json(
+            { error: "Hours check-in (date, start time, end time) is required." },
+            { status: 400 },
+          );
+        }
+        const startMinutes = toMinutes(startTime);
+        const endMinutes = toMinutes(endTime);
+        if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) {
+          return NextResponse.json(
+            { error: "Invalid hours check-in time range." },
+            { status: 400 },
+          );
+        }
+        const rawMinutes = Math.max(0, endMinutes - startMinutes - breakMinutes);
+        if (rawMinutes <= 0) {
+          return NextResponse.json(
+            { error: "Invalid hours check-in time range." },
+            { status: 400 },
+          );
+        }
+        shiftDate = date;
+        hoursEntry = {
+          date,
+          startTime,
+          endTime,
+          breakMinutes,
+          hours: Number((rawMinutes / 60).toFixed(2)),
+        };
+      }
+
       const reportDetails = {
-        date: new Date().toISOString().slice(0, 10),
+        date: shiftDate,
         gross: grossAmount,
         liquor: parseAmount(reportFields.liquor),
         beer: parseAmount(reportFields.beer),
@@ -135,6 +191,20 @@ export async function POST(request: Request) {
         cashPhoto,
         salesPhoto,
       });
+
+      if (hoursEntry) {
+        await createEmployeeHoursEntry({
+          storeId,
+          employeeId: sessionUser.id,
+          employeeName: sessionUser.name,
+          date: hoursEntry.date,
+          startTime: hoursEntry.startTime,
+          endTime: hoursEntry.endTime,
+          breakMinutes: hoursEntry.breakMinutes,
+          hours: hoursEntry.hours,
+          notes: shiftNotes?.trim() || undefined,
+        });
+      }
 
       const report = await upsertShiftReport({
         storeId,

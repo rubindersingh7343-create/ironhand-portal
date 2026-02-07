@@ -14,7 +14,6 @@ import { getDefaultReportItems, normalizeReportItems } from "@/lib/reportConfig"
 import EmployeeScratchersPanel from "@/components/scratchers/EmployeeScratchersPanel";
 import IHModal from "@/components/ui/IHModal";
 import InvoiceUploadCard from "@/components/invoices/InvoiceUploadCard";
-import EmployeeHoursSection from "@/components/employee/EmployeeHoursSection";
 
 interface EmployeeUploadFormProps {
   user: SessionUser;
@@ -47,6 +46,12 @@ export default function EmployeeUploadForm({
   );
   const [recentError, setRecentError] = useState<string | null>(null);
   const [uploadingShift, setUploadingShift] = useState(false);
+  const [hoursDate, setHoursDate] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
+  const [hoursStartTime, setHoursStartTime] = useState("");
+  const [hoursEndTime, setHoursEndTime] = useState("");
+  const [hoursBreakMinutes, setHoursBreakMinutes] = useState<number>(0);
   const [scratcherRowPhotos, setScratcherRowPhotos] = useState<Array<File | null>>(
     () => Array.from({ length: 8 }).map(() => null),
   );
@@ -232,6 +237,20 @@ export default function EmployeeUploadForm({
     return gross - (scr + lotto);
   }, [reportValues.gross, reportValues.lotto, reportValues.scr, toNumber]);
 
+  const hoursPreview = useMemo(() => {
+    const toMinutes = (value: string) => {
+      const [h, m] = value.split(":").map((part) => Number(part));
+      if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+      return h * 60 + m;
+    };
+    const start = toMinutes(hoursStartTime);
+    const end = toMinutes(hoursEndTime);
+    if (start === null || end === null) return null;
+    const rawMinutes = end - start - Math.max(0, Number(hoursBreakMinutes) || 0);
+    if (rawMinutes <= 0) return null;
+    return Number((rawMinutes / 60).toFixed(2));
+  }, [hoursBreakMinutes, hoursEndTime, hoursStartTime]);
+
   const standardItems = useMemo(
     () => reportConfig.filter((item) => !item.isCustom && item.enabled),
     [reportConfig],
@@ -342,6 +361,23 @@ export default function EmployeeUploadForm({
       return;
     }
 
+    const isEmployee = user.role === "employee";
+    const breakMinutes = Math.max(0, Number(hoursBreakMinutes) || 0);
+    if (isEmployee) {
+      if (!hoursDate || !hoursStartTime || !hoursEndTime) {
+        setStatus("error");
+        setErrorMessage("Please fill out Hours check-in (date, start time, end time).");
+        setUploadingShift(false);
+        return;
+      }
+      if (hoursPreview === null) {
+        setStatus("error");
+        setErrorMessage("Hours check-in time range looks invalid.");
+        setUploadingShift(false);
+        return;
+      }
+    }
+
     if (!supabasePublic) {
       setStatus("error");
       setErrorMessage("Upload client is not configured.");
@@ -429,6 +465,14 @@ export default function EmployeeUploadForm({
       reportFields,
       customFields,
       storeId: isOwner ? user.storeNumber : undefined,
+      hours: isEmployee
+        ? {
+            date: hoursDate,
+            startTime: hoursStartTime,
+            endTime: hoursEndTime,
+            breakMinutes,
+          }
+        : undefined,
       files: {
         scratcherPhotos: scratcherPhotosMeta,
         cashPhoto: {
@@ -465,6 +509,12 @@ export default function EmployeeUploadForm({
     }
 
     formElement.reset();
+    if (isEmployee) {
+      setHoursDate(new Date().toISOString().slice(0, 10));
+      setHoursStartTime("");
+      setHoursEndTime("");
+      setHoursBreakMinutes(0);
+    }
     setScratcherRowPhotos(Array.from({ length: 8 }).map(() => null));
     setScratcherRowPreviewUrls((prev) => {
       prev.forEach((url) => {
@@ -608,6 +658,69 @@ export default function EmployeeUploadForm({
         </div>
 
         <EmployeeScratchersPanel user={user} />
+
+        {user.role === "employee" && (
+          <div className="space-y-3 rounded-2xl border border-white/10 bg-[#0f1a33] p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-300">
+                  Hours check-in
+                </p>
+                <p className="mt-2 text-sm text-slate-300">
+                  Submitted with your shift package.
+                </p>
+              </div>
+              <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200">
+                {hoursPreview === null ? "—" : `${hoursPreview.toFixed(2)} hrs`}
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                Date
+                <input
+                  type="date"
+                  className="ui-field mt-2 w-full"
+                  value={hoursDate}
+                  onChange={(event) => setHoursDate(event.target.value)}
+                  required
+                />
+              </label>
+              <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                Break minutes
+                <input
+                  type="number"
+                  min={0}
+                  className="ui-field mt-2 w-full"
+                  value={hoursBreakMinutes}
+                  onChange={(event) =>
+                    setHoursBreakMinutes(Number(event.target.value || 0))
+                  }
+                />
+              </label>
+              <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                Start time
+                <input
+                  type="time"
+                  className="ui-field mt-2 w-full"
+                  value={hoursStartTime}
+                  onChange={(event) => setHoursStartTime(event.target.value)}
+                  required
+                />
+              </label>
+              <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                End time
+                <input
+                  type="time"
+                  className="ui-field mt-2 w-full"
+                  value={hoursEndTime}
+                  onChange={(event) => setHoursEndTime(event.target.value)}
+                  required
+                />
+              </label>
+            </div>
+          </div>
+        )}
 
         <div>
           <label
@@ -885,12 +998,6 @@ export default function EmployeeUploadForm({
           {status === "sending" || uploadingShift ? "Uploading..." : "Submit shift package"}
         </button>
       </form>
-
-      {user.role === "employee" && (
-        <div id="employee-hours-upload" className="mt-6">
-          <EmployeeHoursSection user={user} />
-        </div>
-      )}
 
       {showInvoiceUpload && (
         <InvoiceUploadCard storeId={isOwner ? user.storeNumber : undefined} />
