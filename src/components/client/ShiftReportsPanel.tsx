@@ -671,17 +671,21 @@ export default function ShiftReportsPanel({
                               {canInvestigate ? (
                                 <button
                                   type="button"
-                                  onClick={() => openInvestigate(report)}
+                                  onClick={() => {
+                                    if (report) openInvestigate(report);
+                                  }}
+                                  disabled={!report}
                                   className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-[11px] font-semibold transition ${
-                                    getStatus(report) === "resolved"
+                                    report && getStatus(report) === "resolved"
                                       ? "border-emerald-300/60 text-emerald-200"
-                                      : getStatus(report) === "sent" ||
-                                          getStatus(report) === "in_progress"
+                                      : report &&
+                                          (getStatus(report) === "sent" ||
+                                            getStatus(report) === "in_progress")
                                         ? "border-amber-300/60 text-amber-200"
                                         : hasDiscrepancy
                                           ? "border-white/20 text-white hover:border-white/60"
                                           : "border-white/10 text-slate-300 hover:border-white/40"
-                                  }`}
+                                  } ${report ? "" : "opacity-50 cursor-not-allowed"}`}
                                   aria-label="Investigate"
                                 >
                                   <svg
