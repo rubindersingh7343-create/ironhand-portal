@@ -12,6 +12,7 @@ import { supabasePublic, publicBucket } from "@/lib/supabaseClient";
 import clsx from "clsx";
 import { getDefaultReportItems, normalizeReportItems } from "@/lib/reportConfig";
 import EmployeeScratchersPanel from "@/components/scratchers/EmployeeScratchersPanel";
+import IHModal from "@/components/ui/IHModal";
 
 interface EmployeeUploadFormProps {
   user: SessionUser;
@@ -109,16 +110,28 @@ export default function EmployeeUploadForm({
     };
   }, []);
 
-  const openScratcherCapture = () => {
+  const resetScratcherTemp = useCallback(() => {
     setScratcherTempFile(null);
     if (scratcherTempUrlRef.current) {
       URL.revokeObjectURL(scratcherTempUrlRef.current);
       scratcherTempUrlRef.current = null;
     }
     setScratcherPreviewUrl(null);
-    setScratcherCaptureRow(scratcherFirstMissingRow);
-    setScratcherCaptureOpen(true);
-  };
+  }, []);
+
+  const closeScratcherCapture = useCallback(() => {
+    resetScratcherTemp();
+    setScratcherCaptureOpen(false);
+  }, [resetScratcherTemp]);
+
+  const openScratcherCapture = useCallback(
+    (row: number) => {
+      resetScratcherTemp();
+      setScratcherCaptureRow(row);
+      setScratcherCaptureOpen(true);
+    },
+    [resetScratcherTemp],
+  );
 
   const triggerScratcherCamera = () => {
     const input = scratcherCaptureInputRef.current;
@@ -672,7 +685,15 @@ export default function EmployeeUploadForm({
             <button
               type="button"
               className="ui-button"
-              onClick={openScratcherCapture}
+              onClick={() => {
+                const done = scratcherCapturedCount === 8;
+                const row = done ? 0 : scratcherFirstMissingRow;
+                openScratcherCapture(row);
+                if (!done) {
+                  // Must be triggered directly from a user gesture on iOS.
+                  triggerScratcherCamera();
+                }
+              }}
             >
               {scratcherCapturedCount === 0
                 ? "Start photos"
@@ -690,14 +711,12 @@ export default function EmployeeUploadForm({
                   key={`scratcher-row-chip-${index}`}
                   type="button"
                   onClick={() => {
-                    setScratcherCaptureRow(index);
-                    setScratcherTempFile(null);
-                    if (scratcherTempUrlRef.current) {
-                      URL.revokeObjectURL(scratcherTempUrlRef.current);
-                      scratcherTempUrlRef.current = null;
+                    const hasPhoto = Boolean(scratcherRowPhotos[index]);
+                    openScratcherCapture(index);
+                    if (!hasPhoto) {
+                      // If it's missing, jump straight into capture.
+                      triggerScratcherCamera();
                     }
-                    setScratcherPreviewUrl(null);
-                    setScratcherCaptureOpen(true);
                   }}
                   className={clsx(
                     "rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition",
@@ -735,178 +754,157 @@ export default function EmployeeUploadForm({
           ))}
         </div>
 
-        {scratcherCaptureOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-            <div className="ui-card w-full max-w-2xl space-y-4 text-white">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-300">
-                    Scratcher row photo
-                  </p>
-                  <p className="mt-2 text-sm text-slate-200">
-                    Row <span className="font-semibold">{scratcherCaptureRow + 1}</span> of{" "}
-                    <span className="font-semibold">8</span> (slots{" "}
-                    {scratcherCaptureRow * 4 + 1}–{scratcherCaptureRow * 4 + 4})
-                  </p>
+        <input
+          ref={scratcherCaptureInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(event) => {
+            const next = event.target.files?.[0] ?? null;
+            if (!next) return;
+            if (scratcherTempUrlRef.current) {
+              URL.revokeObjectURL(scratcherTempUrlRef.current);
+              scratcherTempUrlRef.current = null;
+            }
+            setScratcherTempFile(next);
+            const url = URL.createObjectURL(next);
+            scratcherTempUrlRef.current = url;
+            setScratcherPreviewUrl(url);
+          }}
+        />
+
+        <IHModal
+          isOpen={scratcherCaptureOpen}
+          onClose={closeScratcherCapture}
+          allowOutsideClose
+          panelClassName="no-transform"
+          labelledBy="scratcher-capture-title"
+        >
+          <div className="space-y-4 p-5">
+            <div>
+              <p
+                id="scratcher-capture-title"
+                className="text-xs uppercase tracking-[0.3em] text-slate-300"
+              >
+                Scratcher row photo
+              </p>
+              <p className="mt-2 text-sm text-slate-200">
+                Row <span className="font-semibold">{scratcherCaptureRow + 1}</span> of{" "}
+                <span className="font-semibold">8</span> (slots{" "}
+                {scratcherCaptureRow * 4 + 1}–{scratcherCaptureRow * 4 + 4})
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-4">
+              {Array.from({ length: 8 }).map((_, index) => {
+                const hasPhoto = Boolean(scratcherRowPhotos[index]);
+                const active = index === scratcherCaptureRow;
+                return (
+                  <button
+                    key={`scratcher-row-select-${index}`}
+                    type="button"
+                    onClick={() => {
+                      setScratcherCaptureRow(index);
+                      resetScratcherTemp();
+                    }}
+                    className={clsx(
+                      "rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] transition",
+                      active
+                        ? "border-blue-400/60 bg-blue-500/10 text-blue-100"
+                        : hasPhoto
+                          ? "border-emerald-300/40 bg-emerald-500/10 text-emerald-100 hover:border-emerald-300/70"
+                          : "border-white/15 bg-white/5 text-slate-200 hover:border-white/40",
+                    )}
+                  >
+                    Row {index + 1}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+              {scratcherPreviewUrl ? (
+                // Preview freshly captured photo (before confirming)
+                <img
+                  src={scratcherPreviewUrl}
+                  alt={`Scratcher row ${scratcherCaptureRow + 1}`}
+                  className="w-full rounded-xl object-contain"
+                />
+              ) : scratcherRowPreviewUrls[scratcherCaptureRow] ? (
+                <img
+                  src={scratcherRowPreviewUrls[scratcherCaptureRow] as string}
+                  alt={`Scratcher row ${scratcherCaptureRow + 1}`}
+                  className="w-full rounded-xl object-contain"
+                />
+              ) : (
+                <div className="flex min-h-[220px] items-center justify-center text-sm text-slate-300">
+                  No photo yet. Tap “Take photo”.
                 </div>
-                <button
-                  type="button"
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white transition hover:border-white/50"
-                  onClick={() => {
-                    setScratcherTempFile(null);
-                    if (scratcherTempUrlRef.current) {
-                      URL.revokeObjectURL(scratcherTempUrlRef.current);
-                      scratcherTempUrlRef.current = null;
-                    }
-                    setScratcherPreviewUrl(null);
-                    setScratcherCaptureOpen(false);
-                  }}
-                  aria-label="Close"
-                >
-                  ✕
-                </button>
-              </div>
+              )}
+            </div>
 
-              <div className="grid gap-3 sm:grid-cols-4">
-                {Array.from({ length: 8 }).map((_, index) => {
-                  const hasPhoto = Boolean(scratcherRowPhotos[index]);
-                  const active = index === scratcherCaptureRow;
-                  return (
-                    <button
-                      key={`scratcher-row-select-${index}`}
-                      type="button"
-                      onClick={() => {
-                        setScratcherCaptureRow(index);
-                        setScratcherTempFile(null);
-                        if (scratcherTempUrlRef.current) {
-                          URL.revokeObjectURL(scratcherTempUrlRef.current);
-                          scratcherTempUrlRef.current = null;
-                        }
-                        setScratcherPreviewUrl(null);
-                      }}
-                      className={clsx(
-                        "rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] transition",
-                        active
-                          ? "border-blue-400/60 bg-blue-500/10 text-blue-100"
-                          : hasPhoto
-                            ? "border-emerald-300/40 bg-emerald-500/10 text-emerald-100 hover:border-emerald-300/70"
-                            : "border-white/15 bg-white/5 text-slate-200 hover:border-white/40",
-                      )}
-                    >
-                      Row {index + 1}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <input
-                ref={scratcherCaptureInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={(event) => {
-                  const next = event.target.files?.[0] ?? null;
-                  if (!next) return;
-                  if (scratcherTempUrlRef.current) {
-                    URL.revokeObjectURL(scratcherTempUrlRef.current);
-                    scratcherTempUrlRef.current = null;
-                  }
-                  setScratcherTempFile(next);
-                  const url = URL.createObjectURL(next);
-                  scratcherTempUrlRef.current = url;
-                  setScratcherPreviewUrl(url);
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  resetScratcherTemp();
+                  triggerScratcherCamera();
                 }}
-              />
+                className="ui-button ui-button-ghost"
+              >
+                {scratcherRowPhotos[scratcherCaptureRow] || scratcherTempFile
+                  ? "Retake"
+                  : "Take photo"}
+              </button>
 
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                {scratcherPreviewUrl ? (
-                  // Preview freshly captured photo (before confirming)
-                  <img
-                    src={scratcherPreviewUrl}
-                    alt={`Scratcher row ${scratcherCaptureRow + 1}`}
-                    className="w-full rounded-xl object-contain"
-                  />
-                ) : scratcherRowPreviewUrls[scratcherCaptureRow] ? (
-                  <img
-                    src={scratcherRowPreviewUrls[scratcherCaptureRow] as string}
-                    alt={`Scratcher row ${scratcherCaptureRow + 1}`}
-                    className="w-full rounded-xl object-contain"
-                  />
-                ) : (
-                  <div className="flex min-h-[220px] items-center justify-center text-sm text-slate-300">
-                    No photo yet. Tap “Take photo”.
-                  </div>
-                )}
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  disabled={!scratcherTempFile}
                   onClick={() => {
+                    if (!scratcherTempFile || !scratcherPreviewUrl) return;
+                    const row = scratcherCaptureRow;
+                    const tempFile = scratcherTempFile;
+                    const tempUrl = scratcherPreviewUrl;
+
+                    const nextPhotos = [...scratcherRowPhotos];
+                    nextPhotos[row] = tempFile;
+                    setScratcherRowPhotos(nextPhotos);
+
+                    setScratcherRowPreviewUrls((prev) => {
+                      const next = [...prev];
+                      if (next[row]) URL.revokeObjectURL(next[row] as string);
+                      next[row] = tempUrl;
+                      return next;
+                    });
+
                     setScratcherTempFile(null);
-                    if (scratcherTempUrlRef.current) {
-                      URL.revokeObjectURL(scratcherTempUrlRef.current);
-                      scratcherTempUrlRef.current = null;
-                    }
                     setScratcherPreviewUrl(null);
+                    scratcherTempUrlRef.current = null; // ownership moved to scratcherRowPreviewUrls
+
+                    const nextMissing = nextPhotos.findIndex(
+                      (file, index) => index > row && !file,
+                    );
+                    const fallback = nextPhotos.findIndex((file) => !file);
+                    const done = fallback < 0;
+                    if (done) {
+                      setScratcherCaptureOpen(false);
+                      return;
+                    }
+                    const nextRow = nextMissing >= 0 ? nextMissing : fallback;
+                    setScratcherCaptureRow(nextRow);
+                    // Convenience: once confirmed, immediately open camera for the next row.
                     triggerScratcherCamera();
                   }}
-                  className="ui-button ui-button-ghost"
+                  className="ui-button ui-button-primary disabled:opacity-60"
                 >
-                  {scratcherRowPhotos[scratcherCaptureRow] || scratcherTempFile
-                    ? "Retake"
-                    : "Take photo"}
+                  Looks good
                 </button>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={!scratcherTempFile}
-                    onClick={() => {
-                      if (!scratcherTempFile || !scratcherPreviewUrl) return;
-                      const row = scratcherCaptureRow;
-                      const tempFile = scratcherTempFile;
-                      const tempUrl = scratcherPreviewUrl;
-
-                      const nextPhotos = [...scratcherRowPhotos];
-                      nextPhotos[row] = tempFile;
-                      setScratcherRowPhotos(nextPhotos);
-
-                      setScratcherRowPreviewUrls((prev) => {
-                        const next = [...prev];
-                        if (next[row]) URL.revokeObjectURL(next[row] as string);
-                        next[row] = tempUrl;
-                        return next;
-                      });
-
-                      setScratcherTempFile(null);
-                      setScratcherPreviewUrl(null);
-                      scratcherTempUrlRef.current = null; // ownership moved to scratcherRowPreviewUrls
-
-                      const nextMissing = nextPhotos.findIndex(
-                        (file, index) => index > row && !file,
-                      );
-                      const fallback = nextPhotos.findIndex((file) => !file);
-                      const done = fallback < 0;
-                      if (done) {
-                        setScratcherCaptureOpen(false);
-                        return;
-                      }
-                      const nextRow = nextMissing >= 0 ? nextMissing : fallback;
-                      setScratcherCaptureRow(nextRow);
-                      // Convenience: once confirmed, immediately open camera for the next row.
-                      triggerScratcherCamera();
-                    }}
-                    className="ui-button ui-button-primary disabled:opacity-60"
-                  >
-                    Looks good
-                  </button>
-                </div>
               </div>
             </div>
           </div>
-        )}
+        </IHModal>
 
         {message && (
           <div
