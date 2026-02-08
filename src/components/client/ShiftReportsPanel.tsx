@@ -199,14 +199,20 @@ export default function ShiftReportsPanel({
         setLoading(true);
       }
       const isRange = startDate !== endDate;
-      const response = await fetch(
-        `/api/owner/shift-reports?store_id=${encodeURIComponent(
-          storeId,
-        )}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(
-          endDate,
-        )}${!isRange ? `&date=${encodeURIComponent(startDate)}&fallback=1` : ""}`,
-        { cache: "no-store" },
-      );
+      // Only "fallback to latest report date" on the initial/default view.
+      // If the user manually picked a date, show exactly that date (even if empty)
+      // so the UI doesn't show older reports under a newer selected date.
+      const allowFallback = !manualDateRange && !isRange;
+      const url = isRange
+        ? `/api/owner/shift-reports?store_id=${encodeURIComponent(
+            storeId,
+          )}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(
+            endDate,
+          )}`
+        : `/api/owner/shift-reports?store_id=${encodeURIComponent(
+            storeId,
+          )}&date=${encodeURIComponent(startDate)}${allowFallback ? "&fallback=1" : ""}`;
+      const response = await fetch(url, { cache: "no-store" });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         setMessage(data?.error ?? "Unable to load shift reports.");
