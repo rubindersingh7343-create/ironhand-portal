@@ -349,20 +349,6 @@ export default function EmployeeUploadForm({
       return;
     }
 
-    const cash = formElement.cashPhoto?.files?.[0];
-    const sales = formElement.salesPhoto?.files?.[0];
-    const scratcherPhotos = scratcherRowPhotos.filter(
-      (file): file is File => Boolean(file),
-    );
-    if (scratcherPhotos.length !== 2 || !cash || !sales) {
-      setStatus("error");
-      setErrorMessage(
-        "Please upload 2 scratcher photos (rows 1-4 and 5-8), plus cash + sales photos.",
-      );
-      setUploadingShift(false);
-      return;
-    }
-
     const isEmployee = user.role === "employee";
     const breakMinutes = Math.max(0, Number(hoursBreakMinutes) || 0);
     if (isEmployee) {
@@ -378,6 +364,67 @@ export default function EmployeeUploadForm({
         setUploadingShift(false);
         return;
       }
+    }
+
+    let endSnapshotItems: Array<{ slotId: string; ticketValue: string }> | null = null;
+    if (isEmployee) {
+      try {
+        const keyForDate = (value: string) =>
+          `ih:scratchers:endSnapshot:${user.storeNumber}:${value}`;
+        const today = new Date().toISOString().slice(0, 10);
+        const primaryKey = keyForDate(hoursDate);
+        const fallbackKey = keyForDate(today);
+        const raw = localStorage.getItem(primaryKey) ?? localStorage.getItem(fallbackKey);
+        const saved = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+
+        const slotsRes = await fetch(
+          `/api/scratchers/slots?store_id=${encodeURIComponent(user.storeNumber)}`,
+          { cache: "no-store" },
+        );
+        const slotsData = await slotsRes.json().catch(() => ({}));
+        const slots = Array.isArray(slotsData.slots) ? slotsData.slots : [];
+        const activeSlots = slots.filter((slot: any) => slot?.isActive);
+
+        const missing = activeSlots.filter(
+          (slot: any) => !String(saved?.[slot.id] ?? "").trim(),
+        );
+        if (missing.length) {
+          const missingSlots = missing
+            .map((slot: any) => slot?.slotNumber ?? "?")
+            .join(", ");
+          throw new Error(
+            `Missing scratcher end ticket numbers for slots: ${missingSlots}. Fill them in Scratchers before submitting.`,
+          );
+        }
+
+        endSnapshotItems = activeSlots.map((slot: any) => ({
+          slotId: String(slot.id),
+          ticketValue: String(saved?.[slot.id] ?? "").trim(),
+        }));
+      } catch (error) {
+        setStatus("error");
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "Unable to read scratcher end ticket numbers.",
+        );
+        setUploadingShift(false);
+        return;
+      }
+    }
+
+    const cash = formElement.cashPhoto?.files?.[0];
+    const sales = formElement.salesPhoto?.files?.[0];
+    const scratcherPhotos = scratcherRowPhotos.filter(
+      (file): file is File => Boolean(file),
+    );
+    if (scratcherPhotos.length !== 2 || !cash || !sales) {
+      setStatus("error");
+      setErrorMessage(
+        "Please upload 2 scratcher photos (rows 1-4 and 5-8), plus cash + sales photos.",
+      );
+      setUploadingShift(false);
+      return;
     }
 
     if (!supabasePublic) {
@@ -475,6 +522,12 @@ export default function EmployeeUploadForm({
             breakMinutes,
           }
         : undefined,
+      scratcherEndSnapshot: isEmployee
+        ? {
+            date: hoursDate,
+            items: endSnapshotItems ?? [],
+          }
+        : undefined,
       files: {
         scratcherPhotos: scratcherPhotosMeta,
         cashPhoto: {
@@ -517,6 +570,24 @@ export default function EmployeeUploadForm({
       setHoursEndTime("");
       setHoursBreakMinutes(0);
     }
+    setReportValues(() => {
+      const next: Record<string, string> = {};
+      reportConfig.forEach((item) => {
+        if (!item.isCustom && item.enabled) {
+          next[item.key] = "";
+        }
+      });
+      return next;
+    });
+    setCustomValues(() => {
+      const next: Record<string, string> = {};
+      reportConfig.forEach((item) => {
+        if (item.isCustom && item.enabled) {
+          next[item.key] = "";
+        }
+      });
+      return next;
+    });
     setScratcherRowPhotos(Array.from({ length: 2 }).map(() => null));
     setScratcherRowPreviewUrls((prev) => {
       prev.forEach((url) => {

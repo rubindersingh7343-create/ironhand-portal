@@ -32,7 +32,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   const [error, setError] = useState<string | null>(null);
   const [events, setEvents] = useState<ScratcherPackEvent[]>([]);
   const [showInactive, setShowInactive] = useState(false);
-  const [shiftReportId, setShiftReportId] = useState<string | null>(null);
   const [activationOpen, setActivationOpen] = useState(false);
   const [activationSlotId, setActivationSlotId] = useState<string | null>(null);
   const [returnOpen, setReturnOpen] = useState(false);
@@ -47,16 +46,47 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   const [eventFile, setEventFile] = useState<File | null>(null);
   const [activeFile, setActiveFile] = useState<StoredFile | null>(null);
   const [endValues, setEndValues] = useState<Record<string, string>>({});
+  const [snapshotDate] = useState(() => todayIso());
   const [activationData, setActivationData] = useState({
     productId: "",
     packCode: "",
     startTicket: "",
     receipt: null as File | null,
   });
-  const [rolloverSlots, setRolloverSlots] = useState<
-    Array<{ slotId: string; slotNumber: number }>
-  >([]);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const endSnapshotStorageKey = useMemo(
+    () => `ih:scratchers:endSnapshot:${user.storeNumber}:${snapshotDate}`,
+    [snapshotDate, user.storeNumber],
+  );
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(endSnapshotStorageKey);
+      if (!saved) return;
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === "object") {
+        setEndValues(parsed as Record<string, string>);
+      }
+    } catch {
+      // Ignore storage parse errors
+    }
+  }, [endSnapshotStorageKey]);
+
+  const setEndValue = useCallback(
+    (slotId: string, value: string) => {
+      setEndValues((prev) => {
+        const next = { ...prev, [slotId]: value };
+        try {
+          localStorage.setItem(endSnapshotStorageKey, JSON.stringify(next));
+        } catch {
+          // Ignore storage write errors
+        }
+        return next;
+      });
+    },
+    [endSnapshotStorageKey],
+  );
 
   const loadBundle = useCallback(async () => {
     setLoading(true);
@@ -119,11 +149,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     return showInactive ? slots : slots.filter((slot) => slot.isActive);
   }, [bundle?.slots, showInactive]);
 
-  const snapshotSlots = useMemo(
-    () => (bundle?.slots ?? []).filter((slot) => slot.isActive),
-    [bundle?.slots],
-  );
-
   const openActivationForSlot = (slotId: string) => {
     const slot = bundle?.slots?.find((entry) => entry.id === slotId);
     const defaultProductId = slot?.defaultProductId ?? "";
@@ -142,53 +167,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     setReturnReceipt(null);
     setReturnNote("");
     setReturnOpen(true);
-  };
-
-  const handleSnapshotSubmit = async (
-    type: "start" | "end",
-    values: Record<string, string>,
-  ) => {
-    setNotice(null);
-    const items = snapshotSlots
-      .map((slot) => ({
-        slotId: slot.id,
-        ticketValue: values[slot.id] ?? "",
-      }))
-      .filter((item) => item.ticketValue.trim().length > 0);
-
-    if (!items.length) {
-      setNotice("Enter ticket numbers for at least one slot.");
-      return;
-    }
-
-    const response = await fetch(`/api/scratchers/snapshots/${type}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        storeId: user.storeNumber,
-        date: todayIso(),
-        items,
-      }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      if (data?.rolloverSlots && Array.isArray(data.rolloverSlots)) {
-        setRolloverSlots(data.rolloverSlots);
-        setNotice(
-          "Pack rollover detected. Activate a new pack for the flagged slots.",
-        );
-      } else {
-        setNotice(data?.error ?? "Unable to save snapshot.");
-      }
-      return;
-    }
-
-    if (data?.shiftReportId) {
-      setShiftReportId(data.shiftReportId);
-    }
-    setNotice(type === "start" ? "Start snapshot saved." : "End snapshot saved.");
-    setRolloverSlots([]);
-    await loadBundle();
   };
 
   const handleActivatePack = async () => {
@@ -230,7 +208,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
 
     setNotice("Pack activated.");
     setActivationOpen(false);
-    setRolloverSlots((prev) => prev.filter((slot) => slot.slotId !== activationSlotId));
     await loadBundle();
   };
 
@@ -379,11 +356,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
           {notice}
         </div>
       )}
-      {rolloverSlots.length > 0 && (
-        <div className="rounded-2xl border border-amber-300/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-          Pack rollover detected in slots {rolloverSlots.map((slot) => slot.slotNumber || "?").join(", ")}. Activate a new pack before submitting the end snapshot.
-        </div>
-      )}
 
       <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
         <label className="inline-flex items-center gap-2">
@@ -394,21 +366,13 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
           />
           Show inactive slots
         </label>
-        <span className="text-slate-400">Shift report ID: {shiftReportId ?? "—"}</span>
         <span className="hidden text-slate-400 sm:inline">•</span>
         <span className="text-slate-200">
           End snapshot:{" "}
           <span className="text-slate-300">
-            fill the end ticket inside each active slot
+            fill the end ticket inside each active slot (auto-submits with shift package)
           </span>
         </span>
-        <button
-          type="button"
-          className="ui-button ui-button-primary ml-auto"
-          onClick={() => handleSnapshotSubmit("end", endValues)}
-        >
-          Save end snapshot
-        </button>
       </div>
 
       {loading ? (
@@ -429,9 +393,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
               ? productMap.get(slot.defaultProductId)
               : null;
             const baselineActive = !pack && baselineExists;
-            const needsActivation = rolloverSlots.some(
-              (entry) => entry.slotId === slot.id,
-            );
             const product = pack
               ? productMap.get(pack.productId)
               : baselineActive
@@ -447,11 +408,9 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
             const statusLabel =
               pack?.status === "active"
                 ? "active"
-                : needsActivation
-                  ? "activation needed"
-                  : baselineActive
-                    ? "active"
-                    : "inactive";
+                : baselineActive
+                  ? "active"
+                  : "inactive";
             return (
               <div key={slot.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -475,10 +434,10 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
                       >
                         Return pack
                       </button>
-                    ) : !baselineActive || needsActivation ? (
+                    ) : !baselineActive ? (
                       <button
                         type="button"
-                        className={`ui-button ${needsActivation ? "ui-button-primary" : "ui-button-ghost"}`}
+                        className="ui-button ui-button-ghost"
                         onClick={() => openActivationForSlot(slot.id)}
                       >
                         Activate pack
@@ -497,12 +456,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
                         type="text"
                         inputMode="numeric"
                         value={endValues[slot.id] ?? ""}
-                        onChange={(event) =>
-                          setEndValues((prev) => ({
-                            ...prev,
-                            [slot.id]: event.target.value,
-                          }))
-                        }
+                        onChange={(event) => setEndValue(slot.id, event.target.value)}
                         placeholder="Ending ticket number"
                         className="ui-field ui-field--slim"
                       />

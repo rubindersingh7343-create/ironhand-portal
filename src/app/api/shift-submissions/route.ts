@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import {
   addShiftSubmission,
+  createScratcherSnapshot,
   createEmployeeHoursEntry,
+  getLatestScratcherStartSnapshotByStore,
+  listScratcherSlotBundle,
+  listScratcherSnapshots,
   recalculateScratcherShift,
   saveUploadedFile,
   upsertShiftReport,
@@ -49,6 +53,7 @@ export async function POST(request: Request) {
         ? body.customFields
         : [];
       const hoursPayload = body?.hours ?? null;
+      const scratcherEndSnapshotPayload = body?.scratcherEndSnapshot ?? null;
       const isEmployee = sessionUser.role === "employee";
 
       const hasScratcherMedia =
@@ -181,6 +186,133 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Store access required." }, { status: 403 });
       }
 
+      const report = await upsertShiftReport({
+        storeId,
+        employeeId: sessionUser.id,
+        employeeName: sessionUser.name,
+        date: reportDetails.date,
+        grossAmount,
+        liquorAmount: reportDetails.liquor,
+        beerAmount: reportDetails.beer,
+        cigAmount: reportDetails.cig,
+        tobaccoAmount: reportDetails.tobacco,
+        gasAmount: reportDetails.gas,
+        atmAmount: reportDetails.atm,
+        lottoPoAmount: reportDetails.lottoPo,
+        depositAmount: reportDetails.deposit,
+        scrAmount,
+        lottoAmount,
+        cashAmount,
+        storeAmount,
+        customFields: reportDetails.customFields,
+      });
+
+      const endItemsRaw = Array.isArray(scratcherEndSnapshotPayload?.items)
+        ? (scratcherEndSnapshotPayload.items as any[])
+        : [];
+      if (endItemsRaw.length > 0) {
+        const parseTicketNumber = (value: string) => {
+          const trimmed = value.trim();
+          if (!trimmed) return null;
+          const parsed = Number.parseInt(trimmed, 10);
+          return Number.isFinite(parsed) ? parsed : null;
+        };
+
+        const { slots } = await listScratcherSlotBundle(storeId);
+        const activeSlots = slots.filter((slot) => slot.isActive);
+
+        const endMap = new Map(
+          endItemsRaw.map((entry) => [
+            String(entry?.slotId ?? ""),
+            String(entry?.ticketValue ?? "").trim(),
+          ]),
+        );
+
+        const missing = activeSlots.filter(
+          (slot) => !String(endMap.get(slot.id) ?? "").trim(),
+        );
+        if (missing.length) {
+          return NextResponse.json(
+            {
+              error: `Missing scratcher end ticket numbers for slots: ${missing
+                .map((slot) => slot.slotNumber)
+                .join(", ")}.`,
+            },
+            { status: 400 },
+          );
+        }
+
+        const { snapshots, items } = await listScratcherSnapshots(report.id);
+        let startSnapshot = snapshots.find((snap) => snap.snapshotType === "start");
+        let startItems = startSnapshot
+          ? items.filter((item) => item.snapshotId === startSnapshot?.id)
+          : [];
+
+        if (!startSnapshot) {
+          const latestBaseline = await getLatestScratcherStartSnapshotByStore(storeId);
+          if (latestBaseline) {
+            const cloneResult = await createScratcherSnapshot({
+              shiftReportId: report.id,
+              storeId,
+              employeeUserId: sessionUser.id,
+              snapshotType: "start",
+              items: latestBaseline.items.map((item) => ({
+                slotId: item.slotId,
+                ticketValue: item.ticketValue,
+              })),
+            });
+            if (cloneResult) {
+              startSnapshot = cloneResult.snapshot;
+              startItems = cloneResult.items;
+            }
+          }
+        }
+
+        if (startItems.length) {
+          const startMap = new Map(startItems.map((item) => [item.slotId, item]));
+          const rolloverSlots: Array<{ slotId: string; slotNumber: number }> = [];
+          for (const slot of activeSlots) {
+            const startItem = startMap.get(slot.id);
+            if (!startItem) continue;
+            const startValue = parseTicketNumber(String(startItem.ticketValue ?? ""));
+            const endValue = parseTicketNumber(String(endMap.get(slot.id) ?? ""));
+            if (startValue === null || endValue === null) continue;
+            if (endValue < startValue) {
+              const activePackId = slot.activePackId ?? null;
+              const startPackId = startItem.packId ?? null;
+              const baselinePack = !activePackId && !startPackId;
+              const samePack =
+                (activePackId && activePackId === startPackId) || baselinePack;
+              if (samePack) {
+                rolloverSlots.push({ slotId: slot.id, slotNumber: slot.slotNumber });
+              }
+            }
+          }
+          if (rolloverSlots.length) {
+            return NextResponse.json(
+              {
+                error:
+                  "Pack rollover detected. Activate a new pack before submitting shift package.",
+                rolloverSlots,
+              },
+              { status: 409 },
+            );
+          }
+        }
+
+        // Create the end snapshot. If one already exists, keep the existing one (no-op).
+        await createScratcherSnapshot({
+          shiftReportId: report.id,
+          storeId,
+          employeeUserId: sessionUser.id,
+          snapshotType: "end",
+          items: activeSlots.map((slot) => ({
+            slotId: slot.id,
+            ticketValue: String(endMap.get(slot.id) ?? "").trim(),
+          })),
+        });
+      }
+
       const submission = await addShiftSubmission({
         employeeName: sessionUser.name,
         storeNumber: storeId,
@@ -205,27 +337,6 @@ export async function POST(request: Request) {
           notes: shiftNotes?.trim() || undefined,
         });
       }
-
-      const report = await upsertShiftReport({
-        storeId,
-        employeeId: sessionUser.id,
-        employeeName: sessionUser.name,
-        date: reportDetails.date,
-        grossAmount,
-        liquorAmount: reportDetails.liquor,
-        beerAmount: reportDetails.beer,
-        cigAmount: reportDetails.cig,
-        tobaccoAmount: reportDetails.tobacco,
-        gasAmount: reportDetails.gas,
-        atmAmount: reportDetails.atm,
-        lottoPoAmount: reportDetails.lottoPo,
-        depositAmount: reportDetails.deposit,
-        scrAmount,
-        lottoAmount,
-        cashAmount,
-        storeAmount,
-        customFields: reportDetails.customFields,
-      });
 
       try {
         await recalculateScratcherShift({
