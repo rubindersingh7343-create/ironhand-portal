@@ -4,6 +4,8 @@ import {
   getScratcherShiftCalculation,
   getShiftReportById,
   listShiftSubmissionUploadsByDate,
+  listScratcherSlotBundle,
+  listScratcherSnapshots,
   recalculateScratcherShift,
 } from "@/lib/dataStore";
 
@@ -53,6 +55,30 @@ export async function GET(
     }
   }
 
+  let endSnapshotItems: Array<{ slotId: string; slotNumber: number; ticketValue: string }> = [];
+  try {
+    if (storeId) {
+      const { snapshots, items } = await listScratcherSnapshots(shift_report_id);
+      const endSnapshot = snapshots.find((snap) => snap.snapshotType === "end");
+      if (endSnapshot) {
+        const endItems = items.filter((item) => item.snapshotId === endSnapshot.id);
+        const bundle = await listScratcherSlotBundle(storeId);
+        const slotNumberMap = new Map(bundle.slots.map((slot) => [slot.id, slot.slotNumber]));
+        endSnapshotItems = endItems
+          .map((item) => ({
+            slotId: item.slotId,
+            slotNumber: slotNumberMap.get(item.slotId) ?? 0,
+            ticketValue: item.ticketValue,
+          }))
+          .filter((entry) => entry.ticketValue?.trim()?.length)
+          .sort((a, b) => (a.slotNumber || 0) - (b.slotNumber || 0));
+      }
+    }
+  } catch (error) {
+    console.error("Unable to load scratcher end snapshot items:", error);
+    endSnapshotItems = [];
+  }
+
   let scratcherPhotos: any[] | null = null;
   try {
     if (report?.date && report?.storeId) {
@@ -82,5 +108,6 @@ export async function GET(
     calculation: calculation ?? null,
     report: report ?? null,
     scratcherPhotos,
+    endSnapshotItems,
   });
 }

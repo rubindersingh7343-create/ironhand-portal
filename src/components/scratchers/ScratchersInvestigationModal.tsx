@@ -28,6 +28,7 @@ type ScratcherCalculationResponse = {
   calculation: ScratcherShiftCalculation | null;
   report: ShiftReport | null;
   scratcherPhotos?: StoredFile[] | null;
+  endSnapshotItems?: Array<{ slotId: string; slotNumber: number; ticketValue: string }>;
 };
 
 export default function ScratchersInvestigationModal({
@@ -64,11 +65,23 @@ export default function ScratchersInvestigationModal({
           scratcherPhotos: Array.isArray(data?.scratcherPhotos)
             ? (data.scratcherPhotos as StoredFile[])
             : null,
+          endSnapshotItems: Array.isArray(data?.endSnapshotItems)
+            ? (data.endSnapshotItems as Array<{
+                slotId: string;
+                slotNumber: number;
+                ticketValue: string;
+              }>)
+            : [],
         });
       })
       .catch(() => {
         if (!active) return;
-        setPayload({ calculation: null, report: null, scratcherPhotos: null });
+        setPayload({
+          calculation: null,
+          report: null,
+          scratcherPhotos: null,
+          endSnapshotItems: [],
+        });
       })
       .finally(() => {
         if (!active) return;
@@ -89,6 +102,7 @@ export default function ScratchersInvestigationModal({
   const calculation = payload?.calculation ?? null;
   const report = payload?.report ?? null;
   const scratcherPhotos = payload?.scratcherPhotos ?? null;
+  const endSnapshotItems = payload?.endSnapshotItems ?? [];
   const flags = calculation?.flags ?? [];
   const missingStart = flags.includes("missing_start_snapshot");
   const missingEnd = flags.includes("missing_end_snapshot");
@@ -248,6 +262,38 @@ export default function ScratchersInvestigationModal({
                 Flags: {flags.join(", ")}
               </div>
             )}
+
+            <div className="rounded-2xl border border-white/10 bg-[#0f1a33] p-4">
+              <p className="text-xs uppercase tracking-[0.25em] text-slate-300">
+                Employee End Snapshot
+              </p>
+              {endSnapshotItems.length === 0 ? (
+                <p className="mt-3 text-sm text-slate-400">
+                  No end snapshot submitted for this shift yet (nothing to show).
+                </p>
+              ) : (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {endSnapshotItems.map((item) => (
+                    <div
+                      key={`end-snap-${item.slotId}`}
+                      className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-4 py-2"
+                    >
+                      <span className="text-sm font-semibold text-white">
+                        Slot {item.slotNumber || "—"}
+                      </span>
+                      <span className="font-mono text-sm text-slate-100">
+                        {item.ticketValue}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {endSnapshotItems.length > 0 && missingEnd ? (
+                <p className="mt-3 text-xs text-amber-200">
+                  Note: The calculation is still flagged as missing an end snapshot. Refresh and/or re-open this modal to pull the latest recalculation.
+                </p>
+              ) : null}
+            </div>
 
             <div className="rounded-2xl border border-white/10 bg-[#0f1a33] p-4">
               <p className="text-xs uppercase tracking-[0.25em] text-slate-300">
