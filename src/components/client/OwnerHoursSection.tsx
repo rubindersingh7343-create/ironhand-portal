@@ -358,47 +358,56 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
             Track employee hours, overlaps, and monthly payroll for {storeName ?? `Store ${storeId}`}.
           </p>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2 text-xs uppercase tracking-[0.2em] text-slate-300">
-          <button
-            type="button"
-            onClick={() => setMonth((prev) => shiftMonth(prev, -1))}
-            className="rounded-full border border-white/10 px-3 py-1 text-[0.65rem] text-slate-200 hover:bg-white/10"
-          >
-            Prev
-          </button>
-          <span className="text-xs text-slate-200">{monthLabel(month)}</span>
-          <button
-            type="button"
-            onClick={() => setMonth((prev) => shiftMonth(prev, 1))}
-            className="rounded-full border border-white/10 px-3 py-1 text-[0.65rem] text-slate-200 hover:bg-white/10"
-          >
-            Next
-          </button>
-          <button
-            type="button"
-            onClick={() => shiftDay(-1)}
-            className="ui-date-step"
-            aria-label="Previous day"
-            disabled={!day}
-          >
-            ‹
-          </button>
-          <input
-            type="date"
-            value={day}
-            onChange={(event) => setDay(event.target.value)}
-            className="ui-field ui-field--slim"
-            aria-label="Hours date"
-          />
-          <button
-            type="button"
-            onClick={() => shiftDay(1)}
-            className="ui-date-step"
-            aria-label="Next day"
-            disabled={!day}
-          >
-            ›
-          </button>
+        <div className="flex flex-col items-end gap-2 text-xs uppercase tracking-[0.2em] text-slate-300">
+          <div className="flex flex-nowrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setMonth((prev) => shiftMonth(prev, -1))}
+              className="ui-date-step"
+              aria-label="Previous month"
+            >
+              ‹
+            </button>
+            <span className="text-xs text-slate-200 whitespace-nowrap">
+              {monthLabel(month)}
+            </span>
+            <button
+              type="button"
+              onClick={() => setMonth((prev) => shiftMonth(prev, 1))}
+              className="ui-date-step"
+              aria-label="Next month"
+            >
+              ›
+            </button>
+          </div>
+
+          <div className="flex flex-nowrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => shiftDay(-1)}
+              className="ui-date-step"
+              aria-label="Previous day"
+              disabled={!day}
+            >
+              ‹
+            </button>
+            <input
+              type="date"
+              value={day}
+              onChange={(event) => setDay(event.target.value)}
+              className="ui-field ui-field--slim"
+              aria-label="Hours date"
+            />
+            <button
+              type="button"
+              onClick={() => shiftDay(1)}
+              className="ui-date-step"
+              aria-label="Next day"
+              disabled={!day}
+            >
+              ›
+            </button>
+          </div>
         </div>
       </div>
 
