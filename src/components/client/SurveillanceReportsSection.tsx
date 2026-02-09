@@ -546,12 +546,17 @@ export default function SurveillanceReportsSection({
                               </span>
                             )}
                             {entry.avgGrade && (
-                              <span
-                                className={`surv-chip rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${gradePillClass(
-                                  entry.avgGrade,
-                                )}`}
-                              >
-                                Avg {entry.avgGrade}
+                              <span className="flex items-center gap-2">
+                                <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-300">
+                                  Avg
+                                </span>
+                                <span
+                                  className={`surv-chip rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${gradePillClass(
+                                    entry.avgGrade,
+                                  )}`}
+                                >
+                                  {entry.avgGrade}
+                                </span>
                               </span>
                             )}
                           </div>
