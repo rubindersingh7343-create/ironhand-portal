@@ -461,6 +461,16 @@ body:has(.login-lock) {
   overflow: hidden;
 }
 
+.portal-shell {
+  /* Keep content clear of the fixed ScrollTopBar (safe area + 56px bar + breathing room). */
+  padding-top: calc(env(safe-area-inset-top) + 60px) !important;
+}
+
+body:has(.portal-shell) {
+  /* Avoid double-counting safe area padding when a portal shell is present. */
+  padding-top: 0;
+}
+
 .safe-area-top {
   padding-top: calc(env(safe-area-inset-top, 6px) + 2px);
 }

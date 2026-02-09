@@ -3,6 +3,7 @@ import SettingsButton from "@/components/SettingsButton";
 import EmployeeUploadForm from "@/components/employee/EmployeeUploadForm";
 import EmployeeBottomBar from "@/components/employee/EmployeeBottomBar";
 import EmployeeSurveillanceSection from "@/components/employee/EmployeeSurveillanceSection";
+import EmployeeHoursSection from "@/components/employee/EmployeeHoursSection";
 import IronHandReportForm from "@/components/ironhand/IronHandReportForm";
 import InvitePanel from "@/components/ironhand/InvitePanel";
 import OwnerPortalDashboard from "@/components/client/OwnerPortalDashboard";
@@ -54,8 +55,8 @@ export default async function DashboardShell({ user }: { user: SessionUser }) {
 
   const shellClassName =
     user.role === "client"
-      ? `${shellPadding} owner-portal-shell`
-      : shellPadding;
+      ? `${shellPadding} portal-shell owner-portal-shell`
+      : `${shellPadding} portal-shell`;
 
   const isClient = user.role === "client";
   const headerClassName = isClient
@@ -78,6 +79,7 @@ export default async function DashboardShell({ user }: { user: SessionUser }) {
         ? [
             { id: "employee-surveillance", label: "Surveillance" },
             { id: "employee-uploads", label: "Uploads" },
+            { id: "employee-hours", label: "Hours" },
           ]
         : [];
 
@@ -124,6 +126,9 @@ export default async function DashboardShell({ user }: { user: SessionUser }) {
             </div>
             <div className="portal-section" id="employee-uploads">
               <EmployeeUploadForm user={user} className="max-w-3xl" />
+            </div>
+            <div className="portal-section" id="employee-hours">
+              <EmployeeHoursSection user={user} />
             </div>
           </>
         )}
