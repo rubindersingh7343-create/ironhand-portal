@@ -562,6 +562,18 @@ select.ui-field--slim {
   padding-right: 24px;
 }
 
+@supports (-webkit-touch-callout: none) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  .ui-field--slim {
+    font-size: 16px !important;
+  }
+}
+
 .ui-button--slim {
   border-radius: 999px;
   padding: 4px 12px;
@@ -744,7 +756,8 @@ select.ui-field--slim {
 
 
 .owner-portal-shell {
-  padding-top: calc(env(safe-area-inset-top) + 36px) !important;
+  /* Keep content clear of the fixed ScrollTopBar (safe area + 56px bar + a little breathing room). */
+  padding-top: calc(env(safe-area-inset-top) + 60px) !important;
 }
 
 body:has(.owner-portal-shell) {
