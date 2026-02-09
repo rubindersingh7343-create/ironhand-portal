@@ -28,6 +28,9 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // Prevent iOS Safari/PWA from auto-zooming and getting "stuck" when focusing inputs.
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: "cover",
 };
 
