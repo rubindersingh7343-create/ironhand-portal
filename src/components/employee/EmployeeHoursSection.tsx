@@ -41,6 +41,17 @@ const toMinutes = (value: string) => {
   return h * 60 + m;
 };
 
+const formatTime12 = (value: string) => {
+  const [hRaw, mRaw] = value.split(":");
+  const h = Number(hRaw);
+  const m = Number(mRaw);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return value;
+  const period = h >= 12 ? "PM" : "AM";
+  const hour = ((h % 12) || 12).toString();
+  const minute = String(m).padStart(2, "0");
+  return `${hour}:${minute} ${period}`;
+};
+
 const formatDate = (value: string) => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
@@ -298,7 +309,8 @@ export default function EmployeeHoursSection({ user }: { user: SessionUser }) {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-sm text-slate-200">
-                    {formatDate(entry.date)} · {entry.startTime} - {entry.endTime}
+                    {formatDate(entry.date)} · {formatTime12(entry.startTime)} -{" "}
+                    {formatTime12(entry.endTime)}
                   </p>
                   {entry.breakMinutes > 0 && (
                     <p className="text-xs text-slate-400">

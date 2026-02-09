@@ -80,6 +80,17 @@ const toMinutes = (value: string) => {
   return h * 60 + m;
 };
 
+const formatTime12 = (value: string) => {
+  const [hRaw, mRaw] = value.split(":");
+  const h = Number(hRaw);
+  const m = Number(mRaw);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return value;
+  const period = h >= 12 ? "PM" : "AM";
+  const hour = ((h % 12) || 12).toString();
+  const minute = String(m).padStart(2, "0");
+  return `${hour}:${minute} ${period}`;
+};
+
 const computeOverlaps = (entries: HoursEntry[]) => {
   const overlaps: Record<string, Array<{ date: string; startTime: string; endTime: string }>> = {};
   const byEmployee = new Map<string, HoursEntry[]>();
@@ -517,7 +528,8 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
                       className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-[#0b1429] px-3 py-2 text-xs text-slate-300"
                     >
                       <span>
-                        {formatDate(entry.date)} · {entry.startTime} - {entry.endTime}
+                        {formatDate(entry.date)} · {formatTime12(entry.startTime)} -{" "}
+                        {formatTime12(entry.endTime)}
                       </span>
                       <span className="text-slate-100">{Number(entry.hours).toFixed(2)} hrs</span>
                     </div>
