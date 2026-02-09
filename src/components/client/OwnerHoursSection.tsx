@@ -30,6 +30,8 @@ type Payment = {
   paidAt?: string;
 };
 
+const getLocalDate = () => new Date().toLocaleDateString("en-CA");
+
 const monthKey = (value?: Date) => {
   const now = value ?? new Date();
   const month = String(now.getMonth() + 1).padStart(2, "0");
@@ -110,6 +112,7 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
   const storeId = ownerStore?.selectedStoreId ?? user.storeNumber;
   const storeName = ownerStore?.activeStore?.storeName ?? user.storeName;
   const [month, setMonth] = useState(() => monthKey());
+  const [day, setDay] = useState<string>("");
   const [entries, setEntries] = useState<HoursEntry[]>([]);
   const [rates, setRates] = useState<HourlyRate[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -167,6 +170,13 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
         setEntries(current.entries);
         setRates(current.rates);
         setPayments(current.payments);
+        // Default to the most recent day with hours in this month.
+        const latestDay = current.entries.reduce<string>((latest, entry) => {
+          if (!entry?.date) return latest;
+          if (!latest || entry.date > latest) return entry.date;
+          return latest;
+        }, "");
+        setDay(latestDay || getLocalDate());
 
         const rateMap = new Map<string, number>();
         previous.rates.forEach((rate) => {
@@ -205,15 +215,20 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
     };
   }, [fetchMonthData, month, storeId]);
 
+  const visibleEntries = useMemo(() => {
+    if (!day) return entries;
+    return entries.filter((entry) => entry.date === day);
+  }, [day, entries]);
+
   const entriesByEmployee = useMemo(() => {
     const map = new Map<string, HoursEntry[]>();
-    entries.forEach((entry) => {
+    visibleEntries.forEach((entry) => {
       const key = entry.employeeId || "unknown";
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(entry);
     });
     return map;
-  }, [entries]);
+  }, [visibleEntries]);
 
   const rateMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -231,7 +246,7 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
     return map;
   }, [payments]);
 
-  const overlaps = useMemo(() => computeOverlaps(entries), [entries]);
+  const overlaps = useMemo(() => computeOverlaps(visibleEntries), [visibleEntries]);
 
   const totals = useMemo(() => {
     const map = new Map<string, number>();
@@ -241,6 +256,15 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
     });
     return map;
   }, [entries]);
+
+  const visibleTotals = useMemo(() => {
+    const map = new Map<string, number>();
+    visibleEntries.forEach((entry) => {
+      const key = entry.employeeId || "unknown";
+      map.set(key, (map.get(key) ?? 0) + (Number(entry.hours) || 0));
+    });
+    return map;
+  }, [visibleEntries]);
 
   const previousMonth = useMemo(() => shiftMonth(month, -1), [month]);
   const currentMonth = useMemo(() => monthKey(), []);
@@ -315,7 +339,7 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
             Track employee hours, overlaps, and monthly payroll for {storeName ?? `Store ${storeId}`}.
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-slate-300">
+        <div className="flex flex-wrap items-center justify-end gap-2 text-xs uppercase tracking-[0.2em] text-slate-300">
           <button
             type="button"
             onClick={() => setMonth((prev) => shiftMonth(prev, -1))}
@@ -331,6 +355,13 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
           >
             Next
           </button>
+          <input
+            type="date"
+            value={day}
+            onChange={(event) => setDay(event.target.value)}
+            className="ui-field ui-field--slim"
+            aria-label="Hours date"
+          />
         </div>
       </div>
 
@@ -354,11 +385,16 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
         </div>
       ) : entries.length === 0 ? (
         <p className="text-sm text-slate-400">No hours logged for this month.</p>
+      ) : day && visibleEntries.length === 0 ? (
+        <p className="text-sm text-slate-400">
+          No hours logged for {formatDate(day)}.
+        </p>
       ) : (
         <div className="space-y-4">
           {[...entriesByEmployee.entries()].map(([employeeId, list]) => {
             const name = list[0]?.employeeName ?? "Employee";
             const totalHours = Number((totals.get(employeeId) ?? 0).toFixed(2));
+            const dayHours = Number((visibleTotals.get(employeeId) ?? 0).toFixed(2));
             const hourlyRate = Number(rateMap.get(employeeId) ?? 0);
             const totalPay = Number((totalHours * hourlyRate).toFixed(2));
             const payment = paymentMap.get(employeeId);
@@ -372,8 +408,15 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
                   <div>
                     <p className="text-sm font-semibold text-slate-100">{name}</p>
                     <p className="text-xs text-slate-400">
-                      {totalHours.toFixed(2)} hrs logged
+                      {day
+                        ? `${dayHours.toFixed(2)} hrs on ${formatDate(day)}`
+                        : `${totalHours.toFixed(2)} hrs logged`}
                     </p>
+                    {day ? (
+                      <p className="text-[11px] text-slate-500">
+                        {totalHours.toFixed(2)} hrs month-to-date
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
                     <label className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
