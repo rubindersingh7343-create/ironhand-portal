@@ -550,12 +550,16 @@ export default function SurveillanceReportsSection({
                                 <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-300">
                                   Avg
                                 </span>
+                                {/*
+                                  Defensive: older data/code paths may already prefix avgGrade with "Avg ".
+                                  The UI should only show the grade inside the pill.
+                                */}
                                 <span
                                   className={`surv-chip rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${gradePillClass(
-                                    entry.avgGrade,
+                                    entry.avgGrade.replace(/^avg\\s+/i, ""),
                                   )}`}
                                 >
-                                  {entry.avgGrade}
+                                  {entry.avgGrade.replace(/^avg\\s+/i, "")}
                                 </span>
                               </span>
                             )}
