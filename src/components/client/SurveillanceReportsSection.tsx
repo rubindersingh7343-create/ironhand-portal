@@ -367,7 +367,7 @@ export default function SurveillanceReportsSection({
     return Array.from(latestByEmployee.entries()).map(([name, record]) => ({
       name,
       grade: record.surveillanceGrade ?? "",
-      avgGrade: averageGradeByEmployee.get(name),
+      avgGrade: (averageGradeByEmployee.get(name) ?? "").replace(/^avg\\s+/i, ""),
       record,
     }));
   }, [routineRecords, averageGradeByEmployee]);
@@ -546,20 +546,16 @@ export default function SurveillanceReportsSection({
                               </span>
                             )}
                             {entry.avgGrade && (
-                              <span className="flex items-center gap-2">
-                                <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-300">
+                              <span className="flex items-center gap-1.5">
+                                <span className="text-[11px] font-medium text-slate-300">
                                   Avg
                                 </span>
-                                {/*
-                                  Defensive: older data/code paths may already prefix avgGrade with "Avg ".
-                                  The UI should only show the grade inside the pill.
-                                */}
                                 <span
                                   className={`surv-chip rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${gradePillClass(
-                                    entry.avgGrade.replace(/^avg\\s+/i, ""),
+                                    entry.avgGrade,
                                   )}`}
                                 >
-                                  {entry.avgGrade.replace(/^avg\\s+/i, "")}
+                                  {entry.avgGrade}
                                 </span>
                               </span>
                             )}
