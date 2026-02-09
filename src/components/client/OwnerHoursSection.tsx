@@ -54,9 +54,20 @@ const monthLabel = (value: string) => {
   });
 };
 
-const formatDate = (value: string) => {
+const parseDateOnly = (value: string) => {
+  if (!value) return null;
+  // Treat YYYY-MM-DD as a local date (JS Date(string) treats it as UTC and can render as the prior day in the US).
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const parsed = new Date(`${value}T00:00:00`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const formatDate = (value: string) => {
+  const parsed = parseDateOnly(value);
+  if (!parsed) return value;
   return parsed.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
@@ -270,6 +281,14 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
   const currentMonth = useMemo(() => monthKey(), []);
   const isCurrentMonth = month === currentMonth;
 
+  const shiftDay = (delta: number) => {
+    if (!day) return;
+    const base = parseDateOnly(day);
+    if (!base) return;
+    base.setDate(base.getDate() + delta);
+    setDay(base.toISOString().slice(0, 10));
+  };
+
   const updateRate = async (employeeId: string, hourlyRate: number) => {
     if (!storeId || !employeeId || !Number.isFinite(hourlyRate)) return;
     setSavingRate(employeeId);
@@ -355,6 +374,15 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
           >
             Next
           </button>
+          <button
+            type="button"
+            onClick={() => shiftDay(-1)}
+            className="ui-date-step"
+            aria-label="Previous day"
+            disabled={!day}
+          >
+            ‹
+          </button>
           <input
             type="date"
             value={day}
@@ -362,6 +390,15 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
             className="ui-field ui-field--slim"
             aria-label="Hours date"
           />
+          <button
+            type="button"
+            onClick={() => shiftDay(1)}
+            className="ui-date-step"
+            aria-label="Next day"
+            disabled={!day}
+          >
+            ›
+          </button>
         </div>
       </div>
 
