@@ -317,11 +317,13 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
         );
       }
 
-      if (footageLabels.slice(0, footageFiles.length).some((value) => !value)) {
-        throw new Error("Choose a classification for each file.");
+      const primaryFootageLabel = footageLabels.find(Boolean) ?? "";
+      const primaryFootageSummary = footageSummaries.find(Boolean) ?? "";
+      if (!primaryFootageLabel) {
+        throw new Error("Choose a classification for the footage.");
       }
-      if (footageSummaries.slice(0, footageFiles.length).some((value) => !value)) {
-        throw new Error("Add a short summary for each file.");
+      if (!primaryFootageSummary) {
+        throw new Error("Add a short summary for the footage.");
       }
 
       let response: Response;
@@ -352,6 +354,10 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
               throw new Error("Upload signing failed. Please retry.");
             }
             const file = footageFiles[index];
+            const resolvedLabel =
+              footageLabels[index] || primaryFootageLabel || primaryLabel;
+            const resolvedSummary =
+              footageSummaries[index] || primaryFootageSummary || "";
             const { error: uploadError } = await supabasePublic!.storage
               .from(publicBucket)
               .uploadToSignedUrl(upload.path, upload.token, file, {
@@ -366,8 +372,8 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
               originalName: file.name,
               mimeType: file.type,
               size: file.size,
-              label: footageLabels[index] || primaryLabel,
-              summary: footageSummaries[index] || "",
+              label: resolvedLabel,
+              summary: resolvedSummary,
               kind: file.type.startsWith("video")
                 ? "video"
                 : file.type.startsWith("image")
@@ -593,6 +599,9 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
               <label className="ui-label mb-2 block">
                 File uploads
               </label>
+              <p className="text-xs text-slate-400">
+                Add multiple files for one incident (photo + video are welcome). You can select multiple files at once.
+              </p>
               <div className="space-y-3">
                 {fileRows.map((rowId) => (
                   <div
@@ -611,12 +620,18 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
                           name="footage"
                           type="file"
                           accept="video/*,image/*"
+                          multiple
                           className="absolute inset-0 cursor-pointer opacity-0"
                           onChange={(event) => {
-                            const file = event.target.files?.[0];
+                            const files = Array.from(event.target.files ?? []);
+                            const file = files[0];
+                            const label =
+                              files.length > 1
+                                ? `${file?.name ?? "Files"} + ${files.length - 1} more`
+                                : file?.name ?? "";
                             setFileNames((prev) => ({
                               ...prev,
-                              [rowId]: file?.name ?? "",
+                              [rowId]: label,
                             }));
                           }}
                         />
