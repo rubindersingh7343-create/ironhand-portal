@@ -384,37 +384,37 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
           No scratcher slots are configured yet. Ask a manager to initialize slots.
         </div>
       ) : (
-        <div className="grid gap-3">
+        <div className="grid gap-3 min-[420px]:grid-cols-2">
           {visibleSlots.map((slot) => {
             const packId = slot.activePackId ?? null;
             const pack = packId ? packMap.get(packId) : null;
             const baselineItem = baselineMap.get(slot.id);
-            const baselineProduct = slot.defaultProductId
+            const product = pack ? productMap.get(pack.productId) : null;
+            const defaultProduct = slot.defaultProductId
               ? productMap.get(slot.defaultProductId)
               : null;
-            const baselineActive = !pack && baselineExists;
-            const product = pack
-              ? productMap.get(pack.productId)
-              : baselineActive
-                ? baselineProduct
-                : null;
-            const label =
-              product?.name ?? (baselineActive ? "Baseline pack" : "No active pack");
-            const price = product
-              ? `$${product.price}`
-              : baselineActive
-                ? "Price not set"
-                : "—";
-            const statusLabel =
-              pack?.status === "active"
+            const hasActivePack = Boolean(pack && pack.status === "active");
+            const statusLabel = !slot.isActive
+              ? "inactive"
+              : hasActivePack
                 ? "active"
-                : baselineActive
-                  ? "active"
-                  : "inactive";
+                : "inactive";
+            const label = hasActivePack
+              ? product?.name ?? "Active pack"
+              : "No active pack";
+            const price = hasActivePack
+              ? product
+                ? `$${product.price}`
+                : defaultProduct
+                  ? `$${defaultProduct.price}`
+                  : "—"
+              : defaultProduct
+                ? `$${defaultProduct.price}`
+                : "—";
             return (
-              <div key={slot.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
+              <div key={slot.id} className="h-full rounded-2xl border border-white/10 bg-white/5 p-3 sm:p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
                     <p className="text-sm font-semibold text-white">
                       Slot {slot.slotNumber}
                     </p>
@@ -423,30 +423,32 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-slate-200">
+                    <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-slate-200">
                       {statusLabel}
                     </span>
-                    {pack?.status === "active" ? (
+                    {slot.isActive && hasActivePack && pack ? (
                       <button
                         type="button"
                         className="ui-button ui-button-ghost"
                         onClick={() => openReturnForPack(pack.id)}
                       >
-                        Return pack
+                        <span className="min-[420px]:hidden">Return pack</span>
+                        <span className="hidden min-[420px]:inline">Return</span>
                       </button>
-                    ) : !baselineActive ? (
+                    ) : slot.isActive ? (
                       <button
                         type="button"
                         className="ui-button ui-button-ghost"
                         onClick={() => openActivationForSlot(slot.id)}
                       >
-                        Activate pack
+                        <span className="min-[420px]:hidden">Activate pack</span>
+                        <span className="hidden min-[420px]:inline">Activate</span>
                       </button>
                     ) : null}
                   </div>
                 </div>
 
-                {slot.isActive && (
+                {slot.isActive && hasActivePack && (
                   <div className="mt-3">
                     <label className="flex flex-col gap-2 text-sm text-slate-200">
                       <span className="text-xs uppercase tracking-[0.2em] text-slate-300">
@@ -457,13 +459,13 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
                         inputMode="numeric"
                         value={endValues[slot.id] ?? ""}
                         onChange={(event) => setEndValue(slot.id, event.target.value)}
-                        placeholder="Ending ticket number"
+                        placeholder="End ticket"
                         className="ui-field ui-field--slim"
                       />
                     </label>
                   </div>
                 )}
-                {baselineActive && !baselineItem && (
+                {slot.isActive && baselineExists && !baselineItem && (
                   <p className="mt-2 text-xs text-amber-200/90">
                     Baseline ticket missing for this slot. Ask a manager to refresh the baseline.
                   </p>

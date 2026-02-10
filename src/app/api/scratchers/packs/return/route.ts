@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { getSessionUser, requireRole } from "@/lib/auth";
-import { returnScratcherPack, saveScratcherFile } from "@/lib/dataStore";
+import {
+  createBaselineShiftReport,
+  getLatestScratcherStartSnapshotByStore,
+  listScratcherSlotBundle,
+  returnScratcherPack,
+  saveScratcherFile,
+  upsertScratcherBaselineSnapshot,
+} from "@/lib/dataStore";
 import { sendStoreSystemMessage } from "@/lib/storeChat";
 
 const hasStoreAccess = (user: Awaited<ReturnType<typeof getSessionUser>>, storeId: string) => {
@@ -55,6 +62,38 @@ export async function POST(request: Request) {
       { error: "Unable to return scratcher pack." },
       { status: 500 },
     );
+  }
+
+  // Remove the returned slot from the baseline snapshot so future shifts don't include it until re-activated.
+  try {
+    const bundle = await listScratcherSlotBundle(storeId);
+    const activeSlots = bundle.slots.filter(
+      (entry) => entry.isActive && Boolean(entry.activePackId),
+    );
+    const latestBaseline = await getLatestScratcherStartSnapshotByStore(storeId);
+    const baselineMap = new Map(
+      (latestBaseline?.items ?? []).map((item) => [item.slotId, item.ticketValue]),
+    );
+    baselineMap.delete(pack.slotId);
+    const mergedItems = activeSlots
+      .map((entry) => ({
+        slotId: entry.id,
+        ticketValue: String(baselineMap.get(entry.id) ?? "").trim(),
+      }))
+      .filter((item) => item.ticketValue.length > 0);
+    const baselineReport = await createBaselineShiftReport({
+      storeId,
+      createdById: authorized.id,
+      createdByName: authorized.name,
+    });
+    await upsertScratcherBaselineSnapshot({
+      shiftReportId: baselineReport.id,
+      storeId,
+      createdByUserId: authorized.id,
+      items: mergedItems,
+    });
+  } catch (error) {
+    console.error("Unable to update baseline after return:", error);
   }
 
   const employeeName = authorized.name ?? "Employee";

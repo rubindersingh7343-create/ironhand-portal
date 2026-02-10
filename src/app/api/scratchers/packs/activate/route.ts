@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import { getSessionUser, requireRole } from "@/lib/auth";
 import {
   activateScratcherPack,
+  createBaselineShiftReport,
+  getLatestScratcherStartSnapshotByStore,
   listScratcherProducts,
   listScratcherSlotBundle,
   saveScratcherFile,
+  upsertScratcherBaselineSnapshot,
 } from "@/lib/dataStore";
 import { sendStoreSystemMessage } from "@/lib/storeChat";
 
@@ -117,6 +120,39 @@ export async function POST(request: Request) {
     senderId: authorized.id,
     message: `${employeeName} activated a new scratcher pack (${slotLabel}, $${Number(product.price).toFixed(2)}, pack ${packCode}).`,
   });
+
+  // Keep baseline start snapshot aligned with the activation start ticket so next shift starts correctly.
+  try {
+    const activeSlots = bundle.slots.filter(
+      (entry) => entry.isActive && Boolean(entry.activePackId),
+    );
+    const latestBaseline = await getLatestScratcherStartSnapshotByStore(storeId);
+    const baselineMap = new Map(
+      (latestBaseline?.items ?? []).map((item) => [item.slotId, item.ticketValue]),
+    );
+    baselineMap.set(slotId, startTicket);
+    const mergedItems = activeSlots
+      .map((entry) => ({
+        slotId: entry.id,
+        ticketValue: String(baselineMap.get(entry.id) ?? "").trim(),
+      }))
+      .filter((item) => item.ticketValue.length > 0);
+    if (mergedItems.length) {
+      const baselineReport = await createBaselineShiftReport({
+        storeId,
+        createdById: authorized.id,
+        createdByName: authorized.name,
+      });
+      await upsertScratcherBaselineSnapshot({
+        shiftReportId: baselineReport.id,
+        storeId,
+        createdByUserId: authorized.id,
+        items: mergedItems,
+      });
+    }
+  } catch (error) {
+    console.error("Unable to update baseline after activation:", error);
+  }
 
   return NextResponse.json({ pack, endTicket });
 }

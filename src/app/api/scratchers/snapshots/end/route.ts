@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { getSessionUser, requireRole } from "@/lib/auth";
 import {
+  createBaselineShiftReport,
   createScratcherSnapshot,
   ensureShiftReportDraft,
   getLatestScratcherStartSnapshotByStore,
   listScratcherSlotBundle,
   listScratcherSnapshots,
+  recalculateScratcherShift,
+  upsertScratcherBaselineSnapshot,
 } from "@/lib/dataStore";
 
 const parseTicketNumber = (value: string) => {
@@ -144,6 +147,49 @@ export async function POST(request: Request) {
       { error: "End snapshot already exists." },
       { status: 409 },
     );
+  }
+
+  try {
+    const activeSlotIds = slots
+      .filter((slot) => slot.isActive && Boolean(slot.activePackId))
+      .map((slot) => slot.id);
+    const latestBaseline = await getLatestScratcherStartSnapshotByStore(storeId);
+    const baselineMap = new Map(
+      (latestBaseline?.items ?? []).map((item) => [item.slotId, item.ticketValue]),
+    );
+    result.items.forEach((item) => {
+      if (item.ticketValue?.trim()) {
+        baselineMap.set(item.slotId, item.ticketValue);
+      }
+    });
+    const mergedItems = activeSlotIds
+      .map((slotId) => ({
+        slotId,
+        ticketValue: String(baselineMap.get(slotId) ?? "").trim(),
+      }))
+      .filter((item) => item.ticketValue.length > 0);
+
+    if (mergedItems.length) {
+      const baselineReport = await createBaselineShiftReport({
+        storeId,
+        createdById: actor.id,
+        createdByName: actor.name,
+      });
+      await upsertScratcherBaselineSnapshot({
+        shiftReportId: baselineReport.id,
+        storeId,
+        createdByUserId: actor.id,
+        items: mergedItems,
+      });
+    }
+  } catch (error) {
+    console.error("Unable to update baseline snapshot after end snapshot:", error);
+  }
+
+  try {
+    await recalculateScratcherShift({ shiftReportId: report.id, storeId });
+  } catch (error) {
+    console.error("Scratcher recalculation after end snapshot failed:", error);
   }
 
   return NextResponse.json({

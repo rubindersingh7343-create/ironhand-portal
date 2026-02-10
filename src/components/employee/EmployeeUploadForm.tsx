@@ -223,20 +223,6 @@ export default function EmployeeUploadForm({
     return Number.isFinite(parsed) ? parsed : 0;
   }, []);
 
-  const cashTotal = useMemo(() => {
-    const gross = toNumber(reportValues.gross ?? "");
-    const lottoPo = toNumber(reportValues.lottoPo ?? "");
-    const atm = toNumber(reportValues.atm ?? "");
-    return gross - lottoPo - atm;
-  }, [reportValues.gross, reportValues.lottoPo, reportValues.atm, toNumber]);
-
-  const storeTotal = useMemo(() => {
-    const gross = toNumber(reportValues.gross ?? "");
-    const scr = toNumber(reportValues.scr ?? "");
-    const lotto = toNumber(reportValues.lotto ?? "");
-    return gross - (scr + lotto);
-  }, [reportValues.gross, reportValues.lotto, reportValues.scr, toNumber]);
-
   const hoursPreview = useMemo(() => {
     const toMinutes = (value: string) => {
       const [h, m] = value.split(":").map((part) => Number(part));
@@ -383,7 +369,9 @@ export default function EmployeeUploadForm({
         );
         const slotsData = await slotsRes.json().catch(() => ({}));
         const slots = Array.isArray(slotsData.slots) ? slotsData.slots : [];
-        const activeSlots = slots.filter((slot: any) => slot?.isActive);
+        const activeSlots = slots.filter(
+          (slot: any) => Boolean(slot?.isActive) && Boolean(slot?.activePackId),
+        );
 
         const missing = activeSlots.filter(
           (slot: any) => !String(saved?.[slot.id] ?? "").trim(),
@@ -634,23 +622,42 @@ export default function EmployeeUploadForm({
             Enter the totals from your receipt and end-of-shift counts.
           </p>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {standardItems.map((field) => (
-            <div key={field.key} className="space-y-2">
+        <div
+          className={clsx(
+            "grid gap-3",
+            isOwner
+              ? "grid-cols-2 sm:grid-cols-3"
+              : "sm:grid-cols-2 lg:grid-cols-3",
+          )}
+        >
+          {[...standardItems, ...customItems].map((field) => (
+            <div key={field.key} className="space-y-1.5">
               <label className="ui-label">{field.label}</label>
-              <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-sm text-slate-100 focus-within:border-blue-400">
+              <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#111a32] px-3 py-2.5 text-sm text-slate-100 focus-within:border-blue-400 sm:px-4 sm:py-3">
                 <span className="text-slate-300">$</span>
                 <input
                   ref={(el) => {
                     inputRefs.current[field.key] = el;
                   }}
-                  value={reportValues[field.key] ?? ""}
-                  onChange={(event) =>
-                    setReportValues((prev) => ({
-                      ...prev,
-                      [field.key]: event.target.value,
-                    }))
+                  value={
+                    field.isCustom
+                      ? (customValues[field.key] ?? "")
+                      : (reportValues[field.key] ?? "")
                   }
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    if (field.isCustom) {
+                      setCustomValues((prev) => ({
+                        ...prev,
+                        [field.key]: nextValue,
+                      }));
+                    } else {
+                      setReportValues((prev) => ({
+                        ...prev,
+                        [field.key]: nextValue,
+                      }));
+                    }
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
                       event.preventDefault();
@@ -664,70 +671,6 @@ export default function EmployeeUploadForm({
               </div>
             </div>
           ))}
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-2xl border border-white/10 bg-[#0f1a33] px-4 py-3 text-sm text-slate-200">
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-400">
-              Cash
-            </p>
-            <p className="mt-2 text-lg font-semibold text-white">
-              ${cashTotal.toFixed(2)}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-[#0f1a33] px-4 py-3 text-sm text-slate-200">
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-400">
-              Store
-            </p>
-            <p className="mt-2 text-lg font-semibold text-white">
-              ${storeTotal.toFixed(2)}
-            </p>
-          </div>
-        </div>
-        <div className="space-y-3 rounded-2xl border border-white/10 bg-[#0f1a33] p-4">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-300">
-              Custom fields
-            </p>
-          </div>
-          {customItems.length === 0 ? (
-            <p className="text-sm text-slate-400">
-              No store-specific items configured yet.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {customItems.map((field) => (
-                <div key={field.key} className="grid gap-3 sm:grid-cols-[2fr,1fr]">
-                  <div className="flex items-center rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-sm text-slate-100">
-                    {field.label}
-                  </div>
-                  <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-sm text-slate-100 focus-within:border-blue-400">
-                    <span className="text-slate-300">$</span>
-                    <input
-                      ref={(el) => {
-                        inputRefs.current[field.key] = el;
-                      }}
-                      value={customValues[field.key] ?? ""}
-                      onChange={(event) =>
-                        setCustomValues((prev) => ({
-                          ...prev,
-                          [field.key]: event.target.value,
-                        }))
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          jumpClick(field.key);
-                        }
-                      }}
-                      inputMode="decimal"
-                      placeholder="0.00"
-                      className="w-full bg-transparent text-sm text-slate-100 placeholder:text-slate-300 focus:outline-none"
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
         <EmployeeScratchersPanel user={user} />

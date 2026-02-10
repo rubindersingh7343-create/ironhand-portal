@@ -4496,7 +4496,11 @@ export async function listScratcherSlotBundle(storeId: string): Promise<{
       packCode: pack.pack_code ?? undefined,
       startTicket: pack.start_ticket,
       endTicket: pack.end_ticket,
-      status: (pack.status === "ended" ? "ended" : "active") as "active" | "ended",
+      status: (pack.status === "ended"
+        ? "ended"
+        : pack.status === "returned"
+          ? "returned"
+          : "active") as "active" | "ended" | "returned",
       activatedAt: pack.activated_at ?? new Date().toISOString(),
       activatedByUserId: pack.activated_by_user_id,
       activationReceiptFileId: pack.activation_receipt_file_id,

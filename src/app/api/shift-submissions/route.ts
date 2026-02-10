@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import {
   addShiftSubmission,
+  createBaselineShiftReport,
   createScratcherSnapshot,
   createEmployeeHoursEntry,
   getLatestScratcherStartSnapshotByStore,
@@ -9,6 +10,7 @@ import {
   listScratcherSnapshots,
   recalculateScratcherShift,
   saveUploadedFile,
+  upsertScratcherBaselineSnapshot,
   upsertShiftReport,
 } from "@/lib/dataStore";
 import { getClientStoreIds } from "@/lib/userStore";
@@ -85,6 +87,12 @@ export async function POST(request: Request) {
         const parsed = Number(value);
         return Number.isFinite(parsed) ? parsed : NaN;
       };
+      const parseOptional = (value: unknown) => {
+        if (value === null || value === undefined) return null;
+        if (typeof value === "string" && value.trim() === "") return null;
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+      };
 
       const grossAmount = parseRequired(reportFields.gross);
       const scrAmount = parseRequired(reportFields.scr);
@@ -103,7 +111,9 @@ export async function POST(request: Request) {
 
       const lottoPoAmount = parseAmount(reportFields.lottoPo);
       const atmAmount = parseAmount(reportFields.atm);
-      const cashAmount = grossAmount - lottoPoAmount - atmAmount;
+      const computedCashAmount = grossAmount - lottoPoAmount - atmAmount;
+      const cashOverride = parseOptional(reportFields.cash);
+      const cashAmount = cashOverride ?? computedCashAmount;
       const storeAmount = grossAmount - (scrAmount + lottoAmount);
 
       const toMinutes = (value: string) => {
@@ -219,7 +229,9 @@ export async function POST(request: Request) {
         };
 
         const { slots } = await listScratcherSlotBundle(storeId);
-        const activeSlots = slots.filter((slot) => slot.isActive);
+        const activeSlots = slots.filter(
+          (slot) => slot.isActive && Boolean(slot.activePackId),
+        );
 
         const endMap = new Map(
           endItemsRaw.map((entry) => [
@@ -228,9 +240,10 @@ export async function POST(request: Request) {
           ]),
         );
 
-        const missing = activeSlots.filter(
-          (slot) => !String(endMap.get(slot.id) ?? "").trim(),
-        );
+        const missing = activeSlots.filter((slot) => {
+          const value = String(endMap.get(slot.id) ?? "").trim();
+          return !value;
+        });
         if (missing.length) {
           return NextResponse.json(
             {
@@ -301,7 +314,7 @@ export async function POST(request: Request) {
         }
 
         // Create the end snapshot. If one already exists, keep the existing one (no-op).
-        await createScratcherSnapshot({
+        const created = await createScratcherSnapshot({
           shiftReportId: report.id,
           storeId,
           employeeUserId: sessionUser.id,
@@ -311,6 +324,42 @@ export async function POST(request: Request) {
             ticketValue: String(endMap.get(slot.id) ?? "").trim(),
           })),
         });
+
+        // Keep the baseline start snapshot in sync with the latest end tickets
+        // for active packs, so the next shift starts from the correct ticket.
+        if (created) {
+          try {
+            const latestBaseline = await getLatestScratcherStartSnapshotByStore(storeId);
+            const baselineMap = new Map(
+              (latestBaseline?.items ?? []).map((item) => [item.slotId, item.ticketValue]),
+            );
+            activeSlots.forEach((slot) => {
+              const ticketValue = String(endMap.get(slot.id) ?? "").trim();
+              if (ticketValue) baselineMap.set(slot.id, ticketValue);
+            });
+            const mergedItems = activeSlots
+              .map((slot) => ({
+                slotId: slot.id,
+                ticketValue: String(baselineMap.get(slot.id) ?? "").trim(),
+              }))
+              .filter((item) => item.ticketValue.length > 0);
+            if (mergedItems.length) {
+              const baselineReport = await createBaselineShiftReport({
+                storeId,
+                createdById: sessionUser.id,
+                createdByName: sessionUser.name,
+              });
+              await upsertScratcherBaselineSnapshot({
+                shiftReportId: baselineReport.id,
+                storeId,
+                createdByUserId: sessionUser.id,
+                items: mergedItems,
+              });
+            }
+          } catch (baselineError) {
+            console.error("Unable to update scratcher baseline:", baselineError);
+          }
+        }
       }
 
       const submission = await addShiftSubmission({
