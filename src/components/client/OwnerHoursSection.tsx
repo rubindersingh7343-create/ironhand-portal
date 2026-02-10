@@ -138,13 +138,6 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
   const [entries, setEntries] = useState<HoursEntry[]>([]);
   const [rates, setRates] = useState<HourlyRate[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
-  const [previousReport, setPreviousReport] = useState<{
-    month: string;
-    totalHours: number;
-    totalPay: number;
-    paidCount: number;
-    employeeCount: number;
-  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingRate, setSavingRate] = useState<string | null>(null);
@@ -183,11 +176,10 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
   useEffect(() => {
     if (!storeId) return;
     let active = true;
-    const prevMonth = shiftMonth(month, -1);
     setLoading(true);
     setError(null);
-    Promise.all([fetchMonthData(month), fetchMonthData(prevMonth)])
-      .then(([current, previous]) => {
+    fetchMonthData(month)
+      .then((current) => {
         if (!active) return;
         setEntries(current.entries);
         setRates(current.rates);
@@ -199,30 +191,6 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
           return latest;
         }, "");
         setDay(latestDay || getLocalDate());
-
-        const rateMap = new Map<string, number>();
-        previous.rates.forEach((rate) => {
-          if (rate.employeeId) rateMap.set(rate.employeeId, rate.hourlyRate);
-        });
-        const totalHours = previous.entries.reduce(
-          (sum, entry) => sum + (Number(entry.hours) || 0),
-          0,
-        );
-        const totalPay = previous.entries.reduce((sum, entry) => {
-          const rate = rateMap.get(entry.employeeId) ?? 0;
-          return sum + (Number(entry.hours) || 0) * rate;
-        }, 0);
-        const employeeIds = new Set(
-          previous.entries.map((entry) => entry.employeeId).filter(Boolean),
-        );
-        const paidCount = previous.payments.filter((item) => item.paidAt).length;
-        setPreviousReport({
-          month: prevMonth,
-          totalHours: Number(totalHours.toFixed(2)),
-          totalPay: Number(totalPay.toFixed(2)),
-          paidCount,
-          employeeCount: employeeIds.size,
-        });
       })
       .catch((err) => {
         if (!active) return;
@@ -252,6 +220,16 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
     return map;
   }, [visibleEntries]);
 
+  const monthEntriesByEmployee = useMemo(() => {
+    const map = new Map<string, HoursEntry[]>();
+    entries.forEach((entry) => {
+      const key = entry.employeeId || "unknown";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(entry);
+    });
+    return map;
+  }, [entries]);
+
   const rateMap = useMemo(() => {
     const map = new Map<string, number>();
     rates.forEach((rate) => {
@@ -269,6 +247,49 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
   }, [payments]);
 
   const overlaps = useMemo(() => computeOverlaps(visibleEntries), [visibleEntries]);
+
+  const overlapEntryIds = useMemo(() => {
+    const ids = new Set<string>();
+    const byEmployee = new Map<string, HoursEntry[]>();
+    visibleEntries.forEach((entry) => {
+      const key = entry.employeeId || "unknown";
+      if (!byEmployee.has(key)) byEmployee.set(key, []);
+      byEmployee.get(key)!.push(entry);
+    });
+
+    for (const list of byEmployee.values()) {
+      const byDate = new Map<string, HoursEntry[]>();
+      list.forEach((entry) => {
+        if (!byDate.has(entry.date)) byDate.set(entry.date, []);
+        byDate.get(entry.date)!.push(entry);
+      });
+
+      for (const items of byDate.values()) {
+        const sorted = [...items].sort((a, b) => {
+          const aStart = toMinutes(a.startTime) ?? 0;
+          const bStart = toMinutes(b.startTime) ?? 0;
+          return aStart - bStart;
+        });
+
+        let lastEnd = -1;
+        let lastEntryId: string | null = null;
+        for (const item of sorted) {
+          const start = toMinutes(item.startTime) ?? 0;
+          const end = toMinutes(item.endTime) ?? 0;
+          if (lastEnd > -1 && start < lastEnd) {
+            ids.add(item.id);
+            if (lastEntryId) ids.add(lastEntryId);
+          }
+          if (end >= lastEnd) {
+            lastEnd = end;
+            lastEntryId = item.id;
+          }
+        }
+      }
+    }
+
+    return ids;
+  }, [visibleEntries]);
 
   const totals = useMemo(() => {
     const map = new Map<string, number>();
@@ -288,9 +309,48 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
     return map;
   }, [visibleEntries]);
 
-  const previousMonth = useMemo(() => shiftMonth(month, -1), [month]);
   const currentMonth = useMemo(() => monthKey(), []);
   const isCurrentMonth = month === currentMonth;
+
+  const monthlySummary = useMemo(() => {
+    const monthOverlaps = computeOverlaps(entries);
+    const rows: Array<{
+      employeeId: string;
+      employeeName: string;
+      totalHours: number;
+      totalPay: number;
+      overlapCount: number;
+      paidAt?: string;
+    }> = [];
+
+    monthEntriesByEmployee.forEach((list, employeeId) => {
+      const employeeName = list[0]?.employeeName ?? "Employee";
+      const totalHours = Number(
+        list.reduce((sum, entry) => sum + (Number(entry.hours) || 0), 0).toFixed(2),
+      );
+      const hourlyRate = Number(rateMap.get(employeeId) ?? 0);
+      const totalPay = Number((totalHours * hourlyRate).toFixed(2));
+      const overlapCount = monthOverlaps[employeeId]?.length ?? 0;
+      const payment = paymentMap.get(employeeId);
+      rows.push({
+        employeeId,
+        employeeName,
+        totalHours,
+        totalPay,
+        overlapCount,
+        paidAt: payment?.paidAt,
+      });
+    });
+
+    rows.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+    const totalMonthlyPay = Number(
+      rows.reduce((sum, row) => sum + (Number(row.totalPay) || 0), 0).toFixed(2),
+    );
+    const totalMonthlyHours = Number(
+      rows.reduce((sum, row) => sum + (Number(row.totalHours) || 0), 0).toFixed(2),
+    );
+    return { rows, totalMonthlyPay, totalMonthlyHours };
+  }, [entries, monthEntriesByEmployee, paymentMap, rateMap]);
 
   const shiftDay = (delta: number) => {
     if (!day) return;
@@ -525,7 +585,11 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
                   {list.map((entry) => (
                     <div
                       key={entry.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-[#0b1429] px-3 py-2 text-xs text-slate-300"
+                      className={`flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-3 py-2 text-xs ${
+                        overlapEntryIds.has(entry.id)
+                          ? "border-amber-300/45 bg-amber-500/10 text-amber-50"
+                          : "border-white/10 bg-[#0b1429] text-slate-300"
+                      }`}
                     >
                       <span>
                         {formatDate(entry.date)} · {formatTime12(entry.startTime)} -{" "}
@@ -544,27 +608,58 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
       <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs uppercase tracking-[0.2em] text-slate-400">
-            Previous month report
+            Monthly report
           </span>
           <span className="text-xs text-slate-300">
-            {previousReport ? monthLabel(previousReport.month) : monthLabel(previousMonth)}
+            {monthLabel(month)}
           </span>
         </div>
-        {previousReport && previousReport.employeeCount > 0 ? (
-          <div className="mt-2 space-y-1 text-xs text-slate-300">
-            <p>
-              {previousReport.totalHours.toFixed(2)} hrs · $
-              {previousReport.totalPay.toFixed(2)} total pay
-            </p>
-            <p>
-              Paid {previousReport.paidCount} of {previousReport.employeeCount} employees
-            </p>
-          </div>
+
+        {monthlySummary.rows.length > 0 ? (
+          <>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-300">
+              <span>{monthlySummary.totalMonthlyHours.toFixed(2)} hrs</span>
+              <span className="text-slate-100">
+                Total monthly pay ${monthlySummary.totalMonthlyPay.toFixed(2)}
+              </span>
+            </div>
+            <div className="mt-3 space-y-2">
+              {monthlySummary.rows.map((row) => (
+                <div
+                  key={`month-${row.employeeId}`}
+                  className={`flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-3 py-2 text-xs ${
+                    row.overlapCount > 0
+                      ? "border-amber-300/30 bg-amber-500/10 text-amber-50"
+                      : "border-white/10 bg-[#0b1429] text-slate-200"
+                  }`}
+                >
+                  <span className="min-w-0 truncate">
+                    {row.employeeName}
+                    {row.overlapCount > 0
+                      ? ` · ${row.overlapCount} overlap${row.overlapCount === 1 ? "" : "s"}`
+                      : ""}
+                  </span>
+                  <span className="flex flex-wrap items-center gap-3 text-right">
+                    <span className="text-slate-100">{row.totalHours.toFixed(2)} hrs</span>
+                    <span className="text-slate-100">${row.totalPay.toFixed(2)}</span>
+                    {row.paidAt ? (
+                      <span className="rounded-full border border-emerald-400/25 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.22em] text-emerald-100">
+                        Paid
+                      </span>
+                    ) : null}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {!isCurrentMonth ? (
+              <p className="mt-2 text-[11px] text-slate-400">
+                You are viewing a past month.
+              </p>
+            ) : null}
+          </>
         ) : (
           <p className="mt-2 text-xs text-slate-300">
-            {isCurrentMonth
-              ? "Once the month ends, the report locks and shows paid status."
-              : "You are viewing a past month report."}
+            No hours logged for this month yet.
           </p>
         )}
       </div>
