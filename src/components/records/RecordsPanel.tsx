@@ -154,6 +154,8 @@ export default function RecordsPanel({
   const [deleteStoreId, setDeleteStoreId] = useState("");
   const [deleteStoreLabel, setDeleteStoreLabel] = useState("");
   const [deleteStorePassword, setDeleteStorePassword] = useState("");
+  const [deleteStorePasswordArmed, setDeleteStorePasswordArmed] =
+    useState(false);
   const [deletingStore, setDeletingStore] = useState(false);
   const [storeForCode, setStoreForCode] = useState("");
   const [storeInvites, setStoreInvites] = useState<
@@ -687,6 +689,14 @@ export default function RecordsPanel({
     }
   };
 
+  useEffect(() => {
+    if (!deleteStoreModalOpen) return;
+    // Some browsers/password managers try to autofill password fields.
+    // Keep this confirmation field empty unless the user explicitly focuses it.
+    setDeleteStorePassword("");
+    setDeleteStorePasswordArmed(false);
+  }, [deleteStoreModalOpen, deleteStoreId]);
+
   const handleDeleteStore = async () => {
     if (!deleteStoreId) return;
     if (!deleteStorePassword) {
@@ -908,6 +918,7 @@ export default function RecordsPanel({
                               setDeleteStoreId(store.id);
                               setDeleteStoreLabel(store.label);
                               setDeleteStorePassword("");
+                              setDeleteStorePasswordArmed(false);
                               setDeleteStoreModalOpen(true);
                             }}
                             className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:border-rose-300/50 hover:bg-rose-500/20"
@@ -1287,9 +1298,15 @@ export default function RecordsPanel({
                 type="password"
                 value={deleteStorePassword}
                 onChange={(e) => setDeleteStorePassword(e.target.value)}
+                onFocus={() => setDeleteStorePasswordArmed(true)}
+                onClick={() => setDeleteStorePasswordArmed(true)}
+                readOnly={!deleteStorePasswordArmed}
                 placeholder="Your account password"
                 className="w-full rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-slate-300"
-                autoComplete="current-password"
+                autoComplete="new-password"
+                name="ih-delete-store-confirmation"
+                spellCheck={false}
+                autoCapitalize="none"
               />
             </div>
 
