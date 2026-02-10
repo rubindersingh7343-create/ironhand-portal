@@ -901,6 +901,150 @@ export async function createStoreForClient(options: {
   return { store, stores: mergedStores };
 }
 
+export async function deleteStoreForClient(options: {
+  userId: string;
+  storeId: string;
+}): Promise<{ deletedEmployees: number }> {
+  const storeId = options.storeId.trim();
+  if (!storeId) {
+    throw new Error("Store ID required");
+  }
+
+  // Ensure this client actually owns the store record before deleting it completely.
+  const stores = await readStores();
+  const target = stores.find((store) => store.storeId === storeId);
+  if (!target) {
+    // If the store isn't in the store list, we still remove access and clean data.
+    await removeStoreFromClient(options.userId, storeId);
+    await deleteRecordsForStore(storeId);
+    return { deletedEmployees: 0 };
+  }
+  if (target.managerId !== options.userId) {
+    throw new Error(
+      "You can only delete stores you created. Remove access instead.",
+    );
+  }
+
+  // Delete all employee accounts tied to this store.
+  const users = await getDynamicUsers();
+  const employeesToDelete = users.filter((user) => {
+    if (user.role !== "employee") return false;
+    if (user.storeNumber === storeId) return true;
+    if (Array.isArray(user.storeIds) && user.storeIds.includes(storeId)) return true;
+    return false;
+  });
+  const remainingUsers = users.filter(
+    (user) => !employeesToDelete.some((e) => e.id === user.id),
+  );
+
+  if (useSupabase && supabase) {
+    // Remove the store itself.
+    const { error: storeError } = await supabase
+      .from("stores")
+      .delete()
+      .eq("store_id", storeId);
+    if (storeError) {
+      console.error("supabase delete store error", storeError);
+      throw new Error("Unable to delete store right now.");
+    }
+
+    // Delete related invites.
+    const { error: inviteError } = await supabase
+      .from("invites")
+      .delete()
+      .eq("store_id", storeId);
+    if (inviteError) console.error("supabase delete invites error", inviteError);
+    const { error: managerInviteError } = await supabase
+      .from("manager_invites")
+      .delete()
+      .eq("store_id", storeId);
+    if (managerInviteError) console.error("supabase delete manager invites error", managerInviteError);
+
+    // Delete employees.
+    if (employeesToDelete.length) {
+      const { error: userError } = await supabase
+        .from("users")
+        .delete()
+        .in("id", employeesToDelete.map((u) => u.id));
+      if (userError) console.error("supabase delete employees error", userError);
+    }
+  } else {
+    // Local JSON fallback.
+    const nextStores = stores.filter((store) => store.storeId !== storeId);
+    await writeStores(nextStores);
+    await writeJson(USERS_FILE, remainingUsers);
+
+    const invites = await readInvites();
+    const remainingInvites = invites.filter((invite) => invite.storeId !== storeId);
+    if (remainingInvites.length !== invites.length) {
+      await writeInvites(remainingInvites);
+    }
+    const managerInvites = await readManagerInvites();
+    const remainingManagerInvites = managerInvites.filter((invite) => invite.storeId !== storeId);
+    if (remainingManagerInvites.length !== managerInvites.length) {
+      await writeManagerInvites(remainingManagerInvites);
+    }
+  }
+
+  // Remove store access from this owner (and link tables) even if the store is deleted.
+  await removeStoreFromClient(options.userId, storeId);
+
+  // Remove the store from other link tables (best-effort cleanup).
+  try {
+    const clientLinks = await readClientStoreLinks();
+    const emptiedClientUsers: string[] = [];
+    const updatedClientLinks = clientLinks
+      .map((link) => ({
+        ...link,
+        storeIds: link.storeIds.filter((id: string) => id !== storeId),
+      }))
+      .filter((link) => {
+        if (link.storeIds.length) return true;
+        emptiedClientUsers.push(link.userId);
+        return false;
+      });
+    await writeClientStoreLinks(updatedClientLinks);
+    if (useSupabase && supabase && emptiedClientUsers.length) {
+      const { error } = await supabase
+        .from("client_store_links")
+        .delete()
+        .in("user_id", emptiedClientUsers);
+      if (error) console.error("supabase delete empty client links error", error);
+    }
+  } catch (error) {
+    console.error("Failed to clean client store links", error);
+  }
+  try {
+    const survLinks = await readSurveillanceStoreLinks();
+    const emptiedSurvUsers: string[] = [];
+    const updatedSurvLinks = survLinks
+      .map((link) => ({
+        ...link,
+        storeIds: link.storeIds.filter((id: string) => id !== storeId),
+      }))
+      .filter((link) => {
+        if (link.storeIds.length) return true;
+        emptiedSurvUsers.push(link.userId);
+        return false;
+      });
+    await writeSurveillanceStoreLinks(updatedSurvLinks);
+    if (useSupabase && supabase && emptiedSurvUsers.length) {
+      const { error } = await supabase
+        .from("surveillance_links")
+        .delete()
+        .in("user_id", emptiedSurvUsers);
+      if (error) console.error("supabase delete empty surveillance links error", error);
+    }
+  } catch (error) {
+    console.error("Failed to clean surveillance store links", error);
+  }
+
+  // Delete all records/files associated with this store (shift packages, surveillance uploads, invoices, etc).
+  await deleteRecordsForStore(storeId);
+
+  return { deletedEmployees: employeesToDelete.length };
+}
+
 export async function listInvites() {
   return refreshExpiredInvites();
 }

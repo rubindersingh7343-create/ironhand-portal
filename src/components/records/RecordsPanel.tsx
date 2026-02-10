@@ -150,6 +150,11 @@ export default function RecordsPanel({
   const [addStoreInlineMessage, setAddStoreInlineMessage] = useState<
     { type: "success" | "error"; message: string } | null
   >(null);
+  const [deleteStoreModalOpen, setDeleteStoreModalOpen] = useState(false);
+  const [deleteStoreId, setDeleteStoreId] = useState("");
+  const [deleteStoreLabel, setDeleteStoreLabel] = useState("");
+  const [deleteStorePassword, setDeleteStorePassword] = useState("");
+  const [deletingStore, setDeletingStore] = useState(false);
   const [storeForCode, setStoreForCode] = useState("");
   const [storeInvites, setStoreInvites] = useState<
     Array<{ id: string; code: string; storeId: string; expiresAt?: string; usedAt?: string }>
@@ -682,6 +687,74 @@ export default function RecordsPanel({
     }
   };
 
+  const handleDeleteStore = async () => {
+    if (!deleteStoreId) return;
+    if (!deleteStorePassword) {
+      setActionMessage("Password required to delete a store.");
+      return;
+    }
+    setDeletingStore(true);
+    setActionMessage(null);
+    try {
+      const response = await fetch("/api/client/stores", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          storeId: deleteStoreId,
+          password: deleteStorePassword,
+        }),
+      });
+      const raw = await response.text();
+      let result: any = {};
+      if (raw) {
+        try {
+          result = JSON.parse(raw);
+        } catch {
+          result = { error: raw };
+        }
+      }
+      if (!response.ok) {
+        const message =
+          typeof result?.error === "string" && result.error.length
+            ? result.error
+            : `Unable to delete store (${response.status})`;
+        throw new Error(message);
+      }
+
+      const deletedEmployees = Number(result.deletedEmployees ?? 0);
+      setActionMessage(
+        deletedEmployees > 0
+          ? `Store deleted. ${deletedEmployees} employee account(s) removed.`
+          : "Store deleted.",
+      );
+
+      setStoreOptions((prev) => prev.filter((opt) => opt.id !== deleteStoreId));
+      if (ownerStore?.refreshStores) {
+        try {
+          await ownerStore.refreshStores();
+        } catch (error) {
+          console.error("Unable to refresh store list", error);
+        }
+      }
+      router.refresh();
+
+      setDeleteStoreModalOpen(false);
+      setDeleteStorePassword("");
+      setDeleteStoreId("");
+      setDeleteStoreLabel("");
+
+      setRefreshCounter((prev) => prev + 1);
+    } catch (error) {
+      console.error(error);
+      setActionMessage(
+        error instanceof Error ? error.message : "Unable to delete store",
+      );
+    } finally {
+      setDeletingStore(false);
+    }
+  };
+
   async function handleDelete(recordId: string) {
     if (!canDeleteRecords) return;
     const confirmed =
@@ -796,9 +869,55 @@ export default function RecordsPanel({
                           : "border-rose-400/30 bg-rose-500/10 text-rose-100"
                       }`}
                     >
-                      {addStoreInlineMessage.message}
+                  {addStoreInlineMessage.message}
                     </p>
                   )}
+                </div>
+
+                <div className="border-t border-white/10 pt-4">
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                    Danger zone
+                  </p>
+                  <h3 className="mt-2 text-lg font-semibold text-white">
+                    Delete a store
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-300">
+                    Deleting a store permanently removes it and deletes all employee
+                    accounts tied to that store. This cannot be undone.
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    {storeOptions.length === 0 ? (
+                      <p className="text-sm text-slate-300">No stores available.</p>
+                    ) : (
+                      storeOptions.map((store) => (
+                        <div
+                          key={store.id}
+                          className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div>
+                            <p className="text-sm font-semibold text-white">
+                              {store.label}
+                            </p>
+                            <p className="text-xs text-slate-400">
+                              Store ID: {store.id}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeleteStoreId(store.id);
+                              setDeleteStoreLabel(store.label);
+                              setDeleteStorePassword("");
+                              setDeleteStoreModalOpen(true);
+                            }}
+                            className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:border-rose-300/50 hover:bg-rose-500/20"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
 
                 <div className="border-t border-white/10 pt-4">
@@ -1135,6 +1254,67 @@ export default function RecordsPanel({
           </div>
         </div>
       )}
+
+      <IHModal
+        isOpen={deleteStoreModalOpen}
+        onClose={() => {
+          if (deletingStore) return;
+          setDeleteStoreModalOpen(false);
+        }}
+        allowOutsideClose={!deletingStore}
+      >
+        <div className="w-[min(520px,92vw)] text-white">
+          <div className="border-b border-white/10 px-6 py-4">
+            <p className="text-xs uppercase tracking-[0.26em] text-rose-200/90">
+              Delete Store
+            </p>
+            <h2 className="mt-2 text-lg font-semibold">
+              {deleteStoreLabel ||
+                (deleteStoreId ? `Store ${deleteStoreId}` : "Store")}
+            </h2>
+            <p className="mt-2 text-sm text-slate-300">
+              This permanently deletes the store and all employee accounts for it.
+              This cannot be undone.
+            </p>
+          </div>
+
+          <div className="space-y-4 px-6 py-4">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-300">
+                Confirm With Password
+              </label>
+              <input
+                type="password"
+                value={deleteStorePassword}
+                onChange={(e) => setDeleteStorePassword(e.target.value)}
+                placeholder="Your account password"
+                className="w-full rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-slate-300"
+                autoComplete="current-password"
+              />
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setDeleteStoreModalOpen(false)}
+                disabled={deletingStore}
+                className="rounded-2xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteStore}
+                disabled={deletingStore || !deleteStorePassword}
+                className="rounded-2xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:cursor-not-allowed"
+              >
+                {deletingStore ? "Deleting..." : "Delete store"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </IHModal>
+
       <FileViewer
         file={viewerFile}
         onClose={() => setViewerFile(null)}
