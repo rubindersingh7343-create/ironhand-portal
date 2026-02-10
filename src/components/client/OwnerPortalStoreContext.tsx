@@ -32,6 +32,7 @@ type OwnerPortalStoreContextValue = {
   setSelectedStoreId: (storeId: string) => void;
   activeStore: OwnerPortalStoreSummary | null;
   ready: boolean;
+  refreshStores: () => Promise<void>;
   manualDateRange: OwnerPortalDateRange | null;
   setManualDateRange: (range: OwnerPortalDateRange) => void;
   clearManualDateRange: () => void;
@@ -274,45 +275,43 @@ export function OwnerPortalStoreProvider({
   const [manualDateRange, setManualDateRangeState] =
     useState<OwnerPortalDateRange | null>(null);
 
+  const refreshStores = useCallback(async () => {
+    const response = await fetch("/api/client/store-list", { cache: "no-store" });
+    if (!response.ok) throw new Error("Failed to load stores");
+    const data = await response.json();
+    const list: OwnerPortalStoreSummary[] = Array.isArray(data.stores)
+      ? data.stores
+      : [];
+    const fallback = user.storeNumber
+      ? [{ storeId: user.storeNumber, storeName: `Store ${user.storeNumber}` }]
+      : [];
+    const merged = list.length ? list : fallback;
+
+    const stored =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem("ih-owner-store")
+        : null;
+    const storedValid = stored ? merged.some((store) => store.storeId === stored) : false;
+    const preferred =
+      storedValid
+        ? stored!
+        : merged.find((store) => user.storeIds?.includes(store.storeId))?.storeId ??
+          merged[0]?.storeId ??
+          user.storeNumber ??
+          "";
+
+    setStores(merged);
+    setSelectedStoreId((prev) => {
+      if (storedValid) return stored!;
+      return merged.some((store) => store.storeId === prev) ? prev : preferred;
+    });
+  }, [user.storeIds, user.storeNumber]);
+
   useEffect(() => {
     let active = true;
-    const loadStores = async () => {
+    (async () => {
       try {
-        const response = await fetch("/api/client/store-list", {
-          cache: "no-store",
-        });
-        if (!response.ok) {
-          throw new Error("Failed to load stores");
-        }
-        const data = await response.json();
-        const list: OwnerPortalStoreSummary[] = Array.isArray(data.stores)
-          ? data.stores
-          : [];
-        const fallback = user.storeNumber
-          ? [{ storeId: user.storeNumber, storeName: `Store ${user.storeNumber}` }]
-          : [];
-        const merged = list.length ? list : fallback;
-        if (!active) return;
-        const stored =
-          typeof window !== "undefined"
-            ? window.localStorage.getItem("ih-owner-store")
-            : null;
-        const storedValid = stored
-          ? merged.some((store) => store.storeId === stored)
-          : false;
-        const preferred =
-          storedValid
-            ? stored!
-            : merged.find((store) => user.storeIds?.includes(store.storeId))
-                ?.storeId ??
-              merged[0]?.storeId ??
-              user.storeNumber ??
-              "";
-        setStores(merged);
-        setSelectedStoreId((prev) => {
-          if (storedValid) return stored!;
-          return merged.some((store) => store.storeId === prev) ? prev : preferred;
-        });
+        await refreshStores();
       } catch (error) {
         console.error("Failed to load stores", error);
         if (!active) return;
@@ -324,12 +323,11 @@ export function OwnerPortalStoreProvider({
       } finally {
         if (active) setReady(true);
       }
-    };
-    loadStores();
+    })();
     return () => {
       active = false;
     };
-  }, [user.storeIds, user.storeNumber]);
+  }, [refreshStores, user.storeNumber]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -367,6 +365,7 @@ export function OwnerPortalStoreProvider({
       setSelectedStoreId,
       activeStore,
       ready,
+      refreshStores,
       manualDateRange,
       setManualDateRange,
       clearManualDateRange,
@@ -376,6 +375,7 @@ export function OwnerPortalStoreProvider({
       selectedStoreId,
       activeStore,
       ready,
+      refreshStores,
       manualDateRange,
       setManualDateRange,
       clearManualDateRange,

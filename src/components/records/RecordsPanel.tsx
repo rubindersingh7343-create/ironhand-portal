@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { CombinedRecord, StoredFile, UserRole } from "@/lib/types";
 import IHModal from "@/components/ui/IHModal";
 import CopyButton from "@/components/ui/CopyButton";
@@ -74,6 +75,7 @@ export default function RecordsPanel({
   storeIds,
   variant = "default",
 }: RecordsPanelProps) {
+  const router = useRouter();
   const ownerStore = useOwnerPortalStore();
   const manualDateRange = ownerStore?.manualDateRange ?? null;
   const setManualDateRange = ownerStore?.setManualDateRange;
@@ -145,6 +147,9 @@ export default function RecordsPanel({
   const [addStoreName, setAddStoreName] = useState("");
   const [addStoreAddress, setAddStoreAddress] = useState("");
   const [adding, setAdding] = useState(false);
+  const [addStoreInlineMessage, setAddStoreInlineMessage] = useState<
+    { type: "success" | "error"; message: string } | null
+  >(null);
   const [storeForCode, setStoreForCode] = useState("");
   const [storeInvites, setStoreInvites] = useState<
     Array<{ id: string; code: string; storeId: string; expiresAt?: string; usedAt?: string }>
@@ -569,6 +574,7 @@ export default function RecordsPanel({
     if (!addStoreName.trim()) return;
     setAdding(true);
     setActionMessage(null);
+    setAddStoreInlineMessage(null);
     try {
       const response = await fetch("/api/client/stores", {
         method: "POST",
@@ -620,8 +626,24 @@ export default function RecordsPanel({
       setActionMessage(
         "New store added successfully. Welcome to the Iron Hand network.",
       );
+      setAddStoreInlineMessage({
+        type: "success",
+        message: "Store created. Refreshing your store list…",
+      });
       setAddStoreName("");
       setAddStoreAddress("");
+      if (ownerStore?.setSelectedStoreId && result.storeId) {
+        ownerStore.setSelectedStoreId(result.storeId);
+      }
+      if (ownerStore?.refreshStores) {
+        try {
+          await ownerStore.refreshStores();
+        } catch (error) {
+          console.error("Unable to refresh store list", error);
+        }
+      }
+      // Ensure any server-rendered store counts/props pick up the new session cookie.
+      router.refresh();
       if (role === "client") {
         try {
           const storeResponse = await fetch("/api/client/store-list", {
@@ -651,9 +673,10 @@ export default function RecordsPanel({
       setRefreshCounter((prev) => prev + 1);
     } catch (error) {
       console.error(error);
-      setActionMessage(
-        error instanceof Error ? error.message : "Unable to add store",
-      );
+      const message =
+        error instanceof Error ? error.message : "Unable to add store";
+      setActionMessage(message);
+      setAddStoreInlineMessage({ type: "error", message });
     } finally {
       setAdding(false);
     }
@@ -765,6 +788,17 @@ export default function RecordsPanel({
                       {adding ? "Adding..." : "Add store"}
                     </button>
                   </form>
+                  {addStoreInlineMessage && (
+                    <p
+                      className={`mt-3 rounded-2xl border px-4 py-2 text-sm ${
+                        addStoreInlineMessage.type === "success"
+                          ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-100"
+                          : "border-rose-400/30 bg-rose-500/10 text-rose-100"
+                      }`}
+                    >
+                      {addStoreInlineMessage.message}
+                    </p>
+                  )}
                 </div>
 
                 <div className="border-t border-white/10 pt-4">
