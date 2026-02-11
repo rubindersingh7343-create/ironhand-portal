@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  --background: #050914;
-  --background-alt: #0d1833;
+  /* Brighter navy base (the previous base was near-black and felt too heavy). */
+  --background: #07162e;
+  --background-alt: #0c2146;
   --card: rgba(10, 20, 36, 0.7);
   --card-light: rgba(255, 255, 255, 0.04);
   --text-primary: #f7f9ff;
@@ -20,16 +21,17 @@
 html {
   height: 100%;
   overscroll-behavior-y: auto;
-  background-color: #0a142a;
+  background-color: #0b2346;
 }
 
 body {
   min-height: 100dvh;
-  background-color: #050914;
+  background-color: var(--background);
   background-image:
-    radial-gradient(circle at 25% 20%, rgba(34, 79, 150, 0.28), transparent 45%),
-    radial-gradient(circle at 80% 0%, rgba(28, 68, 134, 0.22), transparent 40%),
-    linear-gradient(180deg, #0a142a 0%, #050914 55%, #04070f 100%);
+    radial-gradient(circle at 22% 18%, rgba(86, 154, 235, 0.34), transparent 48%),
+    radial-gradient(circle at 82% 6%, rgba(64, 136, 225, 0.22), transparent 44%),
+    radial-gradient(circle at 70% 88%, rgba(40, 110, 195, 0.16), transparent 50%),
+    linear-gradient(180deg, #0b2346 0%, #071b38 55%, #050a16 100%);
   background-attachment: scroll;
   color: var(--text-primary);
   font-family: var(--font-geist-sans), system-ui, -apple-system,
@@ -327,7 +329,7 @@ body.ui-modal-open {
   pointer-events: none;
   transition: opacity 180ms ease, transform 180ms ease;
   min-height: 0;
-  height: 24px;
+  height: 34px;
   position: fixed;
   top: calc(env(safe-area-inset-top) + 22px);
   left: 0;
@@ -429,11 +431,12 @@ body[data-top-nav="true"] .scroll-top-bar__nav {
 
 #app-root {
   min-height: 100dvh;
-  background-color: #050914;
+  background-color: var(--background);
   background-image:
-    radial-gradient(circle at 25% 20%, rgba(34, 79, 150, 0.28), transparent 45%),
-    radial-gradient(circle at 80% 0%, rgba(28, 68, 134, 0.22), transparent 40%),
-    linear-gradient(180deg, #0a142a 0%, #050914 55%, #04070f 100%);
+    radial-gradient(circle at 22% 18%, rgba(86, 154, 235, 0.34), transparent 48%),
+    radial-gradient(circle at 82% 6%, rgba(64, 136, 225, 0.22), transparent 44%),
+    radial-gradient(circle at 70% 88%, rgba(40, 110, 195, 0.16), transparent 50%),
+    linear-gradient(180deg, #0b2346 0%, #071b38 55%, #050a16 100%);
   background-attachment: scroll;
   transform: translateY(var(--pull-offset, 0px));
   transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -802,15 +805,18 @@ body:has(.owner-portal-shell) {
 .top-bar-nav__inner {
   display: flex;
   flex-wrap: nowrap;
-  gap: 10px;
-  padding: 2px 12px 4px;
+  gap: 8px;
+  padding: 4px 10px;
   overflow-x: auto;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
-  border-radius: 0;
-  border: 0;
-  background: transparent;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(10, 18, 34, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   pointer-events: auto;
+  width: min(calc(100vw - 24px), 980px);
+  margin: 0 auto;
 }
 
 .owner-portal-nav__inner::-webkit-scrollbar,
@@ -821,19 +827,38 @@ body:has(.owner-portal-shell) {
 .owner-portal-nav__btn,
 .top-bar-nav__btn {
   flex: 0 0 auto;
-  padding: 2px 4px;
-  border-radius: 0;
-  border: 0;
-  font-size: 10px;
-  letter-spacing: 0.2em;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(226, 232, 240, 0.55);
+  color: rgba(226, 232, 240, 0.7);
   background: transparent;
-  transition: color 140ms ease, text-shadow 140ms ease;
+  transition: color 160ms ease, text-shadow 160ms ease, background-color 160ms ease,
+    border-color 160ms ease;
 }
 
 .owner-portal-nav__btn--active,
 .top-bar-nav__btn--active {
   color: rgba(248, 250, 252, 0.92);
   text-shadow: 0 2px 8px rgba(15, 23, 42, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.owner-portal-nav__btn:focus-visible,
+.top-bar-nav__btn:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.7);
+  outline-offset: 2px;
+}
+
+@media (max-width: 420px) {
+  .owner-portal-nav__btn,
+  .top-bar-nav__btn {
+    padding: 6px 9px;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+  }
 }
