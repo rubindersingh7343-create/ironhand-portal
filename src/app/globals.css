@@ -455,9 +455,9 @@ body:has(.portal-shell) {
   padding-top: 0;
 }
 
-.owner-portal-shell .owner-portal-header {
-  /* Give the fixed top nav a little breathing room on iPhone. */
-  margin-top: 18px;
+/* Owner portal: add a little extra separation between the fixed top nav and the first card. */
+.owner-portal-shell.portal-shell {
+  padding-top: calc(env(safe-area-inset-top) + 78px) !important;
 }
 
 .safe-area-top {
