@@ -457,7 +457,7 @@ body:has(.portal-shell) {
 
 .owner-portal-shell .owner-portal-header {
   /* Give the fixed top nav a little breathing room on iPhone. */
-  margin-top: 12px;
+  margin-top: 18px;
 }
 
 .safe-area-top {
