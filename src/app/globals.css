@@ -455,6 +455,11 @@ body:has(.portal-shell) {
   padding-top: 0;
 }
 
+.owner-portal-shell .owner-portal-header {
+  /* Give the fixed top nav a little breathing room on iPhone. */
+  margin-top: 12px;
+}
+
 .safe-area-top {
   padding-top: calc(env(safe-area-inset-top, 6px) + 2px);
 }
