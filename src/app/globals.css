@@ -23,14 +23,7 @@
     rgba(118, 126, 142, 0.88) 0%,
     rgba(90, 98, 114, 0.9) 100%
   );
-  --silver-blue: linear-gradient(
-    120deg,
-    rgba(70, 120, 200, 0.18) 0%,
-    rgba(70, 120, 200, 0.08) 40%,
-    rgba(70, 120, 200, 0.02) 75%
-  );
   --silver-surface: var(--silver-sheen), var(--silver-base);
-  --silver-surface-blue: var(--silver-blue), var(--silver-sheen), var(--silver-base);
 }
 
 @theme inline {
@@ -237,7 +230,7 @@ body.ui-modal-open {
   right: 0;
   height: calc(env(safe-area-inset-top) + 56px);
   padding: 0;
-  background: var(--silver-surface-blue);
+  background: var(--silver-surface);
   border-bottom: none;
   backdrop-filter: blur(12px);
   z-index: 50;
@@ -250,7 +243,7 @@ body.ui-modal-open {
 }
 
 .scroll-top-bar--solid {
-  background: var(--silver-surface-blue);
+  background: var(--silver-surface);
   backdrop-filter: blur(12px);
 }
 
@@ -273,7 +266,7 @@ body.ui-modal-open {
   left: 0;
   right: 0;
   border-radius: 0;
-  background: var(--silver-surface-blue);
+  background: var(--silver-surface);
   border: none;
   box-shadow: none;
   text-transform: uppercase;
@@ -321,7 +314,7 @@ body.ui-modal-open {
 }
 
 .scroll-top-bar--solid .scroll-top-bar__label {
-  background: var(--silver-surface-blue);
+  background: var(--silver-surface);
   box-shadow: none;
   backdrop-filter: blur(10px);
   letter-spacing: 0.16em;
@@ -928,7 +921,7 @@ body:has(.owner-portal-shell) {
   -webkit-overflow-scrolling: touch;
   border-radius: 0;
   border: none;
-  background: var(--silver-surface-blue);
+  background: var(--silver-surface);
   box-shadow: 0 12px 30px rgba(2, 6, 23, 0.18);
   pointer-events: auto;
   width: 100%;
