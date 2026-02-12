@@ -15,19 +15,62 @@ export default function TopBarNav({
   sections: TopBarSection[];
   sectionSelector?: string;
 }) {
-  const [navNode, setNavNode] = useState<Element | null>(null);
   const [activeSectionId, setActiveSectionId] = useState(
     sections[0]?.id ?? "",
   );
+
+  const navNode =
+    typeof document === "undefined"
+      ? null
+      : document.getElementById("top-bar-nav");
 
   const sectionIds = useMemo(
     () => new Set(sections.map((section) => section.id)),
     [sections],
   );
 
+  const effectiveActiveSectionId = sectionIds.has(activeSectionId)
+    ? activeSectionId
+    : (sections[0]?.id ?? "");
+
   useEffect(() => {
-    setNavNode(document.getElementById("top-bar-nav"));
-  }, []);
+    if (!effectiveActiveSectionId) return;
+    const nav = document.getElementById("top-bar-nav");
+    if (!nav) return;
+
+    const scroller = nav.querySelector<HTMLElement>(".top-bar-nav__inner");
+    if (!scroller) return;
+
+    const prefersReducedMotion =
+      "matchMedia" in window &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let raf1 = 0;
+    let raf2 = 0;
+    raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => {
+      const active =
+        scroller.querySelector<HTMLElement>(".top-bar-nav__btn--active") ??
+        scroller.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+      if (!active) return;
+
+      const targetLeft =
+        active.offsetLeft + active.offsetWidth / 2 - scroller.clientWidth / 2;
+      const maxLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+      const nextLeft = Math.min(maxLeft, Math.max(0, targetLeft));
+
+      scroller.scrollTo({
+        left: nextLeft,
+        behavior: prefersReducedMotion ? "auto" : "smooth",
+      });
+      });
+    });
+
+    return () => {
+      if (raf1) window.cancelAnimationFrame(raf1);
+      if (raf2) window.cancelAnimationFrame(raf2);
+    };
+  }, [effectiveActiveSectionId, sections.length]);
 
   useEffect(() => {
     if (!sections.length) return;
@@ -39,15 +82,27 @@ export default function TopBarNav({
 
   useEffect(() => {
     if (!sections.length) return;
-    const sectionEls = Array.from(
+    const sectionElsFromIds = sections
+      .map((section) => document.getElementById(section.id))
+      .filter(Boolean) as HTMLElement[];
+    const sectionElsFromSelector = Array.from(
       document.querySelectorAll<HTMLElement>(sectionSelector),
     ).filter((section) => sectionIds.has(section.id));
+    const sectionEls = sectionElsFromIds.length
+      ? sectionElsFromIds
+      : sectionElsFromSelector;
     if (!sectionEls.length) return;
 
     const ratios = new Map<HTMLElement, number>();
     let raf = 0;
+    let observer: IntersectionObserver | null = null;
 
-    const setActive = () => {
+    const commit = (nextId: string) => {
+      if (!nextId) return;
+      setActiveSectionId((prev) => (prev === nextId ? prev : nextId));
+    };
+
+    const setFromRatios = () => {
       raf = 0;
       let best: HTMLElement | null = null;
       let bestRatio = 0;
@@ -62,25 +117,76 @@ export default function TopBarNav({
         section.style.setProperty("--section-focus", ratio.toFixed(3));
       });
       const bestId = (best as HTMLElement | null)?.id;
-      if (bestId) setActiveSectionId(bestId);
+      if (bestId) commit(bestId);
     };
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          ratios.set(entry.target as HTMLElement, entry.intersectionRatio);
-        });
-        if (!raf) raf = window.requestAnimationFrame(setActive);
-      },
-      {
-        threshold: Array.from({ length: 11 }, (_, index) => index / 10),
-        rootMargin: "-10% 0px -10% 0px",
-      },
-    );
+    const setFromScroll = () => {
+      raf = 0;
+      const doc = document.documentElement;
+      const maxScroll = Math.max(0, doc.scrollHeight - window.innerHeight);
+      const scrollY = window.scrollY;
+      if (maxScroll <= 0) return;
+      if (scrollY <= 2) {
+        const firstId = sectionEls[0]?.id ?? "";
+        if (firstId) commit(firstId);
+        return;
+      }
+      if (scrollY >= maxScroll - 4) {
+        const lastId = sectionEls[sectionEls.length - 1]?.id ?? "";
+        if (lastId) commit(lastId);
+        return;
+      }
+      const focusY = 120;
+      let best: HTMLElement | null = null;
+      let bestScore = -Infinity;
+      sectionEls.forEach((section) => {
+        const rect = section.getBoundingClientRect();
+        const distance = Math.abs(rect.top - focusY);
+        const score = Math.max(0, 1 - distance / 520);
+        section.style.setProperty("--section-focus", score.toFixed(3));
+        if (score > bestScore) {
+          bestScore = score;
+          best = section;
+        }
+      });
+      const bestId = (best as HTMLElement | null)?.id ?? "";
+      if (bestId) commit(bestId);
+    };
 
-    sectionEls.forEach((section) => observer.observe(section));
+    const scheduleScrollCompute = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(setFromScroll);
+    };
+
+    if ("IntersectionObserver" in window) {
+      observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            ratios.set(entry.target as HTMLElement, entry.intersectionRatio);
+          });
+          if (!raf) raf = window.requestAnimationFrame(setFromRatios);
+        },
+        {
+          threshold: Array.from({ length: 11 }, (_, index) => index / 10),
+          rootMargin: "-10% 0px -10% 0px",
+        },
+      );
+
+      sectionEls.forEach((section) => observer!.observe(section));
+    }
+
+    window.addEventListener("scroll", scheduleScrollCompute, { passive: true });
+    document.addEventListener("scroll", scheduleScrollCompute, {
+      passive: true,
+      capture: true,
+    });
+    window.addEventListener("resize", scheduleScrollCompute);
+    scheduleScrollCompute();
     return () => {
-      observer.disconnect();
+      window.removeEventListener("scroll", scheduleScrollCompute);
+      document.removeEventListener("scroll", scheduleScrollCompute, true);
+      window.removeEventListener("resize", scheduleScrollCompute);
+      observer?.disconnect();
       if (raf) window.cancelAnimationFrame(raf);
     };
   }, [sectionIds, sectionSelector, sections.length]);
@@ -88,24 +194,31 @@ export default function TopBarNav({
   if (!navNode || sections.length === 0) return null;
 
   return createPortal(
-    <div className="top-bar-nav__inner">
-      {sections.map((section) => (
-        <button
-          key={section.id}
-          type="button"
-          onClick={() => {
-            const target = document.getElementById(section.id);
-            if (target) {
-              target.scrollIntoView({ behavior: "smooth", block: "start" });
-            }
-          }}
-          className={`top-bar-nav__btn${
-            activeSectionId === section.id ? " top-bar-nav__btn--active" : ""
-          }`}
-        >
-          {section.label}
-        </button>
-      ))}
+    <div className="top-bar-nav__inner" role="tablist" aria-label="Sections">
+      {sections.map((section) => {
+        const isActive = effectiveActiveSectionId === section.id;
+        return (
+          <button
+            key={section.id}
+            type="button"
+            role="tab"
+            aria-selected={isActive}
+            tabIndex={isActive ? 0 : -1}
+            onClick={() => {
+              const target = document.getElementById(section.id);
+              if (target) {
+                target.scrollIntoView({ behavior: "smooth", block: "start" });
+              }
+              setActiveSectionId(section.id);
+            }}
+            className={`top-bar-nav__btn${
+              isActive ? " top-bar-nav__btn--active" : ""
+            }`}
+          >
+            {section.label}
+          </button>
+        );
+      })}
     </div>,
     navNode,
   );

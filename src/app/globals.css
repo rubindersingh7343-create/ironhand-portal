@@ -703,6 +703,23 @@ select.ui-field--slim {
   border-color: rgba(255, 255, 255, 0.24) !important;
 }
 
+/* Owner portal: action pills (Settings / Sign out / Start uploads) stay deep blue. */
+.owner-portal-shell .owner-portal-header .ui-button--slim,
+.owner-portal-shell #owner-employee-uploads .ui-button--slim {
+  background: var(--background) !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
+  color: #f7f9ff !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 10px 26px rgba(5, 10, 24, 0.35);
+}
+
+.owner-portal-shell .owner-portal-header .ui-button--slim:hover,
+.owner-portal-shell #owner-employee-uploads .ui-button--slim:hover {
+  background: #0f1f3a !important;
+  border-color: rgba(255, 255, 255, 0.32) !important;
+}
+
 .ui-tab {
   border-radius: 999px;
   padding: 4px 10px;
@@ -922,7 +939,7 @@ body:has(.owner-portal-shell) {
   border-radius: 0;
   border: none;
   background: var(--silver-surface);
-  box-shadow: 0 12px 30px rgba(2, 6, 23, 0.18);
+  box-shadow: none;
   pointer-events: auto;
   width: 100%;
   margin: 0;
