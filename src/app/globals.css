@@ -4,9 +4,9 @@
   /* Slate + navy palette (premium, low-contrast). */
   --background: #0b142b;
   --background-alt: #111c36;
-  --card: #5f667a;
+  --card: #8d95a9;
   --card-strong: #1a2440;
-  --card-soft: #2b3449;
+  --card-soft: #2f3952;
   --card-light: rgba(255, 255, 255, 0.04);
   --text-primary: #f4f6ff;
   --text-muted: #c2c7d6;
@@ -337,6 +337,7 @@ body.ui-modal-open {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  background: transparent;
 }
 
 .top-bar-nav__skeleton {
@@ -938,7 +939,7 @@ body:has(.owner-portal-shell) {
   -webkit-overflow-scrolling: touch;
   border-radius: 0;
   border: none;
-  background: var(--silver-surface);
+  background: transparent;
   box-shadow: none;
   pointer-events: auto;
   width: 100%;
