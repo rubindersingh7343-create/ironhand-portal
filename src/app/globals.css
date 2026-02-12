@@ -266,7 +266,7 @@ body.ui-modal-open {
   left: 0;
   right: 0;
   border-radius: 0;
-  background: var(--silver-surface);
+  background: transparent;
   border: none;
   box-shadow: none;
   text-transform: uppercase;
@@ -275,11 +275,11 @@ body.ui-modal-open {
   font-size: 14px;
   font-weight: 600;
   color: var(--background);
-  text-shadow: 0 2px 8px rgba(2, 6, 23, 0.4);
+  text-shadow: none;
   transform: translateY(calc(-2px + (-4px * var(--scroll-progress))));
   transition: background-color 180ms ease, box-shadow 180ms ease, padding 180ms ease,
     text-shadow 180ms ease, letter-spacing 180ms ease, transform 180ms ease;
-  backdrop-filter: blur(10px);
+  backdrop-filter: none;
 }
 
 .scroll-top-bar__spinner {
@@ -314,9 +314,9 @@ body.ui-modal-open {
 }
 
 .scroll-top-bar--solid .scroll-top-bar__label {
-  background: var(--silver-surface);
+  background: transparent;
   box-shadow: none;
-  backdrop-filter: blur(10px);
+  backdrop-filter: none;
   letter-spacing: 0.16em;
 }
 
