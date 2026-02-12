@@ -1,14 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  /* Light mode background (user request): white page background with dark navy cards. */
-  --background: #ffffff;
-  --background-alt: #f4f7ff;
-  --card: rgba(10, 20, 36, 0.7);
+  /* Slate + navy palette (premium, low-contrast). */
+  --background: #0b142b;
+  --background-alt: #111c36;
+  --card: #5f667a;
+  --card-strong: #1a2440;
+  --card-soft: #2b3449;
   --card-light: rgba(255, 255, 255, 0.04);
-  /* Default text sits on the white background. Cards set their own text color below. */
-  --text-primary: #0b1430;
-  --text-muted: #445577;
+  --text-primary: #f4f6ff;
+  --text-muted: #c2c7d6;
   --text-on-card: #f7f9ff;
   --accent: #3b82f6;
 }
@@ -29,7 +30,10 @@ html {
 body {
   min-height: 100dvh;
   background-color: var(--background);
-  background-image: none;
+  background-image:
+    radial-gradient(circle at 18% 12%, rgba(64, 98, 170, 0.25), transparent 52%),
+    radial-gradient(circle at 80% 10%, rgba(48, 82, 150, 0.18), transparent 46%),
+    linear-gradient(180deg, #0b142b 0%, #0a1226 60%, #080f1f 100%);
   background-attachment: scroll;
   color: var(--text-primary);
   font-family: var(--font-geist-sans), system-ui, -apple-system,
@@ -38,7 +42,6 @@ body {
   padding-top: calc(env(safe-area-inset-top) + 2px);
   overscroll-behavior-y: auto;
   -webkit-overflow-scrolling: touch;
-  scroll-behavior: smooth;
 }
 
 
@@ -215,10 +218,11 @@ body.ui-modal-open {
   right: 0;
   height: calc(env(safe-area-inset-top) + 56px);
   padding: 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.55) 60%, rgba(255, 255, 255, 0) 100%);
+  background: var(--card);
+  border-bottom: none;
+  backdrop-filter: blur(12px);
   z-index: 50;
-  transition: background-color 180ms ease, backdrop-filter 180ms ease,
-    opacity 180ms ease, transform 180ms ease;
+  transition: none;
   --scroll-progress: 0;
   pointer-events: none;
   display: block;
@@ -227,8 +231,8 @@ body.ui-modal-open {
 }
 
 .scroll-top-bar--solid {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.55));
-  backdrop-filter: blur(10px);
+  background: var(--card);
+  backdrop-filter: blur(12px);
 }
 
 .scroll-top-bar--visible {
@@ -241,30 +245,29 @@ body.ui-modal-open {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  width: calc(100vw + 16px);
+  width: 100%;
   height: 20px;
-  padding: 0 18px;
+  padding: 0 calc(env(safe-area-inset-left) + 18px)
+    0 calc(env(safe-area-inset-right) + 18px);
   position: fixed;
   top: env(safe-area-inset-top);
   left: 0;
   right: 0;
-  border-radius: 8px;
-  background: rgba(11, 20, 40, 0.035);
-  background-size: 200% 100%;
-  animation: none;
-  border: 1px solid transparent;
-  box-shadow: 0 2px 10px rgba(2, 6, 23, 0.06);
+  border-radius: 0;
+  background: var(--card);
+  border: none;
+  box-shadow: none;
   text-transform: uppercase;
   font-family: var(--font-ironhand-display), var(--font-geist-sans), serif;
   letter-spacing: 0.14em;
   font-size: 14px;
   font-weight: 600;
-  color: rgba(11, 20, 40, 0.6);
-  text-shadow: none;
+  color: var(--background);
+  text-shadow: 0 2px 8px rgba(2, 6, 23, 0.4);
   transform: translateY(calc(-2px + (-4px * var(--scroll-progress))));
   transition: background-color 180ms ease, box-shadow 180ms ease, padding 180ms ease,
     text-shadow 180ms ease, letter-spacing 180ms ease, transform 180ms ease;
-  backdrop-filter: blur(6px);
+  backdrop-filter: blur(10px);
 }
 
 .scroll-top-bar__spinner {
@@ -299,20 +302,19 @@ body.ui-modal-open {
 }
 
 .scroll-top-bar--solid .scroll-top-bar__label {
-  background: transparent;
+  background: var(--card);
   box-shadow: none;
-  backdrop-filter: none;
-  animation: none;
+  backdrop-filter: blur(10px);
   letter-spacing: 0.16em;
 }
 
 .scroll-top-bar__nav {
   width: 100%;
   max-width: 100%;
-  opacity: 0;
-  transform: translateY(-4px);
-  pointer-events: none;
-  transition: opacity 180ms ease, transform 180ms ease;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+  transition: none;
   min-height: 0;
   height: 34px;
   position: fixed;
@@ -322,6 +324,23 @@ body.ui-modal-open {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+}
+
+.top-bar-nav__skeleton {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 4px;
+  bottom: 4px;
+  border-radius: 999px;
+  opacity: 0.6;
+  pointer-events: none;
+  z-index: 0;
+}
+
+body[data-top-nav="true"] .top-bar-nav__skeleton {
+  display: none;
 }
 
 body[data-top-nav="true"] .scroll-top-bar {
@@ -416,9 +435,7 @@ body[data-top-nav="true"] .scroll-top-bar__nav {
 
 #app-root {
   min-height: 100dvh;
-  background-color: var(--background);
-  background-image: none;
-  background-attachment: scroll;
+  background: transparent;
   transform: translateY(var(--pull-offset, 0px));
   transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
@@ -474,13 +491,91 @@ body:has(.portal-shell) {
 
 .ui-card {
   border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(13, 22, 44, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.18) 0%,
+      rgba(255, 255, 255, 0.06) 42%,
+      rgba(255, 255, 255, 0.12) 100%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(118, 126, 142, 0.88) 0%,
+      rgba(90, 98, 114, 0.9) 100%
+    );
   padding: 24px;
   color: var(--text-on-card);
-  box-shadow: 0 24px 60px rgba(3, 8, 24, 0.6);
-  backdrop-filter: blur(14px);
+  box-shadow:
+    0 20px 44px rgba(15, 23, 42, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -10px 18px rgba(15, 23, 42, 0.25);
+  backdrop-filter: blur(16px) saturate(120%);
   animation: ih-fade-up 160ms ease;
+}
+
+/* Owner portal: grey cards use blue text by default. */
+.owner-portal-shell .ui-card {
+  color: var(--background);
+}
+
+.owner-portal-shell .ui-card :is(
+  .text-white,
+  .text-slate-50,
+  .text-slate-100,
+  .text-slate-200,
+  .text-slate-300,
+  .text-slate-400,
+  .text-slate-500
+) {
+  color: var(--background) !important;
+}
+
+/* Keep text white on dark/blue surfaces inside grey cards. */
+.owner-portal-shell .ui-card :is(
+  .ui-field,
+  .ui-field--slim,
+  .ui-tabs,
+  .ui-tab,
+  .ui-tab--active,
+  .ui-date-step,
+  .ui-button--slim,
+  .ui-card-press,
+  .bg-white\/5,
+  .bg-slate-950\/40,
+  .bg-\[\#0f1b3a\],
+  .bg-\[\#0f1a33\],
+  .bg-\[\#0b1429\],
+  .ui-card-press *
+) {
+  color: #f7f9ff !important;
+}
+
+.owner-portal-shell .ui-card :is(
+  .bg-white\/5,
+  .bg-slate-950\/40,
+  .bg-\[\#0f1b3a\],
+  .bg-\[\#0f1a33\],
+  .bg-\[\#0b1429\]
+) * {
+  color: #f7f9ff !important;
+}
+
+/* Explicitly keep white ink on dark sub-cards inside owner portal cards. */
+.owner-portal-shell .ui-card .ui-ink-inverse {
+  color: #f7f9ff !important;
+}
+
+.owner-portal-shell .ui-card .ui-ink-inverse :is(
+  .text-white,
+  .text-slate-50,
+  .text-slate-100,
+  .text-slate-200,
+  .text-slate-300,
+  .text-slate-400,
+  .text-slate-500
+) {
+  color: #f7f9ff !important;
 }
 
 .ui-card--compact {
@@ -511,7 +606,7 @@ body:has(.portal-shell) {
   height: 40px;
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(12, 20, 36, 0.9);
+  background: var(--card-strong);
   padding: 0 12px;
   color: #f8fafc;
   font-size: 13px;
@@ -552,7 +647,7 @@ input[type="date"].ui-field {
   padding: 0 12px;
   font-size: 12px;
   border-color: rgba(255, 255, 255, 0.08);
-  background: rgba(9, 16, 30, 0.55);
+  background: var(--card-strong);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
@@ -591,7 +686,7 @@ select.ui-field--slim {
   padding: 4px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(10, 18, 34, 0.55);
+  background: var(--card-strong);
 }
 
 .ui-tab {
@@ -607,7 +702,7 @@ select.ui-field--slim {
 
 .ui-tab--active {
   color: #f8fafc;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--card-soft);
 }
 
 .reports-filter-row {
@@ -634,7 +729,7 @@ select.ui-field--slim {
   height: 28px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(10, 18, 34, 0.75);
+  background: var(--card-strong);
   color: #f8fafc;
   font-size: 16px;
   line-height: 1;
@@ -751,6 +846,17 @@ select.ui-field--slim {
     rgba(5, 12, 28, calc(0.22 + (var(--section-focus) * 0.2)));
 }
 
+@supports (-webkit-touch-callout: none) {
+  #app-root .owner-portal-section {
+    --section-focus: 1;
+    transform: none;
+    opacity: 1;
+    filter: none;
+    transition: none;
+    box-shadow: 0 12px 28px rgba(5, 12, 28, 0.32);
+  }
+}
+
 #app-root .portal-section {
   scroll-margin-top: calc(env(safe-area-inset-top) + 120px);
 }
@@ -800,12 +906,14 @@ body:has(.owner-portal-shell) {
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
   border-radius: 0;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(10, 18, 34, 0.55);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  border: none;
+  background: var(--card);
+  box-shadow: 0 12px 30px rgba(2, 6, 23, 0.18);
   pointer-events: auto;
   width: 100%;
   margin: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .owner-portal-nav__inner::-webkit-scrollbar,
@@ -823,7 +931,7 @@ body:has(.owner-portal-shell) {
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(226, 232, 240, 0.7);
+  color: var(--background);
   background: transparent;
   transition: color 160ms ease, text-shadow 160ms ease, background-color 160ms ease,
     border-color 160ms ease;
@@ -833,8 +941,21 @@ body:has(.owner-portal-shell) {
 .top-bar-nav__btn--active {
   color: rgba(248, 250, 252, 0.92);
   text-shadow: 0 2px 8px rgba(15, 23, 42, 0.5);
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--card-soft);
   border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Normalize light utility backgrounds within portal surfaces. */
+.portal-shell .bg-white\/5 {
+  background-color: var(--card-strong) !important;
+}
+
+.portal-shell .bg-slate-950\/40 {
+  background-color: var(--card-strong) !important;
+}
+
+.portal-shell .bg-\[\#0f1b3a\] {
+  background-color: var(--card-strong) !important;
 }
 
 .owner-portal-nav__btn:focus-visible,
