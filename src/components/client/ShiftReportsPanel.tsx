@@ -380,11 +380,11 @@ export default function ShiftReportsPanel({
     [reportConfig],
   );
   const minTableWidth = useMemo(
-    () => Math.max(520, 180 + visibleItems.length * 130 + 80),
+    () => Math.max(460, 130 + visibleItems.length * 120 + 56),
     [visibleItems.length],
   );
   const netTableMinWidth = useMemo(
-    () => Math.max(520, 180 + netItems.length * 130 + 110),
+    () => Math.max(460, 130 + netItems.length * 120 + 100),
     [netItems.length],
   );
 
@@ -611,16 +611,16 @@ export default function ShiftReportsPanel({
                 >
                   <thead className="sticky top-0 z-10 bg-[#0f1a33] text-[11px] uppercase tracking-[0.24em] text-slate-300">
                     <tr>
-                      <th className="w-[180px] px-2 py-3 md:px-3 whitespace-nowrap">Name</th>
+                      <th className="w-[130px] px-2 py-3 md:px-3 whitespace-nowrap">Name</th>
                       {visibleItems.map((item) => (
                         <th
                           key={`${item.key}-${item.label}`}
-                          className="w-[130px] px-2 py-3 text-right md:px-3 whitespace-nowrap"
+                          className="w-[120px] px-2 py-3 text-right md:px-3 whitespace-nowrap"
                         >
                           {item.label}
                         </th>
                       ))}
-                      <th className="sticky right-0 w-[80px] bg-[#0f1a33] px-2 py-3 text-right md:px-3"></th>
+                      <th className="sticky right-0 w-[56px] bg-[#0f1a33] px-1.5 py-3 text-right md:px-2"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -673,7 +673,7 @@ export default function ShiftReportsPanel({
                                 </td>
                               );
                             })}
-                            <td className="sticky right-0 bg-[#0f1a33] px-2 py-4 text-right md:px-3">
+                            <td className="sticky right-0 bg-[#0f1a33] px-1.5 py-4 text-right md:px-2">
                               {canInvestigate ? (
                                 <button
                                   type="button"
@@ -681,7 +681,7 @@ export default function ShiftReportsPanel({
                                     if (report) openInvestigate(report);
                                   }}
                                   disabled={!report}
-                                  className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-[11px] font-semibold transition ${
+                                  className={`inline-flex h-7 w-7 items-center justify-center rounded-full border text-[10px] font-semibold transition ${
                                     report && getStatus(report) === "resolved"
                                       ? "border-emerald-300/60 text-emerald-200"
                                       : report &&
@@ -711,7 +711,7 @@ export default function ShiftReportsPanel({
                                 <button
                                   type="button"
                                   disabled
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 text-[11px] font-semibold text-slate-500/80"
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 text-[10px] font-semibold text-slate-500/80"
                                   aria-label="Investigate"
                                 >
                                   <svg
@@ -751,14 +751,14 @@ export default function ShiftReportsPanel({
                   >
                     <thead className="text-[11px] uppercase tracking-[0.24em] text-slate-300">
                       <tr>
-                        <th className="w-[180px] px-2 py-3 md:px-3 whitespace-nowrap">Name</th>
-                        <th className="w-[110px] px-2 py-3 text-right md:px-3 whitespace-nowrap">
+                        <th className="w-[130px] px-2 py-3 md:px-3 whitespace-nowrap">Name</th>
+                        <th className="w-[100px] px-2 py-3 text-right md:px-3 whitespace-nowrap">
                           Net
                         </th>
                         {netItems.map((item) => (
                           <th
                             key={`net-head-${item.key}`}
-                            className="w-[130px] px-2 py-3 text-right md:px-3 whitespace-nowrap"
+                            className="w-[120px] px-2 py-3 text-right md:px-3 whitespace-nowrap"
                           >
                             {item.label}
                           </th>
