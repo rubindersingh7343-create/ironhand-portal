@@ -514,7 +514,7 @@ export default function SurveillanceReportsSection({
               </div>
             ) : !hasReports ? (
               <p className="text-sm text-slate-400">
-                {message ?? "No reports submitted for this date yet."}
+                {message ?? "No uploads today."}
               </p>
             ) : (
               <>

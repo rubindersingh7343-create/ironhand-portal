@@ -159,6 +159,10 @@ export default function FullDayReportsPanel({
   const [toast, setToast] = useState<string | null>(null);
   const [localStatus, setLocalStatus] = useState<Record<string, "default" | "investigating" | "resolved">>({});
   const activeStoreId = ownerStore?.selectedStoreId ?? user.storeNumber;
+  const activeStoreMeta = useMemo(
+    () => stores.find((store) => store.storeId === activeStoreId) ?? null,
+    [stores, activeStoreId],
+  );
   const [reportConfig, setReportConfig] = useState<ReportItemConfig[]>(
     getDefaultReportItems(),
   );
@@ -491,7 +495,7 @@ export default function FullDayReportsPanel({
           </div>
         ) : (
           <>
-            <div className="scroll-clip rounded-2xl border border-white/10 bg-[#0f1a33]">
+            <div className="ui-ink-inverse scroll-clip rounded-2xl border border-white/10 bg-[#0f1a33]">
               <div className="max-h-[360px] overflow-x-auto">
                 <table
                   className="w-full table-fixed text-left text-[13px] text-slate-200"
@@ -525,8 +529,8 @@ export default function FullDayReportsPanel({
                       ))
                     ) : reports.length === 0 && stores.length === 0 ? (
                         <tr>
-                          <td className="px-3 py-6 text-slate-400 md:px-4" colSpan={visibleItems.length + 3}>
-                            {message ?? "No reports submitted for this date yet."}
+                          <td className="px-3 py-3 text-slate-400 md:px-4" colSpan={visibleItems.length + 3}>
+                            {message ?? "No uploads today."}
                           </td>
                         </tr>
                     ) : (
@@ -556,7 +560,7 @@ export default function FullDayReportsPanel({
                     const displayName =
                       store.storeName ?? activeRecord?.employeeName ?? `Store ${store.storeId}`;
                     const missingLabel = isRange
-                      ? "No reports in range"
+                      ? "No uploads in range"
                       : "";
                     const canInvestigate = Boolean(activeRecord);
                     const reportId = activeRecord?.id ?? "";
@@ -661,6 +665,7 @@ export default function FullDayReportsPanel({
         <FullDayInvestigationModal
           report={active}
           storeName={activeStoreName ?? active.employeeName}
+          hasManager={Boolean(activeStoreMeta?.hasManager)}
           defaultStatus={localStatus[active.id] ?? "default"}
           onClose={closeReport}
           onStatusChange={updateStatus}

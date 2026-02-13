@@ -357,7 +357,7 @@ export default function ShiftReportsPanel({
   };
 
   const isRange = startDate !== endDate;
-  const missingLabel = isRange ? "No reports in range" : "";
+  const missingLabel = isRange ? "No uploads in range" : "";
   const formatShortName = (name?: string) => {
     if (!name) return "";
     const parts = name.trim().split(/\s+/);
@@ -603,7 +603,7 @@ export default function ShiftReportsPanel({
           </div>
         ) : (
           <>
-            <div className="scroll-clip rounded-2xl border border-white/10 bg-[#0f1a33]">
+            <div className="ui-ink-inverse scroll-clip rounded-2xl border border-white/10 bg-[#0f1a33]">
               <div className="max-h-[360px] overflow-auto">
                 <table
                   className="w-full table-fixed text-left text-[13px] text-slate-200"
@@ -638,10 +638,10 @@ export default function ShiftReportsPanel({
                     ) : reports.length === 0 ? (
                       <tr>
                         <td
-                          className="px-3 py-6 text-slate-400 md:px-4"
+                          className="px-3 py-3 text-slate-400 md:px-4"
                           colSpan={visibleItems.length + 2}
                         >
-                          {message ?? "No reports submitted for this date yet."}
+                          {message ?? "No uploads today."}
                         </td>
                       </tr>
                     ) : (
@@ -738,7 +738,7 @@ export default function ShiftReportsPanel({
               </div>
             </div>
             {netItems.length > 0 && (
-              <div className="mt-4 rounded-2xl border border-white/10 bg-[#0f1a33] px-4 py-4 text-sm text-slate-200">
+              <div className="ui-ink-inverse mt-4 rounded-2xl border border-white/10 bg-[#0f1a33] px-4 py-4 text-sm text-slate-200">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="text-[11px] uppercase tracking-[0.26em] text-slate-300">
                     Net sales
