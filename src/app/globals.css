@@ -4,24 +4,25 @@
   /* Slate + navy palette (premium, low-contrast). */
   --background: #0b142b;
   --background-alt: #111c36;
-  --card: #8d95a9;
+  --card: rgba(220, 224, 232, 0.78);
   --card-strong: #1a2440;
   --card-soft: #2f3952;
   --card-light: rgba(255, 255, 255, 0.04);
+  --nav-surface: rgba(212, 217, 228, 0.95);
   --text-primary: #f4f6ff;
   --text-muted: #c2c7d6;
   --text-on-card: #f7f9ff;
   --accent: #3b82f6;
   --silver-sheen: linear-gradient(
     135deg,
-    rgba(255, 255, 255, 0.18) 0%,
-    rgba(255, 255, 255, 0.06) 42%,
-    rgba(255, 255, 255, 0.12) 100%
+    rgba(255, 255, 255, 0.45) 0%,
+    rgba(255, 255, 255, 0.18) 45%,
+    rgba(255, 255, 255, 0.32) 100%
   );
   --silver-base: linear-gradient(
     180deg,
-    rgba(118, 126, 142, 0.88) 0%,
-    rgba(90, 98, 114, 0.9) 100%
+    rgba(210, 216, 226, 0.86) 0%,
+    rgba(188, 195, 209, 0.9) 100%
   );
   --silver-surface: var(--silver-sheen), var(--silver-base);
 }
@@ -230,9 +231,9 @@ body.ui-modal-open {
   right: 0;
   height: calc(env(safe-area-inset-top) + 56px);
   padding: 0;
-  background: var(--silver-surface);
+  background: var(--nav-surface);
   border-bottom: none;
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(14px) saturate(120%);
   z-index: 50;
   transition: none;
   --scroll-progress: 0;
@@ -243,8 +244,8 @@ body.ui-modal-open {
 }
 
 .scroll-top-bar--solid {
-  background: var(--silver-surface);
-  backdrop-filter: blur(12px);
+  background: var(--nav-surface);
+  backdrop-filter: blur(14px) saturate(120%);
 }
 
 .scroll-top-bar--visible {
@@ -381,8 +382,8 @@ body[data-top-nav="true"] .scroll-top-bar__nav {
   justify-content: center;
   padding: 0;
   transform: translateY(calc(0px - var(--pull-offset, 0px)));
-  background: var(--silver-surface);
-  backdrop-filter: blur(10px);
+  background: transparent;
+  backdrop-filter: blur(14px) saturate(120%);
 }
 
 .owner-bottom-bar__label,
@@ -941,6 +942,7 @@ body:has(.owner-portal-shell) {
   border: none;
   background: transparent;
   box-shadow: none;
+  backdrop-filter: none;
   pointer-events: auto;
   width: 100%;
   margin: 0;
@@ -971,10 +973,18 @@ body:has(.owner-portal-shell) {
 
 .owner-portal-nav__btn--active,
 .top-bar-nav__btn--active {
-  color: rgba(248, 250, 252, 0.92);
-  text-shadow: 0 2px 8px rgba(15, 23, 42, 0.5);
-  background: var(--card-soft);
-  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(239, 246, 255, 0.98);
+  text-shadow: 0 2px 8px rgba(15, 23, 42, 0.55);
+  background: linear-gradient(140deg, rgba(22, 43, 92, 0.96), rgba(16, 33, 74, 0.92));
+  border-color: rgba(148, 163, 184, 0.35);
+  box-shadow: 0 10px 22px rgba(8, 20, 45, 0.45);
+}
+
+/* Dim inactive nav items when one is selected. */
+.top-bar-nav__inner [role="tab"][aria-selected="false"],
+.owner-portal-nav__inner [role="tab"][aria-selected="false"] {
+  color: rgba(15, 23, 42, 0.55);
+  opacity: 0.7;
 }
 
 /* Normalize light utility backgrounds within portal surfaces. */
