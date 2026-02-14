@@ -98,6 +98,7 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
   const [fileRows, setFileRows] = useState<number[]>([0]);
   const [formKey, setFormKey] = useState(0);
   const [fileNames, setFileNames] = useState<Record<number, string>>({});
+  const [allowMultiSelect, setAllowMultiSelect] = useState(true);
   const [investigations, setInvestigations] = useState<InvestigationCase[]>([]);
   const [investigationStatus, setInvestigationStatus] = useState<
     "idle" | "loading" | "error"
@@ -279,6 +280,12 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
   useEffect(() => {
     loadInvestigations();
   }, [loadInvestigations]);
+
+  useEffect(() => {
+    if (typeof navigator === "undefined") return;
+    const isiOS = /iPad|iPhone|iPod/i.test(navigator.userAgent);
+    if (isiOS) setAllowMultiSelect(false);
+  }, []);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -600,7 +607,7 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
                 File uploads
               </label>
               <p className="text-xs text-slate-400">
-                Add multiple files for one incident (photo + video are welcome). You can select multiple files at once.
+                Add multiple files for one incident (photo + video are welcome). Add one file per row.
               </p>
               <div className="space-y-3">
                 {fileRows.map((rowId) => (
@@ -620,7 +627,7 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
                           name="footage"
                           type="file"
                           accept="video/*,image/*"
-                          multiple
+                          multiple={allowMultiSelect}
                           className="absolute inset-0 cursor-pointer opacity-0"
                           onChange={(event) => {
                             const files = Array.from(event.target.files ?? []);
