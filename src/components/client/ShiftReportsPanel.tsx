@@ -788,7 +788,7 @@ export default function ShiftReportsPanel({
                                   return (
                                     <td
                                       key={`${row.key}-net-${item.key}`}
-                                      className="ui-tabular px-2 py-3 text-right md:px-3 text-white font-semibold"
+                                      className="ui-tabular px-2 py-3 text-right md:px-3 text-emerald-300 font-semibold"
                                     >
                                       {item.key === "gross"
                                         ? netMarginItems.length > 0

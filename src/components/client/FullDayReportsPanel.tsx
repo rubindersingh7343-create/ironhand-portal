@@ -678,7 +678,7 @@ export default function FullDayReportsPanel({
                             {visibleItems.map((item) => (
                               <td
                                 key={`${store.storeId}-net-${item.key}`}
-                                className="ui-tabular px-2 py-3 text-right md:px-4 text-white font-semibold"
+                                className="ui-tabular px-2 py-3 text-right md:px-4 text-emerald-300 font-semibold"
                               >
                                 {item.key === "gross"
                                   ? netSummary
