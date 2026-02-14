@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReportItemConfig, SessionUser, ShiftReport } from "@/lib/types";
 import InvestigationCaseModal from "@/components/client/InvestigationCaseModal";
 import { useOwnerPortalStore } from "@/components/client/OwnerPortalStoreContext";
@@ -371,13 +371,14 @@ export default function ShiftReportsPanel({
     () => reportConfig.filter((item) => item.enabled),
     [reportConfig],
   );
-  const netItems = useMemo(
+  const netItems = useMemo(() => visibleItems, [visibleItems]);
+  const netMarginItems = useMemo(
     () =>
-      reportConfig.filter((item) => {
+      visibleItems.filter((item) => {
         const margin = Number(item.marginPercent ?? 0);
-        return item.enabled && Number.isFinite(margin) && margin > 0;
+        return Number.isFinite(margin) && margin > 0;
       }),
-    [reportConfig],
+    [visibleItems],
   );
   const minTableWidth = useMemo(
     () => Math.max(460, 130 + visibleItems.length * 120 + 56),
@@ -387,6 +388,25 @@ export default function ShiftReportsPanel({
     () => Math.max(460, 130 + netItems.length * 120 + 100),
     [netItems.length],
   );
+
+  const grossScrollRef = useRef<HTMLDivElement>(null);
+  const netScrollRef = useRef<HTMLDivElement>(null);
+  const syncingScroll = useRef(false);
+
+  const syncScrollLeft = (
+    sourceRef: React.RefObject<HTMLDivElement>,
+    targetRef: React.RefObject<HTMLDivElement>,
+  ) => {
+    if (syncingScroll.current) return;
+    const source = sourceRef.current;
+    const target = targetRef.current;
+    if (!source || !target) return;
+    syncingScroll.current = true;
+    target.scrollLeft = source.scrollLeft;
+    window.requestAnimationFrame(() => {
+      syncingScroll.current = false;
+    });
+  };
 
   const displayRows = useMemo(() => {
     const aggregated = new Map<
@@ -604,7 +624,11 @@ export default function ShiftReportsPanel({
         ) : (
           <>
             <div className="ui-ink-inverse scroll-clip rounded-2xl border border-white/10 bg-[#0f1a33]">
-              <div className="max-h-[360px] overflow-auto">
+              <div
+                className="max-h-[360px] overflow-auto"
+                ref={grossScrollRef}
+                onScroll={() => syncScrollLeft(grossScrollRef, netScrollRef)}
+              >
                 <table
                   className="w-full table-fixed text-left text-[13px] text-slate-200"
                   style={{ minWidth: `${minTableWidth}px` }}
@@ -737,14 +761,18 @@ export default function ShiftReportsPanel({
                 </table>
               </div>
             </div>
-            {netItems.length > 0 && (
+            {visibleItems.length > 0 && (
               <div className="ui-ink-inverse mt-4 rounded-2xl border border-white/10 bg-[#0f1a33] px-4 py-4 text-sm text-slate-200">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="text-[11px] uppercase tracking-[0.26em] text-slate-300">
                     Net sales
                   </p>
                 </div>
-                <div className="mt-3 overflow-x-auto">
+                <div
+                  className="mt-3 overflow-x-auto"
+                  ref={netScrollRef}
+                  onScroll={() => syncScrollLeft(netScrollRef, grossScrollRef)}
+                >
                   <table
                     className="w-full table-fixed text-left text-[13px] text-slate-200"
                     style={{ minWidth: `${netTableMinWidth}px` }}
@@ -768,7 +796,7 @@ export default function ShiftReportsPanel({
                     <tbody>
                       {displayRows.map((row) => {
                         const report = row.primaryReport;
-                        const netTotal = netItems.reduce((sum, item) => {
+                        const netTotal = netMarginItems.reduce((sum, item) => {
                           const amount = row.totals[item.key] ?? 0;
                           const margin = Number(item.marginPercent ?? 0);
                           return sum + (amount * margin) / 100;
@@ -782,18 +810,21 @@ export default function ShiftReportsPanel({
                               {formatShortName(row.employeeName)}
                             </td>
                             <td className="ui-tabular px-2 py-4 text-right md:px-3 text-emerald-200">
-                              {report ? formatMoney(netTotal) : "--"}
+                              {report && netMarginItems.length > 0
+                                ? formatMoney(netTotal)
+                                : "--"}
                             </td>
                             {netItems.map((item) => {
                               const amount = row.totals[item.key] ?? 0;
                               const margin = Number(item.marginPercent ?? 0);
                               const netValue = (amount * margin) / 100;
+                              const hasMargin = Number.isFinite(margin) && margin > 0;
                               return (
                                 <td
                                   key={`net-${row.key}-${item.key}`}
                                   className="ui-tabular px-2 py-4 text-right md:px-3 text-slate-100"
                                 >
-                                  {report ? formatMoney(netValue) : "--"}
+                                  {report && hasMargin ? formatMoney(netValue) : "--"}
                                 </td>
                               );
                             })}
