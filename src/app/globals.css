@@ -576,6 +576,26 @@ body:has(.portal-shell) {
   color: #f7f9ff !important;
 }
 
+/* Allow profit/Net highlights to stay green inside owner portal cards. */
+.owner-portal-shell .ui-card .ui-ink-inverse .text-emerald-300,
+.owner-portal-shell .ui-card .ui-ink-inverse .text-emerald-200,
+.owner-portal-shell .ui-card :is(
+  .bg-white\/5,
+  .bg-slate-950\/40,
+  .bg-\[\#0f1b3a\],
+  .bg-\[\#0f1a33\],
+  .bg-\[\#0b1429\]
+) .text-emerald-300,
+.owner-portal-shell .ui-card :is(
+  .bg-white\/5,
+  .bg-slate-950\/40,
+  .bg-\[\#0f1b3a\],
+  .bg-\[\#0f1a33\],
+  .bg-\[\#0b1429\]
+) .text-emerald-200 {
+  color: #6ee7b7 !important;
+}
+
 .ui-card--compact {
   padding: 20px;
 }
