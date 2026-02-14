@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 export type TopBarSection = {
@@ -18,6 +18,7 @@ export default function TopBarNav({
   const [activeSectionId, setActiveSectionId] = useState(
     sections[0]?.id ?? "",
   );
+  const lockRef = useRef<{ id: string; until: number } | null>(null);
 
   const navNode =
     typeof document === "undefined"
@@ -102,6 +103,14 @@ export default function TopBarNav({
 
     const setFromScroll = () => {
       raf = 0;
+      const lock = lockRef.current;
+      if (lock && Date.now() < lock.until) {
+        commit(lock.id);
+        return;
+      }
+      if (lock && Date.now() >= lock.until) {
+        lockRef.current = null;
+      }
       const doc = document.documentElement;
       const maxScroll = Math.max(0, doc.scrollHeight - window.innerHeight);
       const scrollY = window.scrollY;
@@ -168,8 +177,18 @@ export default function TopBarNav({
             tabIndex={isActive ? 0 : -1}
             onClick={() => {
               const target = document.getElementById(section.id);
+              const prefersReducedMotion =
+                "matchMedia" in window &&
+                window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+              lockRef.current = {
+                id: section.id,
+                until: Date.now() + (prefersReducedMotion ? 0 : 700),
+              };
               if (target) {
-                target.scrollIntoView({ behavior: "smooth", block: "start" });
+                target.scrollIntoView({
+                  behavior: prefersReducedMotion ? "auto" : "smooth",
+                  block: "start",
+                });
               }
               setActiveSectionId(section.id);
             }}
