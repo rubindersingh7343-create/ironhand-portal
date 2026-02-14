@@ -93,31 +93,11 @@ export default function TopBarNav({
       : sectionElsFromSelector;
     if (!sectionEls.length) return;
 
-    const ratios = new Map<HTMLElement, number>();
     let raf = 0;
-    let observer: IntersectionObserver | null = null;
 
     const commit = (nextId: string) => {
       if (!nextId) return;
       setActiveSectionId((prev) => (prev === nextId ? prev : nextId));
-    };
-
-    const setFromRatios = () => {
-      raf = 0;
-      let best: HTMLElement | null = null;
-      let bestRatio = 0;
-      ratios.forEach((ratio, el) => {
-        if (ratio > bestRatio) {
-          bestRatio = ratio;
-          best = el;
-        }
-      });
-      sectionEls.forEach((section) => {
-        const ratio = ratios.get(section) ?? 0;
-        section.style.setProperty("--section-focus", ratio.toFixed(3));
-      });
-      const bestId = (best as HTMLElement | null)?.id;
-      if (bestId) commit(bestId);
     };
 
     const setFromScroll = () => {
@@ -158,23 +138,6 @@ export default function TopBarNav({
       raf = window.requestAnimationFrame(setFromScroll);
     };
 
-    if ("IntersectionObserver" in window) {
-      observer = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            ratios.set(entry.target as HTMLElement, entry.intersectionRatio);
-          });
-          if (!raf) raf = window.requestAnimationFrame(setFromRatios);
-        },
-        {
-          threshold: Array.from({ length: 11 }, (_, index) => index / 10),
-          rootMargin: "-10% 0px -10% 0px",
-        },
-      );
-
-      sectionEls.forEach((section) => observer!.observe(section));
-    }
-
     window.addEventListener("scroll", scheduleScrollCompute, { passive: true });
     document.addEventListener("scroll", scheduleScrollCompute, {
       passive: true,
@@ -186,7 +149,6 @@ export default function TopBarNav({
       window.removeEventListener("scroll", scheduleScrollCompute);
       document.removeEventListener("scroll", scheduleScrollCompute, true);
       window.removeEventListener("resize", scheduleScrollCompute);
-      observer?.disconnect();
       if (raf) window.cancelAnimationFrame(raf);
     };
   }, [sectionIds, sectionSelector, sections.length]);
