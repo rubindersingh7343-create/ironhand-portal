@@ -278,6 +278,7 @@ export default function FullDayReportsPanel({
 
         if (shouldAutoDate) {
           const latest = results
+            .filter((entry) => entry.reports.length > 0)
             .map((entry) => entry.effectiveDate)
             .filter(Boolean)
             .sort()
