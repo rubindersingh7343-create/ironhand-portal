@@ -148,6 +148,7 @@ export default function FullDayReportsPanel({
   const setManualDateRange = ownerStore?.setManualDateRange;
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
+  const [autoRangeEnabled, setAutoRangeEnabled] = useState(true);
   const [stores, setStores] = useState<StoreSummary[]>(
     ownerStore?.stores ?? [],
   );
@@ -203,6 +204,7 @@ export default function FullDayReportsPanel({
       setStartDate(manualDateRange.startDate);
       setEndDate(manualDateRange.endDate);
     }
+    setAutoRangeEnabled(false);
   }, [manualDateRange, startDate, endDate]);
 
   useEffect(() => {
@@ -230,6 +232,11 @@ export default function FullDayReportsPanel({
   const loadReports = useCallback(
     async (silent = false, controller?: AbortController) => {
       const activeController = controller ?? new AbortController();
+      const shouldAutoDate =
+        autoRangeEnabled &&
+        !manualDateRange &&
+        Boolean(startDate) &&
+        startDate === endDate;
       try {
         if (!silent) setLoading(true);
         const targetStores = stores.length
@@ -242,24 +249,47 @@ export default function FullDayReportsPanel({
             ];
         const results = await Promise.all(
           targetStores.map(async (store) => {
+            const params = new URLSearchParams({ storeId: store.storeId });
+            if (shouldAutoDate) {
+              params.set("date", startDate);
+              params.set("fallback", "1");
+            } else {
+              params.set("startDate", startDate);
+              params.set("endDate", endDate);
+            }
             const response = await fetch(
-              `/api/owner/shift-reports?storeId=${encodeURIComponent(
-                store.storeId,
-              )}&startDate=${encodeURIComponent(
-                startDate,
-              )}&endDate=${encodeURIComponent(endDate)}`,
+              `/api/owner/shift-reports?${params.toString()}`,
               { cache: "no-store", signal: activeController.signal },
             );
             if (!response.ok) {
-              return { store, reports: [] as ShiftReport[] };
+              return { store, reports: [] as ShiftReport[], effectiveDate: "" };
             }
             const data = await response.json().catch(() => ({}));
             const nextReports: ShiftReport[] = Array.isArray(data.reports)
               ? data.reports
               : [];
-            return { store, reports: nextReports };
+            return {
+              store,
+              reports: nextReports,
+              effectiveDate: String(data.effectiveDate ?? ""),
+            };
           }),
         );
+
+        if (shouldAutoDate) {
+          const latest = results
+            .map((entry) => entry.effectiveDate)
+            .filter(Boolean)
+            .sort()
+            .at(-1);
+          if (latest && latest !== startDate) {
+            setAutoRangeEnabled(false);
+            setStartDate(latest);
+            setEndDate(latest);
+            return;
+          }
+          setAutoRangeEnabled(false);
+        }
 
         const aggregates: CombinedRecord[] = [];
         results.forEach(({ store, reports: storeReports }) => {
@@ -285,7 +315,7 @@ export default function FullDayReportsPanel({
         if (!activeController.signal.aborted && !silent) setLoading(false);
       }
     },
-    [startDate, endDate, stores, user.storeName, user.storeNumber],
+    [autoRangeEnabled, endDate, manualDateRange, startDate, stores, user.storeName, user.storeNumber],
   );
 
   const visibleItems = useMemo(
@@ -424,6 +454,7 @@ export default function FullDayReportsPanel({
   };
 
   const shiftRange = (delta: number) => {
+    setAutoRangeEnabled(false);
     const nextStart = shiftDate(startDate, delta);
     const nextEnd = shiftDate(endDate, delta);
     setStartDate(nextStart);
@@ -456,6 +487,7 @@ export default function FullDayReportsPanel({
             onChange={(event) => {
               const next = event.target.value;
               const nextEnd = next > endDate ? next : endDate;
+              setAutoRangeEnabled(false);
               setStartDate(next);
               if (nextEnd !== endDate) setEndDate(nextEnd);
               setManualDateRange?.({ startDate: next, endDate: nextEnd });
@@ -471,6 +503,7 @@ export default function FullDayReportsPanel({
             onChange={(event) => {
               const next = event.target.value;
               const nextStart = next < startDate ? next : startDate;
+              setAutoRangeEnabled(false);
               setEndDate(next);
               if (nextStart !== startDate) setStartDate(nextStart);
               setManualDateRange?.({ startDate: nextStart, endDate: next });
