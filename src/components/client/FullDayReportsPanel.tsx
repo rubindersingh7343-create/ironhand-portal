@@ -672,13 +672,13 @@ export default function FullDayReportsPanel({
                         </tr>
                         {activeRecord && (
                           <tr className="border-t border-white/5 bg-white/5">
-                            <td className="px-2 py-3 text-emerald-300 md:px-4 font-semibold">
+                            <td className="px-2 py-3 text-white md:px-4 font-semibold">
                               Net
                             </td>
                             {visibleItems.map((item) => (
                               <td
                                 key={`${store.storeId}-net-${item.key}`}
-                                className="ui-tabular px-2 py-3 text-right md:px-4 text-emerald-300 font-semibold"
+                                className="ui-tabular px-2 py-3 text-right md:px-4 text-white font-semibold"
                               >
                                 {item.key === "gross"
                                   ? netSummary
