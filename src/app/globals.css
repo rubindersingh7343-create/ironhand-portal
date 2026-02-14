@@ -1006,6 +1006,12 @@ body:has(.owner-portal-shell) {
   outline-offset: 2px;
 }
 
+/* Sync horizontal scroll between report tables. */
+.reports-scroll-sync {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
 @media (max-width: 420px) {
   .owner-portal-nav__btn,
   .top-bar-nav__btn {

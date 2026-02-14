@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReportItemConfig, SessionUser, ShiftReport } from "@/lib/types";
 import InvestigationCaseModal from "@/components/client/InvestigationCaseModal";
 import { useOwnerPortalStore } from "@/components/client/OwnerPortalStoreContext";
@@ -389,41 +389,40 @@ export default function ShiftReportsPanel({
     [netItems.length],
   );
 
-  const grossScrollRef = useRef<HTMLDivElement>(null);
-  const netScrollRef = useRef<HTMLDivElement>(null);
-  const syncingScroll = useRef(false);
-
-  const syncScrollLeft = (
-    sourceRef: React.RefObject<HTMLDivElement>,
-    targetRef: React.RefObject<HTMLDivElement>,
-  ) => {
-    if (syncingScroll.current) return;
-    const source = sourceRef.current;
-    const target = targetRef.current;
-    if (!source || !target) return;
-    syncingScroll.current = true;
-    target.scrollLeft = source.scrollLeft;
-    window.requestAnimationFrame(() => {
-      syncingScroll.current = false;
-    });
-  };
-
   useEffect(() => {
-    const gross = grossScrollRef.current;
-    const net = netScrollRef.current;
-    if (!gross || !net) return;
+    const scrollers = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-report-scroll="shift"]'),
+    );
+    if (scrollers.length < 2) return;
 
-    const handleGross = () => syncScrollLeft(grossScrollRef, netScrollRef);
-    const handleNet = () => syncScrollLeft(netScrollRef, grossScrollRef);
+    let syncing = false;
+    let raf = 0;
 
-    gross.addEventListener("scroll", handleGross, { passive: true });
-    net.addEventListener("scroll", handleNet, { passive: true });
+    const handleScroll = (event: Event) => {
+      if (syncing) return;
+      const source = event.currentTarget as HTMLElement | null;
+      if (!source) return;
+      const left = source.scrollLeft;
+      syncing = true;
+      scrollers.forEach((el) => {
+        if (el !== source && el.scrollLeft !== left) {
+          el.scrollLeft = left;
+        }
+      });
+      raf = window.requestAnimationFrame(() => {
+        syncing = false;
+      });
+    };
+
+    scrollers.forEach((el) =>
+      el.addEventListener("scroll", handleScroll, { passive: true }),
+    );
 
     return () => {
-      gross.removeEventListener("scroll", handleGross);
-      net.removeEventListener("scroll", handleNet);
+      scrollers.forEach((el) => el.removeEventListener("scroll", handleScroll));
+      if (raf) window.cancelAnimationFrame(raf);
     };
-  }, []);
+  }, [visibleItems.length, netItems.length]);
 
   const displayRows = useMemo(() => {
     const aggregated = new Map<
@@ -642,9 +641,8 @@ export default function ShiftReportsPanel({
           <>
             <div className="ui-ink-inverse scroll-clip rounded-2xl border border-white/10 bg-[#0f1a33]">
               <div
-                className="max-h-[360px] overflow-auto"
-                ref={grossScrollRef}
-                onScroll={() => syncScrollLeft(grossScrollRef, netScrollRef)}
+                className="max-h-[360px] overflow-auto reports-scroll-sync"
+                data-report-scroll="shift"
               >
                 <table
                   className="w-full table-fixed text-left text-[13px] text-slate-200"
@@ -786,9 +784,8 @@ export default function ShiftReportsPanel({
                   </p>
                 </div>
                 <div
-                  className="mt-3 overflow-x-auto"
-                  ref={netScrollRef}
-                  onScroll={() => syncScrollLeft(netScrollRef, grossScrollRef)}
+                  className="mt-3 overflow-x-auto reports-scroll-sync"
+                  data-report-scroll="shift"
                 >
                   <table
                     className="w-full table-fixed text-left text-[13px] text-slate-200"
