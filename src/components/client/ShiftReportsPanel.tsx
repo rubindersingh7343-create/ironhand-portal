@@ -227,6 +227,10 @@ export default function ShiftReportsPanel({
       ) {
         setStartDate(data.effectiveDate);
         setEndDate(data.effectiveDate);
+        setManualDateRange?.({
+          startDate: data.effectiveDate,
+          endDate: data.effectiveDate,
+        });
       }
       setReports(Array.isArray(data.reports) ? data.reports : []);
       setMessage(null);
