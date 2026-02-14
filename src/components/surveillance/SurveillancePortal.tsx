@@ -98,7 +98,8 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
   const [fileRows, setFileRows] = useState<number[]>([0]);
   const [formKey, setFormKey] = useState(0);
   const [fileNames, setFileNames] = useState<Record<number, string>>({});
-  const [allowMultiSelect, setAllowMultiSelect] = useState(true);
+  const photoInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
+  const videoInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
   const [investigations, setInvestigations] = useState<InvestigationCase[]>([]);
   const [investigationStatus, setInvestigationStatus] = useState<
     "idle" | "loading" | "error"
@@ -281,11 +282,26 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
     loadInvestigations();
   }, [loadInvestigations]);
 
-  useEffect(() => {
-    if (typeof navigator === "undefined") return;
-    const isiOS = /iPad|iPhone|iPod/i.test(navigator.userAgent);
-    if (isiOS) setAllowMultiSelect(false);
-  }, []);
+  const handleFootageChange =
+    (rowId: number, kind: "photo" | "video") =>
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.target.files ?? []);
+      const file = files[0];
+      const prefix = kind === "video" ? "Video" : "Photo";
+      const label = file?.name ? `${prefix}: ${file.name}` : "";
+      setFileNames((prev) => ({
+        ...prev,
+        [rowId]: label,
+      }));
+
+      if (kind === "photo") {
+        const videoInput = videoInputRefs.current[rowId];
+        if (videoInput && videoInput.value) videoInput.value = "";
+      } else {
+        const photoInput = photoInputRefs.current[rowId];
+        if (photoInput && photoInput.value) photoInput.value = "";
+      }
+    };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -609,6 +625,9 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
               <p className="text-xs text-slate-400">
                 Add multiple files for one incident (photo + video are welcome). Add one file per row.
               </p>
+              <p className="text-[11px] text-slate-500">
+                On iOS, use “Add video” to browse videos in Photo Library.
+              </p>
               <div className="space-y-3">
                 {fileRows.map((rowId) => (
                   <div
@@ -616,33 +635,39 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
                     className="rounded-2xl border border-white/10 bg-[#0e1730] px-4 py-3"
                   >
                     <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
-                      <label className="relative flex min-h-[42px] items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#111a32] px-3 text-xs text-slate-200">
-                        <span className="rounded-full border border-white/20 px-3 py-1 text-[11px] font-semibold text-slate-100">
-                          Choose file
-                        </span>
-                        <span className="truncate text-slate-300">
-                          {fileNames[rowId] ?? "No file selected"}
-                        </span>
-                        <input
-                          name="footage"
-                          type="file"
-                          accept="video/*,image/*"
-                          multiple={allowMultiSelect}
-                          className="absolute inset-0 cursor-pointer opacity-0"
-                          onChange={(event) => {
-                            const files = Array.from(event.target.files ?? []);
-                            const file = files[0];
-                            const label =
-                              files.length > 1
-                                ? `${file?.name ?? "Files"} + ${files.length - 1} more`
-                                : file?.name ?? "";
-                            setFileNames((prev) => ({
-                              ...prev,
-                              [rowId]: label,
-                            }));
-                          }}
-                        />
-                      </label>
+                      <div className="flex min-h-[42px] flex-col justify-center gap-2 rounded-2xl border border-white/10 bg-[#111a32] px-3 py-2 text-xs text-slate-200">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label className="relative inline-flex items-center gap-2 rounded-full border border-white/20 px-3 py-1 text-[11px] font-semibold text-slate-100">
+                            Add photo
+                            <input
+                              ref={(node) => {
+                                photoInputRefs.current[rowId] = node;
+                              }}
+                              name="footage"
+                              type="file"
+                              accept="image/*"
+                              className="absolute inset-0 cursor-pointer opacity-0"
+                              onChange={handleFootageChange(rowId, "photo")}
+                            />
+                          </label>
+                          <label className="relative inline-flex items-center gap-2 rounded-full border border-white/20 px-3 py-1 text-[11px] font-semibold text-slate-100">
+                            Add video
+                            <input
+                              ref={(node) => {
+                                videoInputRefs.current[rowId] = node;
+                              }}
+                              name="footage"
+                              type="file"
+                              accept="video/*"
+                              className="absolute inset-0 cursor-pointer opacity-0"
+                              onChange={handleFootageChange(rowId, "video")}
+                            />
+                          </label>
+                          <span className="truncate text-slate-300">
+                            {fileNames[rowId] ?? "No file selected"}
+                          </span>
+                        </div>
+                      </div>
                       <select
                         name="footageLabel"
                         className="ui-field w-full"
