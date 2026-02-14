@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import type { ReportItemConfig, SessionUser, ShiftReport } from "@/lib/types";
 import InvestigationCaseModal from "@/components/client/InvestigationCaseModal";
 import { useOwnerPortalStore } from "@/components/client/OwnerPortalStoreContext";
@@ -371,7 +371,6 @@ export default function ShiftReportsPanel({
     () => reportConfig.filter((item) => item.enabled),
     [reportConfig],
   );
-  const netItems = useMemo(() => visibleItems, [visibleItems]);
   const netMarginItems = useMemo(
     () =>
       visibleItems.filter((item) => {
@@ -381,12 +380,8 @@ export default function ShiftReportsPanel({
     [visibleItems],
   );
   const minTableWidth = useMemo(
-    () => Math.max(460, 130 + visibleItems.length * 120 + 56),
+    () => Math.max(460, 130 + 100 + visibleItems.length * 120 + 56),
     [visibleItems.length],
-  );
-  const netTableMinWidth = useMemo(
-    () => Math.max(460, 130 + netItems.length * 120 + 100),
-    [netItems.length],
   );
 
   useEffect(() => {
@@ -422,7 +417,7 @@ export default function ShiftReportsPanel({
       scrollers.forEach((el) => el.removeEventListener("scroll", handleScroll));
       if (raf) window.cancelAnimationFrame(raf);
     };
-  }, [visibleItems.length, netItems.length]);
+  }, [visibleItems.length]);
 
   const displayRows = useMemo(() => {
     const aggregated = new Map<
@@ -651,6 +646,9 @@ export default function ShiftReportsPanel({
                   <thead className="sticky top-0 z-10 bg-[#0f1a33] text-[11px] uppercase tracking-[0.24em] text-slate-300">
                     <tr>
                       <th className="w-[130px] px-2 py-3 md:px-3 whitespace-nowrap">Name</th>
+                      <th className="w-[100px] px-2 py-3 text-right md:px-3 whitespace-nowrap">
+                        Net
+                      </th>
                       {visibleItems.map((item) => (
                         <th
                           key={`${item.key}-${item.label}`}
@@ -688,87 +686,123 @@ export default function ShiftReportsPanel({
                         const report = row.primaryReport;
                         const hasDiscrepancy = Boolean(report?.hasDiscrepancy);
                         const canInvestigate = Boolean(report);
+                        const netTotal = netMarginItems.reduce((sum, item) => {
+                          const amount = row.totals[item.key] ?? 0;
+                          const margin = Number(item.marginPercent ?? 0);
+                          return sum + (amount * margin) / 100;
+                        }, 0);
                         return (
-                          <tr
-                            key={row.key}
-                            className="border-t border-white/5 transition hover:bg-white/5 active:bg-white/10"
-                          >
-                            <td className="px-2 py-4 text-white md:px-3">
-                              {formatShortName(row.employeeName)}
-                              {!report && missingLabel && (
-                                <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-500 whitespace-nowrap">
-                                  {missingLabel}
-                                </div>
-                              )}
-                            </td>
-                            {visibleItems.map((item) => {
-                              const amount = row.totals[item.key] ?? 0;
-                              return (
-                                <td
-                                  key={`${row.key}-${item.key}`}
-                                  className="ui-tabular px-2 py-4 text-right md:px-3 text-slate-100"
-                                >
-                                  {report ? formatMoney(amount) : "--"}
+                          <Fragment key={row.key}>
+                            <tr
+                              className="border-t border-white/5 transition hover:bg-white/5 active:bg-white/10"
+                            >
+                              <td className="px-2 py-4 text-white md:px-3">
+                                {formatShortName(row.employeeName)}
+                                {!report && missingLabel && (
+                                  <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-500 whitespace-nowrap">
+                                    {missingLabel}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="ui-tabular px-2 py-4 text-right md:px-3 text-slate-500">
+                                --
+                              </td>
+                              {visibleItems.map((item) => {
+                                const amount = row.totals[item.key] ?? 0;
+                                return (
+                                  <td
+                                    key={`${row.key}-${item.key}`}
+                                    className="ui-tabular px-2 py-4 text-right md:px-3 text-slate-100"
+                                  >
+                                    {report ? formatMoney(amount) : "--"}
+                                  </td>
+                                );
+                              })}
+                              <td className="sticky right-0 bg-[#0f1a33] px-1.5 py-4 text-right md:px-2">
+                                {canInvestigate ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (report) openInvestigate(report);
+                                    }}
+                                    disabled={!report}
+                                    className={`inline-flex h-7 w-7 items-center justify-center rounded-full border text-[10px] font-semibold transition ${
+                                      report && getStatus(report) === "resolved"
+                                        ? "border-emerald-300/60 text-emerald-200"
+                                        : report &&
+                                            (getStatus(report) === "sent" ||
+                                              getStatus(report) === "in_progress")
+                                          ? "border-amber-300/60 text-amber-200"
+                                          : hasDiscrepancy
+                                            ? "border-white/20 text-white hover:border-white/60"
+                                            : "border-white/10 text-slate-300 hover:border-white/40"
+                                    } ${report ? "" : "opacity-50 cursor-not-allowed"}`}
+                                    aria-label="Investigate"
+                                  >
+                                    <svg
+                                      viewBox="0 0 24 24"
+                                      className="h-4 w-4"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="1.6"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    >
+                                      <circle cx="11" cy="11" r="6" />
+                                      <path d="m20 20-3.5-3.5" />
+                                    </svg>
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 text-[10px] font-semibold text-slate-500/80"
+                                    aria-label="Investigate"
+                                  >
+                                    <svg
+                                      viewBox="0 0 24 24"
+                                      className="h-4 w-4"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="1.6"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    >
+                                      <circle cx="11" cy="11" r="6" />
+                                      <path d="m20 20-3.5-3.5" />
+                                    </svg>
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                            {report && (
+                              <tr
+                                className="border-t border-white/5 bg-white/5"
+                              >
+                                <td className="px-2 py-3 text-emerald-300 md:px-3">
+                                  Net
                                 </td>
-                              );
-                            })}
-                            <td className="sticky right-0 bg-[#0f1a33] px-1.5 py-4 text-right md:px-2">
-                              {canInvestigate ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (report) openInvestigate(report);
-                                  }}
-                                  disabled={!report}
-                                  className={`inline-flex h-7 w-7 items-center justify-center rounded-full border text-[10px] font-semibold transition ${
-                                    report && getStatus(report) === "resolved"
-                                      ? "border-emerald-300/60 text-emerald-200"
-                                      : report &&
-                                          (getStatus(report) === "sent" ||
-                                            getStatus(report) === "in_progress")
-                                        ? "border-amber-300/60 text-amber-200"
-                                        : hasDiscrepancy
-                                          ? "border-white/20 text-white hover:border-white/60"
-                                          : "border-white/10 text-slate-300 hover:border-white/40"
-                                  } ${report ? "" : "opacity-50 cursor-not-allowed"}`}
-                                  aria-label="Investigate"
-                                >
-                                  <svg
-                                    viewBox="0 0 24 24"
-                                    className="h-4 w-4"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="1.6"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                  >
-                                    <circle cx="11" cy="11" r="6" />
-                                    <path d="m20 20-3.5-3.5" />
-                                  </svg>
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  disabled
-                                  className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 text-[10px] font-semibold text-slate-500/80"
-                                  aria-label="Investigate"
-                                >
-                                  <svg
-                                    viewBox="0 0 24 24"
-                                    className="h-4 w-4"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="1.6"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                  >
-                                    <circle cx="11" cy="11" r="6" />
-                                    <path d="m20 20-3.5-3.5" />
-                                  </svg>
-                                </button>
-                              )}
-                            </td>
-                          </tr>
+                                <td className="ui-tabular px-2 py-3 text-right md:px-3 text-emerald-200">
+                                  {netMarginItems.length > 0 ? formatMoney(netTotal) : "--"}
+                                </td>
+                                {visibleItems.map((item) => {
+                                  const amount = row.totals[item.key] ?? 0;
+                                  const margin = Number(item.marginPercent ?? 0);
+                                  const hasMargin = Number.isFinite(margin) && margin > 0;
+                                  const netValue = (amount * margin) / 100;
+                                  return (
+                                    <td
+                                      key={`${row.key}-net-${item.key}`}
+                                      className="ui-tabular px-2 py-3 text-right md:px-3 text-emerald-200"
+                                    >
+                                      {hasMargin ? formatMoney(netValue) : "--"}
+                                    </td>
+                                  );
+                                })}
+                                <td className="sticky right-0 bg-[#0f1a33] px-1.5 py-3 text-right md:px-2"></td>
+                              </tr>
+                            )}
+                          </Fragment>
                         );
                       })
                     )}
@@ -776,80 +810,6 @@ export default function ShiftReportsPanel({
                 </table>
               </div>
             </div>
-            {visibleItems.length > 0 && (
-              <div className="ui-ink-inverse mt-4 rounded-2xl border border-white/10 bg-[#0f1a33] px-4 py-4 text-sm text-slate-200">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-[11px] uppercase tracking-[0.26em] text-slate-300">
-                    Net sales
-                  </p>
-                </div>
-                <div
-                  className="mt-3 overflow-x-auto reports-scroll-sync"
-                  data-report-scroll="shift"
-                >
-                  <table
-                    className="w-full table-fixed text-left text-[13px] text-slate-200"
-                    style={{ minWidth: `${netTableMinWidth}px` }}
-                  >
-                    <thead className="text-[11px] uppercase tracking-[0.24em] text-slate-300">
-                      <tr>
-                        <th className="w-[130px] px-2 py-3 md:px-3 whitespace-nowrap">Name</th>
-                        <th className="w-[100px] px-2 py-3 text-right md:px-3 whitespace-nowrap">
-                          Net
-                        </th>
-                        {netItems.map((item) => (
-                          <th
-                            key={`net-head-${item.key}`}
-                            className="w-[120px] px-2 py-3 text-right md:px-3 whitespace-nowrap"
-                          >
-                            {item.label}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {displayRows.map((row) => {
-                        const report = row.primaryReport;
-                        const netTotal = netMarginItems.reduce((sum, item) => {
-                          const amount = row.totals[item.key] ?? 0;
-                          const margin = Number(item.marginPercent ?? 0);
-                          return sum + (amount * margin) / 100;
-                        }, 0);
-                        return (
-                          <tr
-                            key={`net-${row.key}`}
-                            className="border-t border-white/5 transition hover:bg-white/5 active:bg-white/10"
-                          >
-                            <td className="px-2 py-4 text-white md:px-3">
-                              {formatShortName(row.employeeName)}
-                            </td>
-                            <td className="ui-tabular px-2 py-4 text-right md:px-3 text-emerald-200">
-                              {report && netMarginItems.length > 0
-                                ? formatMoney(netTotal)
-                                : "--"}
-                            </td>
-                            {netItems.map((item) => {
-                              const amount = row.totals[item.key] ?? 0;
-                              const margin = Number(item.marginPercent ?? 0);
-                              const netValue = (amount * margin) / 100;
-                              const hasMargin = Number.isFinite(margin) && margin > 0;
-                              return (
-                                <td
-                                  key={`net-${row.key}-${item.key}`}
-                                  className="ui-tabular px-2 py-4 text-right md:px-3 text-slate-100"
-                                >
-                                  {report && hasMargin ? formatMoney(netValue) : "--"}
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
           </>
         )}
       </div>
