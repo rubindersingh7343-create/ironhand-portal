@@ -253,7 +253,7 @@ export default function InvoiceUploadCard({
                     required={!invoicePaid}
                     value={invoiceDueDate}
                     onChange={(event) => setInvoiceDueDate(event.target.value)}
-                    className="w-full rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-sm text-slate-100 focus:border-blue-400 focus:outline-none"
+                    className="invoice-date w-full rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-sm text-slate-100 focus:border-blue-400 focus:outline-none"
                   />
                 </div>
               ) : (
@@ -413,4 +413,3 @@ export default function InvoiceUploadCard({
     </div>
   );
 }
-

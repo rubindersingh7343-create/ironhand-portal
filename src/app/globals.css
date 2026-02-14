@@ -653,6 +653,20 @@ input[type="date"].ui-field {
   color-scheme: dark;
 }
 
+input.invoice-date {
+  color-scheme: dark;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input.invoice-date::-webkit-date-and-time-value {
+  color: #f8fafc;
+}
+
+input.invoice-date::-webkit-calendar-picker-indicator {
+  opacity: 0.6;
+}
+
 @supports (-webkit-touch-callout: none) {
   input,
   select,
