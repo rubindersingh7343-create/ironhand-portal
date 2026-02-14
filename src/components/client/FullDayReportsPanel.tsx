@@ -638,19 +638,25 @@ export default function FullDayReportsPanel({
                         </tr>
                         {activeRecord && (
                           <tr className="border-t border-white/5 bg-white/5">
-                            <td className="px-2 py-3 text-emerald-300 md:px-4">
+                            <td className="px-2 py-3 text-emerald-300 md:px-4 font-semibold">
                               Net
                             </td>
                             {visibleItems.map((item) => (
                               <td
                                 key={`${store.storeId}-net-${item.key}`}
-                                className="ui-tabular px-2 py-3 text-right md:px-4 text-emerald-200"
+                                className="ui-tabular px-2 py-3 text-right md:px-4 text-emerald-300 font-semibold"
                               >
                                 {item.key === "gross"
                                   ? netSummary
                                     ? formatMoney(netSummary.netTotal)
                                     : "--"
-                                  : ""}
+                                  : netSummary
+                                    ? formatMoney(
+                                        netSummary.breakdown.find(
+                                          (entry) => entry.key === item.key,
+                                        )?.net ?? 0,
+                                      )
+                                    : "--"}
                               </td>
                             ))}
                             <td className="sticky right-0 bg-[#0f1a33] px-1.5 py-3 text-right md:px-2"></td>

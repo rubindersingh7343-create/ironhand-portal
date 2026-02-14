@@ -773,20 +773,26 @@ export default function ShiftReportsPanel({
                               <tr
                                 className="border-t border-white/5 bg-white/5"
                               >
-                                <td className="px-2 py-3 text-emerald-300 md:px-3">
+                                <td className="px-2 py-3 text-emerald-300 md:px-3 font-semibold">
                                   Net
                                 </td>
                                 {visibleItems.map((item) => {
+                                  const amount = row.totals[item.key] ?? 0;
+                                  const margin = Number(item.marginPercent ?? 0);
+                                  const hasMargin = Number.isFinite(margin) && margin > 0;
+                                  const netValue = (amount * margin) / 100;
                                   return (
                                     <td
                                       key={`${row.key}-net-${item.key}`}
-                                      className="ui-tabular px-2 py-3 text-right md:px-3 text-emerald-200"
+                                      className="ui-tabular px-2 py-3 text-right md:px-3 text-emerald-300 font-semibold"
                                     >
                                       {item.key === "gross"
                                         ? netMarginItems.length > 0
                                           ? formatMoney(netTotal)
                                           : "--"
-                                        : ""}
+                                        : hasMargin
+                                          ? formatMoney(netValue)
+                                          : "--"}
                                     </td>
                                   );
                                 })}
