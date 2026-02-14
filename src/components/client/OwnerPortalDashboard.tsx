@@ -30,15 +30,15 @@ function OwnerPortalDashboardContent({ user }: { user: SessionUser }) {
   );
   const sections = useMemo(
     () => [
-      { id: "owner-employee-uploads", label: "My Shift" },
-      { id: "owner-hours", label: "Hours" },
+      { id: "owner-employee-uploads", label: "Shift" },
       { id: "owner-reports", label: "Reports" },
-      { id: "owner-scratchers", label: "Scratchers" },
       { id: "owner-surveillance", label: "Surveillance" },
-      { id: "owner-invoice-upload", label: "Upload Invoices" },
+      { id: "owner-scratchers", label: "Scratchers" },
       { id: "owner-invoices", label: "Invoices" },
+      { id: "owner-invoice-upload", label: "Upload" },
       { id: "owner-orders", label: "Orders" },
-      { id: "owner-investigations", label: "Investigations" },
+      { id: "owner-hours", label: "Hours" },
+      { id: "owner-investigations", label: "Cases" },
       { id: "owner-advanced", label: "Advanced" },
     ],
     [],
@@ -46,25 +46,25 @@ function OwnerPortalDashboardContent({ user }: { user: SessionUser }) {
   return (
     <>
       <TopBarNav sections={sections} sectionSelector=".owner-portal-section" />
-      <div className="space-y-6 pb-24 pt-0">
+      <div className="space-y-5 pb-24 pt-0 sm:space-y-6">
         <div className="owner-portal-section" id="owner-employee-uploads">
-          <div className="ui-card space-y-4 text-white">
+          <div className="ui-card space-y-3 text-white">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-xs uppercase tracking-[0.3em] text-slate-300">
-                  Working a shift
+                  Shift uploads
                 </p>
-                <p className="mt-2 text-sm text-slate-300">
-                  Upload end-of-shift files as an employee for{" "}
-                  {activeStore?.storeName ?? (selectedStoreId ? `Store ${selectedStoreId}` : "your store")}.
+                <p className="mt-2 text-sm font-semibold text-slate-100">
+                  {activeStore?.storeName ??
+                    (selectedStoreId ? `Store ${selectedStoreId}` : "Select a store")}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setShowEmployeeUploads((prev) => !prev)}
-                className="rounded-2xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20"
+                className="ui-button--slim ui-pill-primary text-white transition hover:border-white/40"
               >
-                {showEmployeeUploads ? "Hide uploads" : "Start uploads"}
+                {showEmployeeUploads ? "Close" : "Start"}
               </button>
             </div>
             {!selectedStoreId && (
@@ -83,26 +83,26 @@ function OwnerPortalDashboardContent({ user }: { user: SessionUser }) {
             </div>
           )}
         </div>
-        <div className="owner-portal-section" id="owner-hours">
-          <OwnerHoursSection user={user} />
-        </div>
         <div className="owner-portal-section" id="owner-reports">
           <OwnerReportsSection user={user} />
-        </div>
-        <div className="owner-portal-section" id="owner-scratchers">
-          <OwnerScratchersSection user={user} />
         </div>
         <div className="owner-portal-section" id="owner-surveillance">
           <SurveillanceReportsSection user={user} />
         </div>
-        <div className="owner-portal-section" id="owner-invoice-upload">
-          <OwnerInvoiceUploadSection user={user} />
+        <div className="owner-portal-section" id="owner-scratchers">
+          <OwnerScratchersSection user={user} />
         </div>
         <div className="owner-portal-section" id="owner-invoices">
           <OwnerInvoicesSection user={user} />
         </div>
+        <div className="owner-portal-section" id="owner-invoice-upload">
+          <OwnerInvoiceUploadSection user={user} />
+        </div>
         <div className="owner-portal-section" id="owner-orders">
           <WeeklyOrdersSection user={user} />
+        </div>
+        <div className="owner-portal-section" id="owner-hours">
+          <OwnerHoursSection user={user} />
         </div>
         <div className="owner-portal-section" id="owner-investigations">
           <OpenInvestigationsSection user={user} />
