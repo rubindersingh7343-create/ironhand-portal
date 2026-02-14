@@ -408,6 +408,23 @@ export default function ShiftReportsPanel({
     });
   };
 
+  useEffect(() => {
+    const gross = grossScrollRef.current;
+    const net = netScrollRef.current;
+    if (!gross || !net) return;
+
+    const handleGross = () => syncScrollLeft(grossScrollRef, netScrollRef);
+    const handleNet = () => syncScrollLeft(netScrollRef, grossScrollRef);
+
+    gross.addEventListener("scroll", handleGross, { passive: true });
+    net.addEventListener("scroll", handleNet, { passive: true });
+
+    return () => {
+      gross.removeEventListener("scroll", handleGross);
+      net.removeEventListener("scroll", handleNet);
+    };
+  }, []);
+
   const displayRows = useMemo(() => {
     const aggregated = new Map<
       string,
