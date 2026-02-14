@@ -365,10 +365,7 @@ export default function ShiftReportsPanel({
   const formatShortName = (name?: string) => {
     if (!name) return "";
     const parts = name.trim().split(/\s+/);
-    if (parts.length === 1) return parts[0];
-    const first = parts[0];
-    const lastInitial = parts[parts.length - 1]?.[0];
-    return lastInitial ? `${first} ${lastInitial}` : first;
+    return parts[0] ?? "";
   };
 
   const visibleItems = useMemo(
@@ -384,7 +381,7 @@ export default function ShiftReportsPanel({
     [visibleItems],
   );
   const minTableWidth = useMemo(
-    () => Math.max(460, 130 + visibleItems.length * 120 + 56),
+    () => Math.max(440, 100 + visibleItems.length * 120 + 56),
     [visibleItems.length],
   );
 
@@ -649,7 +646,7 @@ export default function ShiftReportsPanel({
                 >
                   <thead className="sticky top-0 z-10 bg-[#0f1a33] text-[11px] uppercase tracking-[0.24em] text-slate-300">
                     <tr>
-                      <th className="w-[130px] px-2 py-3 md:px-3 whitespace-nowrap">Name</th>
+                      <th className="w-[100px] px-2 py-3 md:px-3 whitespace-nowrap">Name</th>
                       {visibleItems.map((item) => (
                         <th
                           key={`${item.key}-${item.label}`}
