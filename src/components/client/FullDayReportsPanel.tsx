@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import type {
   CombinedRecord,
   ReportItemConfig,
@@ -293,7 +293,7 @@ export default function FullDayReportsPanel({
     [reportConfig],
   );
   const minTableWidth = useMemo(
-    () => Math.max(460, 130 + 100 + visibleItems.length * 110 + 56),
+    () => Math.max(460, 130 + visibleItems.length * 110 + 56),
     [visibleItems.length],
   );
 
@@ -504,9 +504,6 @@ export default function FullDayReportsPanel({
                   <thead className="sticky top-0 z-10 bg-[#0f1a33] text-[11px] uppercase tracking-[0.24em] text-slate-300">
                     <tr>
                       <th className="w-[130px] px-2 py-3 md:px-4">Store</th>
-                      <th className="w-[100px] px-2 py-3 text-right md:px-4">
-                        Net
-                      </th>
                       {visibleItems.map((item) => (
                         <th
                           key={`${item.key}-${item.label}`}
@@ -565,85 +562,101 @@ export default function FullDayReportsPanel({
                     const canInvestigate = Boolean(activeRecord);
                     const reportId = activeRecord?.id ?? "";
                     return (
-                      <tr
-                        key={store.storeId}
-                        className="border-t border-white/5 transition hover:bg-white/5 active:bg-white/10"
-                      >
-                        <td className="px-2 py-4 text-white md:px-4 whitespace-normal break-words leading-snug">
-                          {displayName}
-                          {!activeRecord && missingLabel && (
-                            <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-500 whitespace-nowrap">
-                              {missingLabel}
-                            </div>
-                          )}
-                        </td>
-                        <td className="ui-tabular px-2 py-4 text-right md:px-4 text-emerald-200">
-                          {activeRecord && netSummary
-                            ? formatMoney(netSummary.netTotal)
-                            : "--"}
-                        </td>
-                        {visibleItems.map((item) => (
-                          <td
-                            key={`${store.storeId}-${item.key}`}
-                            className="ui-tabular px-2 py-4 text-right md:px-4"
-                          >
-                            {totals
-                              ? formatMoney(getTotalsItemAmount(totals, item))
-                              : "--"}
+                      <Fragment key={store.storeId}>
+                        <tr
+                          className="border-t border-white/5 transition hover:bg-white/5 active:bg-white/10"
+                        >
+                          <td className="px-2 py-4 text-white md:px-4 whitespace-normal break-words leading-snug">
+                            {displayName}
+                            {!activeRecord && missingLabel && (
+                              <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-500 whitespace-nowrap">
+                                {missingLabel}
+                              </div>
+                            )}
                           </td>
-                        ))}
-                        <td className="sticky right-0 bg-[#0f1a33] px-1.5 py-4 text-right md:px-2">
-                          {canInvestigate ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (activeRecord) openReport(activeRecord, displayName);
-                              }}
-                              className={`inline-flex h-7 w-7 items-center justify-center rounded-full border text-[10px] font-semibold transition ${
-                                localStatus[reportId] === "resolved"
-                                  ? "border-emerald-300/60 text-emerald-200"
-                                  : localStatus[reportId] === "investigating"
-                                    ? "border-amber-300/60 text-amber-200"
-                                    : "border-white/20 text-white hover:border-white/60"
-                              }`}
-                              aria-label="Investigate"
+                          {visibleItems.map((item) => (
+                            <td
+                              key={`${store.storeId}-${item.key}`}
+                              className="ui-tabular px-2 py-4 text-right md:px-4"
                             >
-                              <svg
-                                viewBox="0 0 24 24"
-                                className="h-4 w-4"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="1.6"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
+                              {totals
+                                ? formatMoney(getTotalsItemAmount(totals, item))
+                                : "--"}
+                            </td>
+                          ))}
+                          <td className="sticky right-0 bg-[#0f1a33] px-1.5 py-4 text-right md:px-2">
+                            {canInvestigate ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (activeRecord) openReport(activeRecord, displayName);
+                                }}
+                                className={`inline-flex h-7 w-7 items-center justify-center rounded-full border text-[10px] font-semibold transition ${
+                                  localStatus[reportId] === "resolved"
+                                    ? "border-emerald-300/60 text-emerald-200"
+                                    : localStatus[reportId] === "investigating"
+                                      ? "border-amber-300/60 text-amber-200"
+                                      : "border-white/20 text-white hover:border-white/60"
+                                }`}
+                                aria-label="Investigate"
                               >
-                                <circle cx="11" cy="11" r="6" />
-                                <path d="m20 20-3.5-3.5" />
-                              </svg>
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              disabled
-                              className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 text-[10px] font-semibold text-slate-500/80"
-                              aria-label="Investigate"
-                            >
-                              <svg
-                                viewBox="0 0 24 24"
-                                className="h-4 w-4"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="1.6"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  className="h-4 w-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="1.6"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <circle cx="11" cy="11" r="6" />
+                                  <path d="m20 20-3.5-3.5" />
+                                </svg>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 text-[10px] font-semibold text-slate-500/80"
+                                aria-label="Investigate"
                               >
-                                <circle cx="11" cy="11" r="6" />
-                                <path d="m20 20-3.5-3.5" />
-                              </svg>
-                            </button>
-                          )}
-                        </td>
-                      </tr>
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  className="h-4 w-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="1.6"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <circle cx="11" cy="11" r="6" />
+                                  <path d="m20 20-3.5-3.5" />
+                                </svg>
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                        {activeRecord && (
+                          <tr className="border-t border-white/5 bg-white/5">
+                            <td className="px-2 py-3 text-emerald-300 md:px-4">
+                              Net
+                            </td>
+                            {visibleItems.map((item) => (
+                              <td
+                                key={`${store.storeId}-net-${item.key}`}
+                                className="ui-tabular px-2 py-3 text-right md:px-4 text-emerald-200"
+                              >
+                                {item.key === "gross"
+                                  ? netSummary
+                                    ? formatMoney(netSummary.netTotal)
+                                    : "--"
+                                  : ""}
+                              </td>
+                            ))}
+                            <td className="sticky right-0 bg-[#0f1a33] px-1.5 py-3 text-right md:px-2"></td>
+                          </tr>
+                        )}
+                      </Fragment>
                     );
                   })
                 )}

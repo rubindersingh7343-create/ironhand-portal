@@ -380,7 +380,7 @@ export default function ShiftReportsPanel({
     [visibleItems],
   );
   const minTableWidth = useMemo(
-    () => Math.max(460, 130 + 100 + visibleItems.length * 120 + 56),
+    () => Math.max(460, 130 + visibleItems.length * 120 + 56),
     [visibleItems.length],
   );
 
@@ -646,9 +646,6 @@ export default function ShiftReportsPanel({
                   <thead className="sticky top-0 z-10 bg-[#0f1a33] text-[11px] uppercase tracking-[0.24em] text-slate-300">
                     <tr>
                       <th className="w-[130px] px-2 py-3 md:px-3 whitespace-nowrap">Name</th>
-                      <th className="w-[100px] px-2 py-3 text-right md:px-3 whitespace-nowrap">
-                        Net
-                      </th>
                       {visibleItems.map((item) => (
                         <th
                           key={`${item.key}-${item.label}`}
@@ -703,9 +700,6 @@ export default function ShiftReportsPanel({
                                     {missingLabel}
                                   </div>
                                 )}
-                              </td>
-                              <td className="ui-tabular px-2 py-4 text-right md:px-3 text-slate-500">
-                                --
                               </td>
                               {visibleItems.map((item) => {
                                 const amount = row.totals[item.key] ?? 0;
@@ -782,20 +776,17 @@ export default function ShiftReportsPanel({
                                 <td className="px-2 py-3 text-emerald-300 md:px-3">
                                   Net
                                 </td>
-                                <td className="ui-tabular px-2 py-3 text-right md:px-3 text-emerald-200">
-                                  {netMarginItems.length > 0 ? formatMoney(netTotal) : "--"}
-                                </td>
                                 {visibleItems.map((item) => {
-                                  const amount = row.totals[item.key] ?? 0;
-                                  const margin = Number(item.marginPercent ?? 0);
-                                  const hasMargin = Number.isFinite(margin) && margin > 0;
-                                  const netValue = (amount * margin) / 100;
                                   return (
                                     <td
                                       key={`${row.key}-net-${item.key}`}
                                       className="ui-tabular px-2 py-3 text-right md:px-3 text-emerald-200"
                                     >
-                                      {hasMargin ? formatMoney(netValue) : "--"}
+                                      {item.key === "gross"
+                                        ? netMarginItems.length > 0
+                                          ? formatMoney(netTotal)
+                                          : "--"
+                                        : ""}
                                     </td>
                                   );
                                 })}
