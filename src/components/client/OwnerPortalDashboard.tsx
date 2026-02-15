@@ -57,10 +57,7 @@ function OwnerPortalDashboardContent({ user }: { user: SessionUser }) {
               { cache: "no-store" },
             );
             const data = await response.json().catch(() => ({}));
-            const count =
-              data?.counts?.[selectedStoreId] ??
-              (Array.isArray(data?.unseenIds) ? data.unseenIds.length : 0) ??
-              0;
+            const count = data?.counts?.[selectedStoreId] ?? 0;
             return [key, Number(count) || 0] as const;
           }),
         );
