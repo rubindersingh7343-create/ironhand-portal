@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SessionUser } from "@/lib/types";
 import OwnerReportsSection from "@/components/client/OwnerReportsSection";
 import SurveillanceReportsSection from "@/components/client/SurveillanceReportsSection";
@@ -18,6 +18,12 @@ import OwnerHoursSection from "@/components/client/OwnerHoursSection";
 function OwnerPortalDashboardContent({ user }: { user: SessionUser }) {
   const ownerStore = useOwnerPortalStore();
   const [showEmployeeUploads, setShowEmployeeUploads] = useState(false);
+  const [navBadges, setNavBadges] = useState({
+    reports: 0,
+    surveillance: 0,
+    invoices: 0,
+    orders: 0,
+  });
   const activeStore = ownerStore?.activeStore;
   const selectedStoreId = ownerStore?.selectedStoreId ?? user.storeNumber;
   const employeeUser = useMemo(
@@ -28,20 +34,78 @@ function OwnerPortalDashboardContent({ user }: { user: SessionUser }) {
     }),
     [user, selectedStoreId, activeStore?.storeName],
   );
+  useEffect(() => {
+    if (!selectedStoreId) {
+      setNavBadges({ reports: 0, surveillance: 0, invoices: 0, orders: 0 });
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const types = [
+          ["reports", "reports"],
+          ["surveillance", "surveillance"],
+          ["invoices", "invoice"],
+          ["orders", "order"],
+        ] as const;
+        const results = await Promise.all(
+          types.map(async ([key, type]) => {
+            const response = await fetch(
+              `/api/owner/unseen?type=${type}&storeId=${encodeURIComponent(
+                selectedStoreId,
+              )}`,
+              { cache: "no-store" },
+            );
+            const data = await response.json().catch(() => ({}));
+            const count =
+              data?.counts?.[selectedStoreId] ??
+              (Array.isArray(data?.unseenIds) ? data.unseenIds.length : 0) ??
+              0;
+            return [key, Number(count) || 0] as const;
+          }),
+        );
+        if (!cancelled) {
+          setNavBadges({
+            reports: results.find(([key]) => key === "reports")?.[1] ?? 0,
+            surveillance:
+              results.find(([key]) => key === "surveillance")?.[1] ?? 0,
+            invoices: results.find(([key]) => key === "invoices")?.[1] ?? 0,
+            orders: results.find(([key]) => key === "orders")?.[1] ?? 0,
+          });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setNavBadges({ reports: 0, surveillance: 0, invoices: 0, orders: 0 });
+        }
+        console.error("Failed to load nav badges", error);
+      }
+    };
+    load();
+    const interval = window.setInterval(load, 20000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [selectedStoreId]);
+
   const sections = useMemo(
     () => [
       { id: "owner-employee-uploads", label: "Shift" },
-      { id: "owner-reports", label: "Reports" },
-      { id: "owner-surveillance", label: "Surveillance" },
+      { id: "owner-reports", label: "Reports", badgeCount: navBadges.reports },
+      {
+        id: "owner-surveillance",
+        label: "Surveillance",
+        badgeCount: navBadges.surveillance,
+      },
       { id: "owner-scratchers", label: "Scratchers" },
-      { id: "owner-invoices", label: "Invoices" },
+      { id: "owner-invoices", label: "Invoices", badgeCount: navBadges.invoices },
       { id: "owner-invoice-upload", label: "Upload" },
-      { id: "owner-orders", label: "Orders" },
+      { id: "owner-orders", label: "Orders", badgeCount: navBadges.orders },
       { id: "owner-hours", label: "Hours" },
       { id: "owner-investigations", label: "Cases" },
       { id: "owner-advanced", label: "Advanced" },
     ],
-    [],
+    [navBadges],
   );
   return (
     <>

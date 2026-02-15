@@ -1087,6 +1087,34 @@ body:has(.owner-portal-shell) {
     border-color 160ms ease;
 }
 
+.top-bar-nav__label,
+.owner-portal-nav__label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.top-bar-nav__badge,
+.owner-portal-nav__badge {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #fbbf24;
+  color: #0f172a;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(15, 23, 42, 0.35);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.35);
+}
+
 .owner-portal-nav__btn--active,
 .top-bar-nav__btn--active {
   color: rgba(239, 246, 255, 0.98);

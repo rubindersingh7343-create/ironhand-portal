@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 export type TopBarSection = {
   id: string;
   label: string;
+  badgeCount?: number;
 };
 
 export default function TopBarNav({
@@ -168,6 +169,9 @@ export default function TopBarNav({
     <div className="top-bar-nav__inner" role="tablist" aria-label="Sections">
       {sections.map((section) => {
         const isActive = effectiveActiveSectionId === section.id;
+        const badgeCount = section.badgeCount ?? 0;
+        const showBadge = badgeCount > 0;
+        const badgeLabel = badgeCount > 9 ? "9+" : String(badgeCount);
         return (
           <button
             key={section.id}
@@ -196,7 +200,14 @@ export default function TopBarNav({
               isActive ? " top-bar-nav__btn--active" : ""
             }`}
           >
-            {section.label}
+            <span className="top-bar-nav__label">
+              {section.label}
+              {showBadge && (
+                <span className="top-bar-nav__badge" aria-label={`${badgeCount} new`}>
+                  {badgeLabel}
+                </span>
+              )}
+            </span>
           </button>
         );
       })}
