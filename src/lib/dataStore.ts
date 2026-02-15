@@ -1437,6 +1437,10 @@ export async function listShiftSubmissionUploadsByDate(options: {
   const start = new Date(`${date}T00:00:00`);
   const end = new Date(start);
   end.setDate(start.getDate() + 1);
+  const rangeStart = new Date(start);
+  rangeStart.setDate(rangeStart.getDate() - 1);
+  const rangeEnd = new Date(end);
+  rangeEnd.setDate(rangeEnd.getDate() + 1);
 
   if (USE_SUPABASE && supabase) {
     const select = `
@@ -1444,6 +1448,7 @@ export async function listShiftSubmissionUploadsByDate(options: {
         store_number,
         employee_name,
         created_at,
+        text_content,
         record_files (
           id,
           label,
@@ -1459,8 +1464,8 @@ export async function listShiftSubmissionUploadsByDate(options: {
       .select(select)
       .eq("category", "shift")
       .eq("store_number", storeNumber)
-      .gte("created_at", start.toISOString())
-      .lt("created_at", end.toISOString())
+      .gte("created_at", rangeStart.toISOString())
+      .lt("created_at", rangeEnd.toISOString())
       .order("created_at", { ascending: false });
     if (employeeName) {
       query = query.ilike("employee_name", employeeName);
@@ -1473,6 +1478,17 @@ export async function listShiftSubmissionUploadsByDate(options: {
     if (!data) return [];
     return data
       .map((record: any) => {
+        let effectiveDate = record.created_at?.slice(0, 10);
+        if (record.text_content) {
+          try {
+            const parsed = JSON.parse(record.text_content);
+            if (parsed && typeof parsed === "object" && parsed.date) {
+              effectiveDate = String(parsed.date).slice(0, 10);
+            }
+          } catch {
+            // ignore JSON parse errors
+          }
+        }
         const files = (record.record_files ?? [])
           .map((file: any) => {
             if (!file?.storage_path) return null;
@@ -1493,9 +1509,12 @@ export async function listShiftSubmissionUploadsByDate(options: {
           employeeName: record.employee_name,
           createdAt: record.created_at,
           files,
+          effectiveDate,
         };
       })
-      .filter((entry: any) => entry.files.length);
+      .filter((entry: any) => entry.files.length)
+      .filter((entry: any) => entry.effectiveDate === date)
+      .map(({ effectiveDate, ...rest }: any) => rest);
   }
 
   const storage = await readStorage();
@@ -1506,8 +1525,9 @@ export async function listShiftSubmissionUploadsByDate(options: {
       if (normalized && submission.employeeName.trim().toLowerCase() !== normalized) {
         return false;
       }
+      const detailDate = submission.reportDetails?.date;
       const created = submission.createdAt?.slice(0, 10);
-      return created === date;
+      return (detailDate ?? created) === date;
     })
     .map((submission) => ({
       id: submission.id,
