@@ -539,6 +539,7 @@ body:has(.portal-shell) {
   .ui-date-step,
   .ui-button--slim,
   .ui-card-press,
+  .bg-\[\#111a32\],
   .bg-white\/5,
   .bg-slate-950\/40,
   .bg-\[\#0f1b3a\],
@@ -550,6 +551,7 @@ body:has(.portal-shell) {
 }
 
 .portal-shell:not(.owner-portal-shell) .ui-card :is(
+  .bg-\[\#111a32\],
   .bg-white\/5,
   .bg-slate-950\/40,
   .bg-\[\#0f1b3a\],
@@ -557,6 +559,35 @@ body:has(.portal-shell) {
   .bg-\[\#0b1429\]
 ) * {
   color: #f7f9ff !important;
+}
+
+.portal-shell .ui-card :is(
+  .bg-\[\#111a32\],
+  .bg-white\/5,
+  .bg-slate-950\/40,
+  .bg-\[\#0f1b3a\],
+  .bg-\[\#0f1a33\],
+  .bg-\[\#0b1429\]
+) input,
+.portal-shell .ui-card :is(
+  .bg-\[\#111a32\],
+  .bg-white\/5,
+  .bg-slate-950\/40,
+  .bg-\[\#0f1b3a\],
+  .bg-\[\#0f1a33\],
+  .bg-\[\#0b1429\]
+) textarea,
+.portal-shell .ui-card :is(
+  .bg-\[\#111a32\],
+  .bg-white\/5,
+  .bg-slate-950\/40,
+  .bg-\[\#0f1b3a\],
+  .bg-\[\#0f1a33\],
+  .bg-\[\#0b1429\]
+) select {
+  color: #f7f9ff !important;
+  -webkit-text-fill-color: #f7f9ff;
+  caret-color: #f7f9ff;
 }
 
 /* Owner portal: grey cards use blue text by default. */
@@ -586,6 +617,7 @@ body:has(.portal-shell) {
   .ui-date-step,
   .ui-button--slim,
   .ui-card-press,
+  .bg-\[\#111a32\],
   .bg-white\/5,
   .bg-slate-950\/40,
   .bg-\[\#0f1b3a\],
@@ -597,6 +629,7 @@ body:has(.portal-shell) {
 }
 
 .owner-portal-shell .ui-card :is(
+  .bg-\[\#111a32\],
   .bg-white\/5,
   .bg-slate-950\/40,
   .bg-\[\#0f1b3a\],
@@ -627,6 +660,7 @@ body:has(.portal-shell) {
 .owner-portal-shell .ui-card .ui-ink-inverse .text-emerald-300,
 .owner-portal-shell .ui-card .ui-ink-inverse .text-emerald-200,
 .owner-portal-shell .ui-card :is(
+  .bg-\[\#111a32\],
   .bg-white\/5,
   .bg-slate-950\/40,
   .bg-\[\#0f1b3a\],
@@ -634,6 +668,7 @@ body:has(.portal-shell) {
   .bg-\[\#0b1429\]
 ) .text-emerald-300,
 .owner-portal-shell .ui-card :is(
+  .bg-\[\#111a32\],
   .bg-white\/5,
   .bg-slate-950\/40,
   .bg-\[\#0f1b3a\],
