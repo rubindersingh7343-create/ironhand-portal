@@ -373,7 +373,9 @@ export default function EmployeeUploadForm({
         const packById = new Map(packs.map((pack: any) => [pack.id, pack]));
         const activeSlots = slots.filter((slot: any) => {
           if (!slot?.isActive) return false;
-          const pack = slot?.activePackId ? packById.get(slot.activePackId) : null;
+          const pack = slot?.activePackId
+            ? (packById.get(slot.activePackId) as any)
+            : null;
           return Boolean(pack && pack.status === "active");
         });
 
