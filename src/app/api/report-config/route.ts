@@ -4,7 +4,7 @@ import {
   getStoreReportConfig,
   upsertStoreReportConfig,
 } from "@/lib/dataStore";
-import { normalizeReportItems } from "@/lib/reportConfig";
+import { normalizeCashFormula, normalizeReportItems } from "@/lib/reportConfig";
 
 function assertStoreAccess(user: Awaited<ReturnType<typeof getSessionUser>>, storeId: string) {
   if (!user) return false;
@@ -30,9 +30,11 @@ export async function GET(request: Request) {
 
   const config = await getStoreReportConfig(storeId);
   const items = normalizeReportItems(config?.items);
+  const cashFormula = normalizeCashFormula(config?.cashFormula, items);
   return NextResponse.json({
     storeId,
     items,
+    cashFormula,
     updatedAt: config?.updatedAt ?? null,
   });
 }
@@ -51,10 +53,12 @@ export async function POST(request: Request) {
   const items = normalizeReportItems(
     Array.isArray(body?.items) ? body.items : [],
   );
+  const cashFormula = normalizeCashFormula(body?.cashFormula, items);
   const saved = await upsertStoreReportConfig({
     storeId,
     ownerId: user.id,
     items,
+    cashFormula,
   });
 
   return NextResponse.json({ config: saved });

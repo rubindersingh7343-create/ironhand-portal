@@ -200,6 +200,7 @@ export interface ScratcherShiftCalculation {
 
 export type ReportItemKey =
   | "gross"
+  | "cash"
   | "scr"
   | "lotto"
   | "liquor"
@@ -219,10 +220,16 @@ export interface ReportItemConfig {
   isCustom?: boolean;
 }
 
+export interface CashFormulaConfig {
+  baseKey: string;
+  subtractKeys: string[];
+}
+
 export interface StoreReportConfig {
   storeId: string;
   ownerId?: string;
   items: ReportItemConfig[];
+  cashFormula?: CashFormulaConfig;
   createdAt: string;
   updatedAt: string;
 }

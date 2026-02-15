@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReportItemConfig, SessionUser } from "@/lib/types";
+import type { CashFormulaConfig, ReportItemConfig, SessionUser } from "@/lib/types";
 import ShiftReportsPanel from "@/components/client/ShiftReportsPanel";
 import FullDayReportsPanel from "@/components/client/FullDayReportsPanel";
 import { useOwnerPortalStore } from "@/components/client/OwnerPortalStoreContext";
 import {
+  DEFAULT_CASH_FORMULA,
   getDefaultReportItems,
+  normalizeCashFormula,
   normalizeReportItems,
 } from "@/lib/reportConfig";
 import IHModal from "@/components/ui/IHModal";
@@ -24,6 +26,12 @@ export default function OwnerReportsSection({ user }: { user: SessionUser }) {
   );
   const [workingItems, setWorkingItems] = useState<ReportItemConfig[]>(
     getDefaultReportItems(),
+  );
+  const [cashFormula, setCashFormula] = useState<CashFormulaConfig>(
+    DEFAULT_CASH_FORMULA,
+  );
+  const [workingCashFormula, setWorkingCashFormula] = useState<CashFormulaConfig>(
+    DEFAULT_CASH_FORMULA,
   );
   const labelDraftsRef = useRef<Record<string, string>>({});
   const marginDraftsRef = useRef<Record<string, string>>({});
@@ -48,8 +56,11 @@ export default function OwnerReportsSection({ user }: { user: SessionUser }) {
         if (!response.ok) return;
         const data = await response.json().catch(() => ({}));
         const normalized = normalizeReportItems(data.items);
+        const normalizedFormula = normalizeCashFormula(data.cashFormula, normalized);
         setConfigItems(normalized);
         setWorkingItems(normalized);
+        setCashFormula(normalizedFormula);
+        setWorkingCashFormula(normalizedFormula);
         labelDraftsRef.current = {};
         marginDraftsRef.current = {};
         normalized.forEach((item) => {
@@ -75,6 +86,7 @@ export default function OwnerReportsSection({ user }: { user: SessionUser }) {
   useEffect(() => {
     if (!setupOpen) return;
     setWorkingItems(configItems);
+    setWorkingCashFormula(normalizeCashFormula(cashFormula, configItems));
     labelDraftsRef.current = {};
     marginDraftsRef.current = {};
     configItems.forEach((item) => {
@@ -101,6 +113,10 @@ export default function OwnerReportsSection({ user }: { user: SessionUser }) {
       ),
     );
   }, []);
+
+  useEffect(() => {
+    setWorkingCashFormula((prev) => normalizeCashFormula(prev, workingItems));
+  }, [workingItems]);
 
   const addCustomItem = useCallback(() => {
     const id = typeof crypto !== "undefined" && crypto.randomUUID
@@ -149,6 +165,7 @@ export default function OwnerReportsSection({ user }: { user: SessionUser }) {
         body: JSON.stringify({
           storeId: activeStoreId,
           items: preparedItems,
+          cashFormula: workingCashFormula,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -158,8 +175,14 @@ export default function OwnerReportsSection({ user }: { user: SessionUser }) {
       const normalized = normalizeReportItems(
         data.config?.items ?? preparedItems,
       );
+      const normalizedFormula = normalizeCashFormula(
+        data.config?.cashFormula ?? workingCashFormula,
+        normalized,
+      );
       setConfigItems(normalized);
       setWorkingItems(normalized);
+      setCashFormula(normalizedFormula);
+      setWorkingCashFormula(normalizedFormula);
       labelDraftsRef.current = {};
       marginDraftsRef.current = {};
       normalized.forEach((item) => {
@@ -184,6 +207,34 @@ export default function OwnerReportsSection({ user }: { user: SessionUser }) {
       storeOptions.filter((store) => store.storeId !== activeStoreId),
     [activeStoreId, storeOptions],
   );
+  const cashFormulaOptions = useMemo(
+    () => workingItems.filter((item) => item.key !== "gross" && item.key !== "cash"),
+    [workingItems],
+  );
+  const cashFormulaPreview = useMemo(() => {
+    const baseLabel =
+      workingItems.find((item) => item.key === workingCashFormula.baseKey)?.label ??
+      "Gross";
+    const subtractLabels = workingCashFormula.subtractKeys
+      .map(
+        (key) => cashFormulaOptions.find((item) => item.key === key)?.label ?? key,
+      )
+      .filter(Boolean);
+    return subtractLabels.length
+      ? `${baseLabel} - (${subtractLabels.join(" + ")})`
+      : baseLabel;
+  }, [cashFormulaOptions, workingCashFormula, workingItems]);
+  const toggleCashFormulaKey = useCallback((key: string) => {
+    setWorkingCashFormula((prev) => {
+      const next = new Set(prev.subtractKeys);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return { ...prev, subtractKeys: Array.from(next) };
+    });
+  }, []);
 
   return (
     <section className="ui-card text-white">
@@ -368,6 +419,39 @@ export default function OwnerReportsSection({ user }: { user: SessionUser }) {
                     )}
                   </div>
               ))}
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+              <p className="text-xs uppercase tracking-[0.26em] text-slate-400">
+                Cash check formula
+              </p>
+              <p className="mt-2 text-xs text-slate-300">
+                Expected cash = Gross minus the items you select.
+              </p>
+              <p className="mt-2 text-sm font-semibold text-slate-100">
+                {cashFormulaPreview}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {cashFormulaOptions.map((item) => {
+                  const active = workingCashFormula.subtractKeys.includes(item.key);
+                  return (
+                    <label
+                      key={`cash-formula-${item.key}`}
+                      className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs transition ${
+                        active
+                          ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-200"
+                          : "border-white/10 bg-white/5 text-slate-200"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={active}
+                        onChange={() => toggleCashFormulaKey(item.key)}
+                      />
+                      <span>{item.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <button

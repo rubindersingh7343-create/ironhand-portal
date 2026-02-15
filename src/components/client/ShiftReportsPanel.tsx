@@ -1,10 +1,20 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import type { ReportItemConfig, SessionUser, ShiftReport } from "@/lib/types";
+import type {
+  CashFormulaConfig,
+  ReportItemConfig,
+  SessionUser,
+  ShiftReport,
+} from "@/lib/types";
 import InvestigationCaseModal from "@/components/client/InvestigationCaseModal";
 import { useOwnerPortalStore } from "@/components/client/OwnerPortalStoreContext";
-import { getDefaultReportItems, normalizeReportItems } from "@/lib/reportConfig";
+import {
+  DEFAULT_CASH_FORMULA,
+  getDefaultReportItems,
+  normalizeCashFormula,
+  normalizeReportItems,
+} from "@/lib/reportConfig";
 
 interface StoreSummary {
   storeId: string;
@@ -66,6 +76,8 @@ const getReportItemAmount = (
       return report.lottoPoAmount ?? 0;
     case "deposit":
       return report.depositAmount ?? 0;
+    case "cash":
+      return report.cashAmount ?? 0;
     default:
       if (!item.isCustom) return 0;
       return (report.customFields ?? [])
@@ -106,6 +118,11 @@ export default function ShiftReportsPanel({
   const [reportConfig, setReportConfig] = useState<ReportItemConfig[]>(
     getDefaultReportItems(),
   );
+  const [cashFormula, setCashFormula] = useState<CashFormulaConfig>(
+    DEFAULT_CASH_FORMULA,
+  );
+  const [scratchersVariance, setScratchersVariance] = useState<number | null>(null);
+  const [scratchersLoading, setScratchersLoading] = useState(false);
 
   useEffect(() => {
     if (ownerStore) {
@@ -164,7 +181,9 @@ export default function ShiftReportsPanel({
         );
         if (!response.ok) return;
         const data = await response.json().catch(() => ({}));
-        setReportConfig(normalizeReportItems(data.items));
+        const normalizedItems = normalizeReportItems(data.items);
+        setReportConfig(normalizedItems);
+        setCashFormula(normalizeCashFormula(data.cashFormula, normalizedItems));
       } catch (error) {
         if (!controller.signal.aborted) {
           console.error("Failed to load report setup", error);
@@ -252,6 +271,52 @@ export default function ShiftReportsPanel({
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId, startDate, endDate]);
+
+  useEffect(() => {
+    if (!storeId || reports.length === 0) {
+      setScratchersVariance(null);
+      setScratchersLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    const loadScratchers = async () => {
+      setScratchersLoading(true);
+      try {
+        const response = await fetch(
+          `/api/scratchers/calculations?store_id=${encodeURIComponent(storeId)}`,
+          { cache: "no-store", signal: controller.signal },
+        );
+        if (!response.ok) {
+          setScratchersVariance(null);
+          return;
+        }
+        const data = await response.json().catch(() => ({}));
+        const calculations = Array.isArray(data.calculations)
+          ? data.calculations
+          : [];
+        const reportIds = new Set(reports.map((report) => report.id));
+        let matched = 0;
+        let total = 0;
+        calculations.forEach((calc: any) => {
+          if (!reportIds.has(calc.shiftReportId)) return;
+          matched += 1;
+          total += Number(calc.varianceValue ?? 0);
+        });
+        setScratchersVariance(matched ? -total : null);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error("Failed to load scratcher variance", error);
+        }
+        setScratchersVariance(null);
+      } finally {
+        if (!controller.signal.aborted) {
+          setScratchersLoading(false);
+        }
+      }
+    };
+    loadScratchers();
+    return () => controller.abort();
+  }, [storeId, reports]);
 
   const loadBadges = async () => {
     try {
@@ -368,6 +433,46 @@ export default function ShiftReportsPanel({
     return parts[0] ?? "";
   };
 
+  const reportItemByKey = useMemo(
+    () => new Map(reportConfig.map((item) => [item.key, item])),
+    [reportConfig],
+  );
+  const getAmountByKey = (report: ShiftReport, key: string) => {
+    switch (key) {
+      case "gross":
+        return report.grossAmount ?? 0;
+      case "scr":
+        return report.scrAmount ?? 0;
+      case "lotto":
+        return report.lottoAmount ?? 0;
+      case "liquor":
+        return report.liquorAmount ?? 0;
+      case "beer":
+        return report.beerAmount ?? 0;
+      case "cig":
+        return report.cigAmount ?? 0;
+      case "tobacco":
+        return report.tobaccoAmount ?? 0;
+      case "gas":
+        return report.gasAmount ?? 0;
+      case "atm":
+        return report.atmAmount ?? 0;
+      case "lottoPo":
+        return report.lottoPoAmount ?? 0;
+      case "deposit":
+        return report.depositAmount ?? 0;
+      case "cash":
+        return report.cashAmount ?? 0;
+      default: {
+        const item = reportItemByKey.get(key);
+        if (!item?.isCustom) return 0;
+        return (report.customFields ?? [])
+          .filter((field) => field.label === item.label)
+          .reduce((sum, field) => sum + (field.amount ?? 0), 0);
+      }
+    }
+  };
+
   const visibleItems = useMemo(
     () => reportConfig.filter((item) => item.enabled),
     [reportConfig],
@@ -384,6 +489,42 @@ export default function ShiftReportsPanel({
     () => Math.max(440, 100 + visibleItems.length * 120 + 56),
     [visibleItems.length],
   );
+  const cashVariance = useMemo(() => {
+    if (!reports.length) return null;
+    const baseKey = cashFormula.baseKey || "gross";
+    let total = 0;
+    let hasAny = false;
+    reports.forEach((report) => {
+      const base = getAmountByKey(report, baseKey);
+      const subtract = cashFormula.subtractKeys.reduce(
+        (sum, key) => sum + getAmountByKey(report, key),
+        0,
+      );
+      const expected = base - subtract;
+      const reported = Number(report.cashAmount ?? 0);
+      if (!Number.isFinite(reported)) return;
+      hasAny = true;
+      total += reported - expected;
+    });
+    return hasAny ? total : null;
+  }, [reports, cashFormula, reportItemByKey]);
+  const cashFormulaLabel = useMemo(() => {
+    const labelFor = (key: string) =>
+      reportItemByKey.get(key)?.label ?? key;
+    const baseLabel = labelFor(cashFormula.baseKey || "gross");
+    const subtractLabels = cashFormula.subtractKeys
+      .map(labelFor)
+      .filter(Boolean);
+    return subtractLabels.length
+      ? `${baseLabel} - (${subtractLabels.join(" + ")})`
+      : baseLabel;
+  }, [cashFormula, reportItemByKey]);
+  const varianceTone = (value: number | null) => {
+    if (value === null) return "text-slate-400";
+    if (value > 0.01) return "text-emerald-300";
+    if (value < -0.01) return "text-rose-300";
+    return "text-slate-300";
+  };
 
   useEffect(() => {
     const scrollers = Array.from(
@@ -625,6 +766,28 @@ export default function ShiftReportsPanel({
               ›
             </button>
           </div>
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-[11px] uppercase tracking-[0.24em] text-slate-400">
+            Checks
+          </span>
+          <span className={`font-semibold ${varianceTone(cashVariance)}`}>
+            Cash {cashVariance !== null ? formatMoney(cashVariance) : "--"}
+          </span>
+          <span className={`font-semibold ${varianceTone(scratchersVariance)}`}>
+            Scratchers{" "}
+            {scratchersLoading
+              ? "…"
+              : scratchersVariance !== null
+                ? formatMoney(scratchersVariance)
+                : "--"}
+          </span>
+          <span className="text-[11px] text-slate-500">
+            Formula: {cashFormulaLabel}
+          </span>
         </div>
       </div>
 

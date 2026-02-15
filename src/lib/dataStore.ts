@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { readFile, writeFile, mkdir, unlink } from "fs/promises";
 import path from "path";
 import type {
+  CashFormulaConfig,
   CombinedRecord,
   InvoiceRecord,
   InvestigationRecord,
@@ -34,6 +35,12 @@ import type {
 } from "./types";
 import { mockUsers } from "./users";
 import { createClient } from "@supabase/supabase-js";
+import {
+  attachCashFormulaToItems,
+  normalizeCashFormula,
+  normalizeReportItems,
+  splitReportConfigItems,
+} from "./reportConfig";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -3901,10 +3908,12 @@ type DbReportConfig = {
 };
 
 function toReportConfig(row: DbReportConfig): StoreReportConfig {
+  const { items, cashFormula } = splitReportConfigItems(row.items);
   return {
     storeId: row.store_id,
     ownerId: row.owner_id ?? undefined,
-    items: Array.isArray(row.items) ? row.items : [],
+    items,
+    cashFormula,
     createdAt: row.created_at ?? new Date().toISOString(),
     updatedAt: row.updated_at ?? row.created_at ?? new Date().toISOString(),
   };
@@ -3927,10 +3936,20 @@ export async function getStoreReportConfig(
   }
 
   const storage = await readStorage();
-  return (
+  const found =
     storage.storeReportConfigs?.find((config) => config.storeId === storeId) ??
-    null
+    null;
+  if (!found) return null;
+  const parsed = splitReportConfigItems(found.items);
+  const cashFormula = normalizeCashFormula(
+    found.cashFormula ?? parsed.cashFormula,
+    parsed.items,
   );
+  return {
+    ...found,
+    items: parsed.items,
+    cashFormula,
+  };
 }
 
 export async function listStoreReportConfigs(
@@ -3951,33 +3970,55 @@ export async function listStoreReportConfigs(
   }
 
   const storage = await readStorage();
-  return (storage.storeReportConfigs ?? []).filter((config) =>
-    filteredIds.includes(config.storeId),
-  );
+  return (storage.storeReportConfigs ?? [])
+    .filter((config) => filteredIds.includes(config.storeId))
+    .map((config) => {
+      const parsed = splitReportConfigItems(config.items);
+      const cashFormula = normalizeCashFormula(
+        config.cashFormula ?? parsed.cashFormula,
+        parsed.items,
+      );
+      return {
+        ...config,
+        items: parsed.items,
+        cashFormula,
+      };
+    });
 }
 
 export async function upsertStoreReportConfig(payload: {
   storeId: string;
   ownerId?: string;
   items: ReportItemConfig[];
+  cashFormula?: CashFormulaConfig;
 }): Promise<StoreReportConfig> {
   const timestamp = new Date().toISOString();
+  const normalizedItems = normalizeReportItems(payload.items);
+  const normalizedFormula = normalizeCashFormula(
+    payload.cashFormula,
+    normalizedItems,
+  );
   const record: StoreReportConfig = {
     storeId: payload.storeId,
     ownerId: payload.ownerId,
-    items: payload.items,
+    items: normalizedItems,
+    cashFormula: normalizedFormula,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
 
   if (USE_SUPABASE && supabase) {
+    const itemsWithMeta = attachCashFormulaToItems(
+      normalizedItems,
+      normalizedFormula,
+    );
     const { data, error } = await supabase
       .from("store_report_configs")
       .upsert(
         {
           store_id: payload.storeId,
           owner_id: payload.ownerId ?? null,
-          items: payload.items,
+          items: itemsWithMeta,
           updated_at: timestamp,
         },
         { onConflict: "store_id" },
@@ -3998,7 +4039,8 @@ export async function upsertStoreReportConfig(payload: {
   if (existingIndex >= 0) {
     list[existingIndex] = {
       ...list[existingIndex],
-      items: payload.items,
+      items: normalizedItems,
+      cashFormula: normalizedFormula,
       ownerId: payload.ownerId ?? list[existingIndex].ownerId,
       updatedAt: timestamp,
     };
