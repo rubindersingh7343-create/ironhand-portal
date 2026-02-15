@@ -512,6 +512,53 @@ body:has(.portal-shell) {
   animation: ih-fade-up 160ms ease;
 }
 
+/* Non-owner portals: ensure text is dark on light cards. */
+.portal-shell:not(.owner-portal-shell) .ui-card {
+  color: var(--background);
+}
+
+.portal-shell:not(.owner-portal-shell) .ui-card :is(
+  .text-white,
+  .text-slate-50,
+  .text-slate-100,
+  .text-slate-200,
+  .text-slate-300,
+  .text-slate-400,
+  .text-slate-500
+) {
+  color: var(--background) !important;
+}
+
+/* Keep text white on dark/blue surfaces inside light cards. */
+.portal-shell:not(.owner-portal-shell) .ui-card :is(
+  .ui-field,
+  .ui-field--slim,
+  .ui-tabs,
+  .ui-tab,
+  .ui-tab--active,
+  .ui-date-step,
+  .ui-button--slim,
+  .ui-card-press,
+  .bg-white\/5,
+  .bg-slate-950\/40,
+  .bg-\[\#0f1b3a\],
+  .bg-\[\#0f1a33\],
+  .bg-\[\#0b1429\],
+  .ui-card-press *
+) {
+  color: #f7f9ff !important;
+}
+
+.portal-shell:not(.owner-portal-shell) .ui-card :is(
+  .bg-white\/5,
+  .bg-slate-950\/40,
+  .bg-\[\#0f1b3a\],
+  .bg-\[\#0f1a33\],
+  .bg-\[\#0b1429\]
+) * {
+  color: #f7f9ff !important;
+}
+
 /* Owner portal: grey cards use blue text by default. */
 .owner-portal-shell .ui-card {
   color: var(--background);
