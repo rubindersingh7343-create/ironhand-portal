@@ -121,7 +121,7 @@ export default function ShiftReportsPanel({
   const [cashFormula, setCashFormula] = useState<CashFormulaConfig>(
     DEFAULT_CASH_FORMULA,
   );
-  const [scratchersVariance, setScratchersVariance] = useState<number | null>(null);
+  const [scratchersVarianceByReport, setScratchersVarianceByReport] = useState<Record<string, number>>({});
   const [scratchersLoading, setScratchersLoading] = useState(false);
 
   useEffect(() => {
@@ -274,7 +274,7 @@ export default function ShiftReportsPanel({
 
   useEffect(() => {
     if (!storeId || reports.length === 0) {
-      setScratchersVariance(null);
+      setScratchersVarianceByReport({});
       setScratchersLoading(false);
       return;
     }
@@ -295,19 +295,17 @@ export default function ShiftReportsPanel({
           ? data.calculations
           : [];
         const reportIds = new Set(reports.map((report) => report.id));
-        let matched = 0;
-        let total = 0;
+        const nextMap: Record<string, number> = {};
         calculations.forEach((calc: any) => {
           if (!reportIds.has(calc.shiftReportId)) return;
-          matched += 1;
-          total += Number(calc.varianceValue ?? 0);
+          nextMap[calc.shiftReportId] = -Number(calc.varianceValue ?? 0);
         });
-        setScratchersVariance(matched ? -total : null);
+        setScratchersVarianceByReport(nextMap);
       } catch (error) {
         if (!controller.signal.aborted) {
           console.error("Failed to load scratcher variance", error);
         }
-        setScratchersVariance(null);
+        setScratchersVarianceByReport({});
       } finally {
         if (!controller.signal.aborted) {
           setScratchersLoading(false);
@@ -489,36 +487,6 @@ export default function ShiftReportsPanel({
     () => Math.max(440, 100 + visibleItems.length * 120 + 56),
     [visibleItems.length],
   );
-  const cashVariance = useMemo(() => {
-    if (!reports.length) return null;
-    const baseKey = cashFormula.baseKey || "gross";
-    let total = 0;
-    let hasAny = false;
-    reports.forEach((report) => {
-      const base = getAmountByKey(report, baseKey);
-      const subtract = cashFormula.subtractKeys.reduce(
-        (sum, key) => sum + getAmountByKey(report, key),
-        0,
-      );
-      const expected = base - subtract;
-      const reported = Number(report.cashAmount ?? 0);
-      if (!Number.isFinite(reported)) return;
-      hasAny = true;
-      total += reported - expected;
-    });
-    return hasAny ? total : null;
-  }, [reports, cashFormula, reportItemByKey]);
-  const cashFormulaLabel = useMemo(() => {
-    const labelFor = (key: string) =>
-      reportItemByKey.get(key)?.label ?? key;
-    const baseLabel = labelFor(cashFormula.baseKey || "gross");
-    const subtractLabels = cashFormula.subtractKeys
-      .map(labelFor)
-      .filter(Boolean);
-    return subtractLabels.length
-      ? `${baseLabel} - (${subtractLabels.join(" + ")})`
-      : baseLabel;
-  }, [cashFormula, reportItemByKey]);
   const varianceTone = (value: number | null) => {
     if (value === null) return "text-slate-400";
     if (value > 0.01) return "text-emerald-300";
@@ -569,6 +537,7 @@ export default function ShiftReportsPanel({
         employeeId?: string;
         employeeName: string;
         totals: Record<string, number>;
+        reportIds: string[];
         primaryReport?: OwnerShiftReport;
       }
     >();
@@ -577,12 +546,14 @@ export default function ShiftReportsPanel({
       const key = report.employeeId ?? report.managerId ?? report.id;
       const existing = aggregated.get(key);
       const totals = existing?.totals ?? {};
+      const reportIds = existing?.reportIds ? [...existing.reportIds, report.id] : [report.id];
       visibleItems.forEach((item) => {
         totals[item.key] =
           (totals[item.key] ?? 0) + getReportItemAmount(report, item);
       });
       if (existing) {
         existing.totals = totals;
+        existing.reportIds = reportIds;
         if (!existing.primaryReport) existing.primaryReport = report;
       } else {
         aggregated.set(key, {
@@ -590,6 +561,7 @@ export default function ShiftReportsPanel({
           employeeId: report.employeeId,
           employeeName: report.employeeName ?? report.managerName ?? "Unknown",
           totals,
+          reportIds,
           primaryReport: report,
         });
       }
@@ -602,6 +574,7 @@ export default function ShiftReportsPanel({
       key: string;
       employeeName: string;
       totals: Record<string, number>;
+      reportIds: string[];
       primaryReport?: OwnerShiftReport;
     }> = [];
 
@@ -614,6 +587,7 @@ export default function ShiftReportsPanel({
             key: employee.id,
             employeeName: employee.name,
             totals: row.totals,
+            reportIds: row.reportIds,
             primaryReport: row.primaryReport,
           });
           seen.add(employee.id);
@@ -622,6 +596,7 @@ export default function ShiftReportsPanel({
             key: employee.id,
             employeeName: employee.name,
             totals: {},
+            reportIds: [],
           });
         }
       });
@@ -631,6 +606,7 @@ export default function ShiftReportsPanel({
           key: row.key,
           employeeName: row.employeeName,
           totals: row.totals,
+          reportIds: row.reportIds,
           primaryReport: row.primaryReport,
         });
       });
@@ -642,11 +618,53 @@ export default function ShiftReportsPanel({
         key: row.key,
         employeeName: row.employeeName,
         totals: row.totals,
+        reportIds: row.reportIds,
         primaryReport: row.primaryReport,
       });
     });
     return rows;
   }, [employees, reports, storeId, visibleItems]);
+
+  const reportsById = useMemo(
+    () => new Map(reports.map((report) => [report.id, report])),
+    [reports],
+  );
+  const checksByRow = useMemo(() => {
+    const baseKey = cashFormula.baseKey || "gross";
+    const result = new Map<string, { cash: number | null; scr: number | null }>();
+    displayRows.forEach((row) => {
+      let cashTotal = 0;
+      let cashHas = false;
+      let scrTotal = 0;
+      let scrHas = false;
+      row.reportIds.forEach((reportId) => {
+        const report = reportsById.get(reportId);
+        if (report) {
+          const base = getAmountByKey(report, baseKey);
+          const subtract = cashFormula.subtractKeys.reduce(
+            (sum, key) => sum + getAmountByKey(report, key),
+            0,
+          );
+          const expected = base - subtract;
+          const reported = Number(report.cashAmount ?? 0);
+          if (Number.isFinite(reported)) {
+            cashTotal += reported - expected;
+            cashHas = true;
+          }
+        }
+        const scrVariance = scratchersVarianceByReport[reportId];
+        if (typeof scrVariance === "number") {
+          scrTotal += scrVariance;
+          scrHas = true;
+        }
+      });
+      result.set(row.key, {
+        cash: cashHas ? cashTotal : null,
+        scr: scrHas ? scrTotal : null,
+      });
+    });
+    return result;
+  }, [displayRows, reportsById, cashFormula, scratchersVarianceByReport]);
 
   const openInvestigate = (report: OwnerShiftReport) => {
     setActiveReport(report);
@@ -769,28 +787,6 @@ export default function ShiftReportsPanel({
         </div>
       </div>
 
-      <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-[11px] uppercase tracking-[0.24em] text-slate-400">
-            Checks
-          </span>
-          <span className={`font-semibold ${varianceTone(cashVariance)}`}>
-            Cash {cashVariance !== null ? formatMoney(cashVariance) : "--"}
-          </span>
-          <span className={`font-semibold ${varianceTone(scratchersVariance)}`}>
-            Scratchers{" "}
-            {scratchersLoading
-              ? "…"
-              : scratchersVariance !== null
-                ? formatMoney(scratchersVariance)
-                : "--"}
-          </span>
-          <span className="text-[11px] text-slate-500">
-            Formula: {cashFormulaLabel}
-          </span>
-        </div>
-      </div>
-
       <div className="mt-6">
         {showUpgrade ? (
           <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-4 text-sm text-amber-100">
@@ -864,6 +860,29 @@ export default function ShiftReportsPanel({
                                     {missingLabel}
                                   </div>
                                 )}
+                                {(() => {
+                                  const checks = checksByRow.get(row.key);
+                                  const hasCash = checks?.cash !== null && checks?.cash !== undefined;
+                                  const hasScr = checks?.scr !== null && checks?.scr !== undefined;
+                                  if (!checks || (!hasCash && !hasScr && !scratchersLoading)) {
+                                    return null;
+                                  }
+                                  return (
+                                    <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
+                                      <span className={`font-semibold ${varianceTone(checks.cash ?? null)}`}>
+                                        Cash {hasCash ? formatMoney(checks.cash as number) : "--"}
+                                      </span>
+                                      <span className={`font-semibold ${varianceTone(checks.scr ?? null)}`}>
+                                        Scr{" "}
+                                        {scratchersLoading
+                                          ? "…"
+                                          : hasScr
+                                            ? formatMoney(checks.scr as number)
+                                            : "--"}
+                                      </span>
+                                    </div>
+                                  );
+                                })()}
                               </td>
                               {visibleItems.map((item) => {
                                 const amount = row.totals[item.key] ?? 0;
