@@ -228,10 +228,13 @@ export async function POST(request: Request) {
           return Number.isFinite(parsed) ? parsed : null;
         };
 
-        const { slots } = await listScratcherSlotBundle(storeId);
-        const activeSlots = slots.filter(
-          (slot) => slot.isActive && Boolean(slot.activePackId),
-        );
+        const { slots, packs } = await listScratcherSlotBundle(storeId);
+        const packById = new Map(packs.map((pack) => [pack.id, pack]));
+        const activeSlots = slots.filter((slot) => {
+          if (!slot.isActive) return false;
+          const pack = slot.activePackId ? packById.get(slot.activePackId) : null;
+          return Boolean(pack && pack.status === "active");
+        });
 
         const endMap = new Map(
           endItemsRaw.map((entry) => [

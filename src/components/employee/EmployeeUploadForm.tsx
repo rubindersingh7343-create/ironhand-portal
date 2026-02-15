@@ -369,9 +369,13 @@ export default function EmployeeUploadForm({
         );
         const slotsData = await slotsRes.json().catch(() => ({}));
         const slots = Array.isArray(slotsData.slots) ? slotsData.slots : [];
-        const activeSlots = slots.filter(
-          (slot: any) => Boolean(slot?.isActive) && Boolean(slot?.activePackId),
-        );
+        const packs = Array.isArray(slotsData.packs) ? slotsData.packs : [];
+        const packById = new Map(packs.map((pack: any) => [pack.id, pack]));
+        const activeSlots = slots.filter((slot: any) => {
+          if (!slot?.isActive) return false;
+          const pack = slot?.activePackId ? packById.get(slot.activePackId) : null;
+          return Boolean(pack && pack.status === "active");
+        });
 
         const missing = activeSlots.filter(
           (slot: any) => !String(saved?.[slot.id] ?? "").trim(),
