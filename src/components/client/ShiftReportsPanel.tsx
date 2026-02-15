@@ -287,7 +287,7 @@ export default function ShiftReportsPanel({
           { cache: "no-store", signal: controller.signal },
         );
         if (!response.ok) {
-          setScratchersVariance(null);
+          setScratchersVarianceByReport({});
           return;
         }
         const data = await response.json().catch(() => ({}));
