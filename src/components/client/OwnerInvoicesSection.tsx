@@ -242,6 +242,13 @@ export default function OwnerInvoicesSection({ user }: { user: SessionUser }) {
     [records],
   );
 
+  const today = useMemo(() => new Date().toLocaleDateString("en-CA"), []);
+  const yesterday = useMemo(() => {
+    const date = new Date(`${today}T00:00:00`);
+    date.setDate(date.getDate() - 1);
+    return date.toISOString().slice(0, 10);
+  }, [today]);
+
   const upcomingPayments = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
     return records
@@ -251,6 +258,43 @@ export default function OwnerInvoicesSection({ user }: { user: SessionUser }) {
   }, [records]);
 
   const unseenSet = useMemo(() => new Set(unseenIds), [unseenIds]);
+
+  useEffect(() => {
+    const markVisibleSeen = async () => {
+      if (!records.length) return;
+      const recentUnseen = records.filter((record) => {
+        if (!unseenSet.has(record.id)) return false;
+        const recordDate = new Date(record.createdAt).toLocaleDateString("en-CA");
+        return recordDate === today || recordDate === yesterday;
+      });
+      if (!recentUnseen.length) return;
+      await fetch("/api/owner/seen", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: recentUnseen.map((record) => ({
+            storeId: record.storeNumber,
+            itemType: "invoice",
+            itemId: record.id,
+          })),
+        }),
+      });
+      setUnseenIds((prev) =>
+        prev.filter((id) => !recentUnseen.some((record) => record.id === id)),
+      );
+      setUnseenCounts((prev) => {
+        const next = { ...prev };
+        recentUnseen.forEach((record) => {
+          next[record.storeNumber] = Math.max(0, (next[record.storeNumber] ?? 1) - 1);
+        });
+        return next;
+      });
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("ih-nav-badges-refresh"));
+      }
+    };
+    markVisibleSeen();
+  }, [records, unseenSet, today, yesterday]);
 
   const handleOpenFile = async (record: InvoiceRecord, file: StoredFile) => {
     setViewerFile(file);
@@ -272,6 +316,9 @@ export default function OwnerInvoicesSection({ user }: { user: SessionUser }) {
       ...prev,
       [record.storeNumber]: Math.max(0, (prev[record.storeNumber] ?? 1) - 1),
     }));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("ih-nav-badges-refresh"));
+    }
   };
 
   return (

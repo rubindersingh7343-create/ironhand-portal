@@ -3940,6 +3940,7 @@ const shiftDateString = (value: string, delta: number) => {
 };
 
 export async function listRecentUploadCounts(params: {
+  ownerId: string;
   storeId: string;
   today: string;
   yesterday?: string;
@@ -3950,7 +3951,7 @@ export async function listRecentUploadCounts(params: {
   invoices: { today: number; yesterday: number };
   orders: { today: number; yesterday: number };
 }> {
-  const { storeId, today, timeZone } = params;
+  const { ownerId, storeId, today, timeZone } = params;
   const yesterday = params.yesterday ?? shiftDateString(today, -1);
   const counts = {
     reports: { today: 0, yesterday: 0 },
@@ -3964,16 +3965,44 @@ export async function listRecentUploadCounts(params: {
   const rangeEnd = new Date(`${today}T23:59:59Z`);
   rangeEnd.setDate(rangeEnd.getDate() + 1);
 
+  const [seenShift, seenSurveillance, seenInvoice, seenOrder] = await Promise.all([
+    listOwnerSeenItems({
+      ownerId,
+      itemTypes: ["shift"],
+      storeIds: [storeId],
+    }),
+    listOwnerSeenItems({
+      ownerId,
+      itemTypes: ["surveillance"],
+      storeIds: [storeId],
+    }),
+    listOwnerSeenItems({
+      ownerId,
+      itemTypes: ["invoice"],
+      storeIds: [storeId],
+    }),
+    listOwnerSeenItems({
+      ownerId,
+      itemTypes: ["order"],
+      storeIds: [storeId],
+    }),
+  ]);
+  const seenShiftSet = new Set(seenShift.map((item) => item.itemId));
+  const seenSurveillanceSet = new Set(seenSurveillance.map((item) => item.itemId));
+  const seenInvoiceSet = new Set(seenInvoice.map((item) => item.itemId));
+  const seenOrderSet = new Set(seenOrder.map((item) => item.itemId));
+
   if (USE_SUPABASE && supabase) {
     const { data: shiftRows, error: shiftError } = await supabase
       .from("shift_reports")
-      .select("date")
+      .select("id, date")
       .eq("store_id", storeId)
       .in("date", [today, yesterday]);
     if (shiftError) {
       console.error("Supabase recent shift reports error:", shiftError);
     }
     (shiftRows ?? []).forEach((row: any) => {
+      if (seenShiftSet.has(row?.id)) return;
       if (row?.date === today) counts.reports.today += 1;
       if (row?.date === yesterday) counts.reports.yesterday += 1;
     });
@@ -3981,7 +4010,7 @@ export async function listRecentUploadCounts(params: {
     const loadRecordCounts = async (category: "surveillance" | "invoice") => {
       const { data, error } = await supabase
         .from("records")
-        .select("created_at")
+        .select("id, created_at")
         .eq("category", category)
         .eq("store_number", storeId)
         .gte("created_at", rangeStart.toISOString())
@@ -3999,11 +4028,13 @@ export async function listRecentUploadCounts(params: {
     ]);
 
     survRows.forEach((row: any) => {
+      if (seenSurveillanceSet.has(row?.id)) return;
       const recordDate = formatDateInZone(row.created_at, timeZone);
       if (recordDate === today) counts.surveillance.today += 1;
       if (recordDate === yesterday) counts.surveillance.yesterday += 1;
     });
     invoiceRows.forEach((row: any) => {
+      if (seenInvoiceSet.has(row?.id)) return;
       const recordDate = formatDateInZone(row.created_at, timeZone);
       if (recordDate === today) counts.invoices.today += 1;
       if (recordDate === yesterday) counts.invoices.yesterday += 1;
@@ -4011,7 +4042,7 @@ export async function listRecentUploadCounts(params: {
 
     const { data: orderRows, error: orderError } = await supabase
       .from("weekly_orders")
-      .select("created_at")
+      .select("id, created_at")
       .eq("store_id", storeId)
       .gte("created_at", rangeStart.toISOString())
       .lt("created_at", rangeEnd.toISOString());
@@ -4019,6 +4050,7 @@ export async function listRecentUploadCounts(params: {
       console.error("Supabase recent orders error:", orderError);
     }
     (orderRows ?? []).forEach((row: any) => {
+      if (seenOrderSet.has(row?.id)) return;
       const recordDate = formatDateInZone(row.created_at, timeZone);
       if (recordDate === today) counts.orders.today += 1;
       if (recordDate === yesterday) counts.orders.yesterday += 1;
@@ -4031,6 +4063,7 @@ export async function listRecentUploadCounts(params: {
   storage.shiftReports
     .filter((report) => report.storeId === storeId)
     .forEach((report) => {
+      if (seenShiftSet.has(report.id)) return;
       if (report.date === today) counts.reports.today += 1;
       if (report.date === yesterday) counts.reports.yesterday += 1;
     });
@@ -4038,6 +4071,7 @@ export async function listRecentUploadCounts(params: {
   storage.surveillanceReports
     .filter((report) => report.storeNumber === storeId)
     .forEach((report) => {
+      if (seenSurveillanceSet.has(report.id)) return;
       const recordDate = formatDateInZone(report.createdAt, timeZone);
       if (recordDate === today) counts.surveillance.today += 1;
       if (recordDate === yesterday) counts.surveillance.yesterday += 1;
@@ -4046,6 +4080,7 @@ export async function listRecentUploadCounts(params: {
   storage.invoices
     .filter((invoice) => invoice.storeNumber === storeId)
     .forEach((invoice) => {
+      if (seenInvoiceSet.has(invoice.id)) return;
       const recordDate = formatDateInZone(invoice.createdAt, timeZone);
       if (recordDate === today) counts.invoices.today += 1;
       if (recordDate === yesterday) counts.invoices.yesterday += 1;
@@ -4054,6 +4089,7 @@ export async function listRecentUploadCounts(params: {
   storage.weeklyOrders
     .filter((order) => order.storeId === storeId)
     .forEach((order) => {
+      if (seenOrderSet.has(order.id)) return;
       const recordDate = formatDateInZone(order.createdAt, timeZone);
       if (recordDate === today) counts.orders.today += 1;
       if (recordDate === yesterday) counts.orders.yesterday += 1;

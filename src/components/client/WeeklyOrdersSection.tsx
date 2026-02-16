@@ -260,6 +260,9 @@ export default function WeeklyOrdersSection({ user }: { user: SessionUser }) {
       ...prev,
       [order.storeId]: Math.max(0, (prev[order.storeId] ?? 1) - 1),
     }));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("ih-nav-badges-refresh"));
+    }
     setActiveModal({ order, vendor });
   };
 
@@ -280,6 +283,51 @@ export default function WeeklyOrdersSection({ user }: { user: SessionUser }) {
     const data = await response.json().catch(() => ({}));
     setOrders(Array.isArray(data.orders) ? data.orders : []);
   };
+
+  const today = useMemo(() => new Date().toLocaleDateString("en-CA"), []);
+  const yesterday = useMemo(() => {
+    const date = new Date(`${today}T00:00:00`);
+    date.setDate(date.getDate() - 1);
+    return date.toISOString().slice(0, 10);
+  }, [today]);
+
+  useEffect(() => {
+    const markVisibleSeen = async () => {
+      if (!orders.length || !selectedStore) return;
+      const unseenSet = new Set(unseenIds);
+      const recentUnseen = orders.filter((order) => {
+        if (!unseenSet.has(order.id)) return false;
+        const recordDate = new Date(order.createdAt).toLocaleDateString("en-CA");
+        return recordDate === today || recordDate === yesterday;
+      });
+      if (!recentUnseen.length) return;
+      await fetch("/api/owner/seen", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: recentUnseen.map((order) => ({
+            storeId: order.storeId,
+            itemType: "order",
+            itemId: order.id,
+          })),
+        }),
+      });
+      setUnseenIds((prev) =>
+        prev.filter((id) => !recentUnseen.some((order) => order.id === id)),
+      );
+      setUnseenCounts((prev) => {
+        const next = { ...prev };
+        recentUnseen.forEach((order) => {
+          next[order.storeId] = Math.max(0, (next[order.storeId] ?? 1) - 1);
+        });
+        return next;
+      });
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("ih-nav-badges-refresh"));
+      }
+    };
+    markVisibleSeen();
+  }, [orders, unseenIds, today, yesterday, selectedStore]);
 
   return (
     <section className="ui-card text-white">

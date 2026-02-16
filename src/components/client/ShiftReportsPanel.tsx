@@ -370,6 +370,9 @@ export default function ShiftReportsPanel({
         body: JSON.stringify({ items }),
       });
       loadBadges();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("ih-nav-badges-refresh"));
+      }
     };
     markSeen();
   }, [reports, storeId]);

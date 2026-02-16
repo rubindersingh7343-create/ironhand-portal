@@ -39,6 +39,7 @@ export async function GET(request: Request) {
   const yesterday = yesterdayParam || shiftDateString(today, -1);
 
   const counts = await listRecentUploadCounts({
+    ownerId: user.id,
     storeId,
     today,
     yesterday,

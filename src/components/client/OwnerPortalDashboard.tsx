@@ -102,10 +102,13 @@ function OwnerPortalDashboardContent({ user }: { user: SessionUser }) {
       }
     };
     load();
+    const handleRefresh = () => load();
+    window.addEventListener("ih-nav-badges-refresh", handleRefresh);
     const interval = window.setInterval(load, 20000);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      window.removeEventListener("ih-nav-badges-refresh", handleRefresh);
     };
   }, [selectedStoreId]);
 

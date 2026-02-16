@@ -280,6 +280,9 @@ export default function SurveillanceReportsSection({
       ...prev,
       [record.storeNumber]: Math.max(0, (prev[record.storeNumber] ?? 1) - 1),
     }));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("ih-nav-badges-refresh"));
+    }
   };
 
   const shiftDate = (value: string, delta: number) => {
@@ -308,6 +311,39 @@ export default function SurveillanceReportsSection({
     () => recordsForDate.filter((record) => unseenSet.has(record.id)),
     [recordsForDate, unseenSet],
   );
+
+  useEffect(() => {
+    const markVisibleSeen = async () => {
+      if (!recordsForDate.length) return;
+      const unseenRecords = recordsForDate.filter((record) => unseenSet.has(record.id));
+      if (!unseenRecords.length) return;
+      await fetch("/api/owner/seen", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: unseenRecords.map((record) => ({
+            storeId: record.storeNumber,
+            itemType: "surveillance",
+            itemId: record.id,
+          })),
+        }),
+      });
+      setUnseenIds((prev) =>
+        prev.filter((id) => !unseenRecords.some((record) => record.id === id)),
+      );
+      setUnseenCounts((prev) => {
+        const next = { ...prev };
+        unseenRecords.forEach((record) => {
+          next[record.storeNumber] = Math.max(0, (next[record.storeNumber] ?? 1) - 1);
+        });
+        return next;
+      });
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("ih-nav-badges-refresh"));
+      }
+    };
+    markVisibleSeen();
+  }, [recordsForDate, unseenSet]);
   const unseenCountForSelectedDate = unseenForSelectedDate.length;
 
   useEffect(() => {
