@@ -6,7 +6,10 @@ import { createPortal } from "react-dom";
 export type TopBarSection = {
   id: string;
   label: string;
-  badgeCount?: number;
+  badgeCounts?: {
+    today?: number;
+    yesterday?: number;
+  };
 };
 
 export default function TopBarNav({
@@ -169,9 +172,11 @@ export default function TopBarNav({
     <div className="top-bar-nav__inner" role="tablist" aria-label="Sections">
       {sections.map((section) => {
         const isActive = effectiveActiveSectionId === section.id;
-        const badgeCount = section.badgeCount ?? 0;
-        const showBadge = badgeCount > 0;
-        const badgeLabel = badgeCount > 9 ? "9+" : String(badgeCount);
+        const todayCount = section.badgeCounts?.today ?? 0;
+        const yesterdayCount = section.badgeCounts?.yesterday ?? 0;
+        const showToday = todayCount > 0;
+        const showYesterday = yesterdayCount > 0;
+        const formatBadge = (value: number) => (value > 9 ? "9+" : String(value));
         return (
           <button
             key={section.id}
@@ -202,9 +207,26 @@ export default function TopBarNav({
           >
             <span className="top-bar-nav__label">
               {section.label}
-              {showBadge && (
-                <span className="top-bar-nav__badge" aria-label={`${badgeCount} new`}>
-                  {badgeLabel}
+              {(showToday || showYesterday) && (
+                <span className="top-bar-nav__badge-group" aria-label="Recent uploads">
+                  {showToday && (
+                    <span
+                      className="top-bar-nav__badge top-bar-nav__badge--today"
+                      aria-label={`${todayCount} today`}
+                      title={`${todayCount} today`}
+                    >
+                      {formatBadge(todayCount)}
+                    </span>
+                  )}
+                  {showYesterday && (
+                    <span
+                      className="top-bar-nav__badge top-bar-nav__badge--yesterday"
+                      aria-label={`${yesterdayCount} yesterday`}
+                      title={`${yesterdayCount} yesterday`}
+                    >
+                      {formatBadge(yesterdayCount)}
+                    </span>
+                  )}
                 </span>
               )}
             </span>

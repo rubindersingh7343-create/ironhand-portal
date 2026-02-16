@@ -1092,18 +1092,23 @@ body:has(.owner-portal-shell) {
   position: relative;
   display: inline-flex;
   align-items: center;
+  gap: 6px;
+}
+
+.top-bar-nav__badge-group,
+.owner-portal-nav__badge-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .top-bar-nav__badge,
 .owner-portal-nav__badge {
-  position: absolute;
-  top: -6px;
-  right: -8px;
   min-width: 14px;
-  height: 14px;
-  padding: 0 4px;
+  height: 16px;
+  padding: 0 6px;
   border-radius: 999px;
-  background: #fbbf24;
+  background: rgba(248, 250, 252, 0.7);
   color: #0f172a;
   font-size: 9px;
   font-weight: 700;
@@ -1111,8 +1116,22 @@ body:has(.owner-portal-shell) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(15, 23, 42, 0.35);
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.35);
+  border: 1px solid rgba(15, 23, 42, 0.2);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.2);
+}
+
+.top-bar-nav__badge--today,
+.owner-portal-nav__badge--today {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: rgba(16, 185, 129, 0.55);
+  color: #0f3d2e;
+}
+
+.top-bar-nav__badge--yesterday,
+.owner-portal-nav__badge--yesterday {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.5);
+  color: #7c2d12;
 }
 
 .owner-portal-nav__btn--active,

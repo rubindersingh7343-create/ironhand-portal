@@ -15,14 +15,22 @@ import TopBarNav from "@/components/TopBarNav";
 import EmployeeUploadForm from "@/components/employee/EmployeeUploadForm";
 import OwnerHoursSection from "@/components/client/OwnerHoursSection";
 
+const getLocalDate = () => new Date().toLocaleDateString("en-CA");
+const shiftDateString = (value: string, delta: number) => {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  date.setDate(date.getDate() + delta);
+  return date.toISOString().slice(0, 10);
+};
+
 function OwnerPortalDashboardContent({ user }: { user: SessionUser }) {
   const ownerStore = useOwnerPortalStore();
   const [showEmployeeUploads, setShowEmployeeUploads] = useState(false);
   const [navBadges, setNavBadges] = useState({
-    reports: 0,
-    surveillance: 0,
-    invoices: 0,
-    orders: 0,
+    reports: { today: 0, yesterday: 0 },
+    surveillance: { today: 0, yesterday: 0 },
+    invoices: { today: 0, yesterday: 0 },
+    orders: { today: 0, yesterday: 0 },
   });
   const activeStore = ownerStore?.activeStore;
   const selectedStoreId = ownerStore?.selectedStoreId ?? user.storeNumber;
@@ -36,43 +44,59 @@ function OwnerPortalDashboardContent({ user }: { user: SessionUser }) {
   );
   useEffect(() => {
     if (!selectedStoreId) {
-      setNavBadges({ reports: 0, surveillance: 0, invoices: 0, orders: 0 });
+      setNavBadges({
+        reports: { today: 0, yesterday: 0 },
+        surveillance: { today: 0, yesterday: 0 },
+        invoices: { today: 0, yesterday: 0 },
+        orders: { today: 0, yesterday: 0 },
+      });
       return;
     }
     let cancelled = false;
     const load = async () => {
       try {
-        const types = [
-          ["reports", "reports"],
-          ["surveillance", "surveillance"],
-          ["invoices", "invoice"],
-          ["orders", "order"],
-        ] as const;
-        const results = await Promise.all(
-          types.map(async ([key, type]) => {
-            const response = await fetch(
-              `/api/owner/unseen?type=${type}&storeId=${encodeURIComponent(
-                selectedStoreId,
-              )}`,
-              { cache: "no-store" },
-            );
-            const data = await response.json().catch(() => ({}));
-            const count = data?.counts?.[selectedStoreId] ?? 0;
-            return [key, Number(count) || 0] as const;
-          }),
+        const today = getLocalDate();
+        const yesterday = shiftDateString(today, -1);
+        const timeZone =
+          Intl.DateTimeFormat().resolvedOptions().timeZone ?? "";
+        const response = await fetch(
+          `/api/owner/recent-counts?storeId=${encodeURIComponent(
+            selectedStoreId,
+          )}&today=${encodeURIComponent(today)}&yesterday=${encodeURIComponent(
+            yesterday,
+          )}&tz=${encodeURIComponent(timeZone)}`,
+          { cache: "no-store" },
         );
+        const data = await response.json().catch(() => ({}));
+        const counts = data?.counts ?? {};
         if (!cancelled) {
           setNavBadges({
-            reports: results.find(([key]) => key === "reports")?.[1] ?? 0,
-            surveillance:
-              results.find(([key]) => key === "surveillance")?.[1] ?? 0,
-            invoices: results.find(([key]) => key === "invoices")?.[1] ?? 0,
-            orders: results.find(([key]) => key === "orders")?.[1] ?? 0,
+            reports: {
+              today: Number(counts?.reports?.today ?? 0) || 0,
+              yesterday: Number(counts?.reports?.yesterday ?? 0) || 0,
+            },
+            surveillance: {
+              today: Number(counts?.surveillance?.today ?? 0) || 0,
+              yesterday: Number(counts?.surveillance?.yesterday ?? 0) || 0,
+            },
+            invoices: {
+              today: Number(counts?.invoices?.today ?? 0) || 0,
+              yesterday: Number(counts?.invoices?.yesterday ?? 0) || 0,
+            },
+            orders: {
+              today: Number(counts?.orders?.today ?? 0) || 0,
+              yesterday: Number(counts?.orders?.yesterday ?? 0) || 0,
+            },
           });
         }
       } catch (error) {
         if (!cancelled) {
-          setNavBadges({ reports: 0, surveillance: 0, invoices: 0, orders: 0 });
+          setNavBadges({
+            reports: { today: 0, yesterday: 0 },
+            surveillance: { today: 0, yesterday: 0 },
+            invoices: { today: 0, yesterday: 0 },
+            orders: { today: 0, yesterday: 0 },
+          });
         }
         console.error("Failed to load nav badges", error);
       }
@@ -88,16 +112,16 @@ function OwnerPortalDashboardContent({ user }: { user: SessionUser }) {
   const sections = useMemo(
     () => [
       { id: "owner-employee-uploads", label: "Shift" },
-      { id: "owner-reports", label: "Reports", badgeCount: navBadges.reports },
+      { id: "owner-reports", label: "Reports", badgeCounts: navBadges.reports },
       {
         id: "owner-surveillance",
         label: "Surveillance",
-        badgeCount: navBadges.surveillance,
+        badgeCounts: navBadges.surveillance,
       },
       { id: "owner-scratchers", label: "Scratchers" },
-      { id: "owner-invoices", label: "Invoices", badgeCount: navBadges.invoices },
+      { id: "owner-invoices", label: "Invoices", badgeCounts: navBadges.invoices },
       { id: "owner-invoice-upload", label: "Upload" },
-      { id: "owner-orders", label: "Orders", badgeCount: navBadges.orders },
+      { id: "owner-orders", label: "Orders", badgeCounts: navBadges.orders },
       { id: "owner-hours", label: "Hours" },
       { id: "owner-investigations", label: "Cases" },
       { id: "owner-advanced", label: "Advanced" },

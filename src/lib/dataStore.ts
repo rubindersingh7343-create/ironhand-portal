@@ -1438,9 +1438,9 @@ export async function listShiftSubmissionUploadsByDate(options: {
   const end = new Date(start);
   end.setDate(start.getDate() + 1);
   const rangeStart = new Date(start);
-  rangeStart.setDate(rangeStart.getDate() - 1);
+  rangeStart.setDate(rangeStart.getDate() - 7);
   const rangeEnd = new Date(end);
-  rangeEnd.setDate(rangeEnd.getDate() + 1);
+  rangeEnd.setDate(rangeEnd.getDate() + 7);
 
   if (USE_SUPABASE && supabase) {
     const select = `
@@ -3917,6 +3917,149 @@ export async function listOwnerUnseenCounts(params: {
     }
   });
   return { counts, unseenIds };
+}
+
+const formatDateInZone = (value: string, timeZone?: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  try {
+    return timeZone
+      ? date.toLocaleDateString("en-CA", { timeZone })
+      : date.toLocaleDateString("en-CA");
+  } catch {
+    return date.toLocaleDateString("en-CA");
+  }
+};
+
+const shiftDateString = (value: string, delta: number) => {
+  if (!value) return value;
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  date.setDate(date.getDate() + delta);
+  return date.toISOString().slice(0, 10);
+};
+
+export async function listRecentUploadCounts(params: {
+  storeId: string;
+  today: string;
+  yesterday?: string;
+  timeZone?: string;
+}): Promise<{
+  reports: { today: number; yesterday: number };
+  surveillance: { today: number; yesterday: number };
+  invoices: { today: number; yesterday: number };
+  orders: { today: number; yesterday: number };
+}> {
+  const { storeId, today, timeZone } = params;
+  const yesterday = params.yesterday ?? shiftDateString(today, -1);
+  const counts = {
+    reports: { today: 0, yesterday: 0 },
+    surveillance: { today: 0, yesterday: 0 },
+    invoices: { today: 0, yesterday: 0 },
+    orders: { today: 0, yesterday: 0 },
+  };
+
+  const rangeStart = new Date(`${yesterday}T00:00:00Z`);
+  rangeStart.setDate(rangeStart.getDate() - 1);
+  const rangeEnd = new Date(`${today}T23:59:59Z`);
+  rangeEnd.setDate(rangeEnd.getDate() + 1);
+
+  if (USE_SUPABASE && supabase) {
+    const { data: shiftRows, error: shiftError } = await supabase
+      .from("shift_reports")
+      .select("date")
+      .eq("store_id", storeId)
+      .in("date", [today, yesterday]);
+    if (shiftError) {
+      console.error("Supabase recent shift reports error:", shiftError);
+    }
+    (shiftRows ?? []).forEach((row: any) => {
+      if (row?.date === today) counts.reports.today += 1;
+      if (row?.date === yesterday) counts.reports.yesterday += 1;
+    });
+
+    const loadRecordCounts = async (category: "surveillance" | "invoice") => {
+      const { data, error } = await supabase
+        .from("records")
+        .select("created_at")
+        .eq("category", category)
+        .eq("store_number", storeId)
+        .gte("created_at", rangeStart.toISOString())
+        .lt("created_at", rangeEnd.toISOString());
+      if (error) {
+        console.error(`Supabase recent ${category} error:`, error);
+        return [];
+      }
+      return data ?? [];
+    };
+
+    const [survRows, invoiceRows] = await Promise.all([
+      loadRecordCounts("surveillance"),
+      loadRecordCounts("invoice"),
+    ]);
+
+    survRows.forEach((row: any) => {
+      const recordDate = formatDateInZone(row.created_at, timeZone);
+      if (recordDate === today) counts.surveillance.today += 1;
+      if (recordDate === yesterday) counts.surveillance.yesterday += 1;
+    });
+    invoiceRows.forEach((row: any) => {
+      const recordDate = formatDateInZone(row.created_at, timeZone);
+      if (recordDate === today) counts.invoices.today += 1;
+      if (recordDate === yesterday) counts.invoices.yesterday += 1;
+    });
+
+    const { data: orderRows, error: orderError } = await supabase
+      .from("weekly_orders")
+      .select("created_at")
+      .eq("store_id", storeId)
+      .gte("created_at", rangeStart.toISOString())
+      .lt("created_at", rangeEnd.toISOString());
+    if (orderError) {
+      console.error("Supabase recent orders error:", orderError);
+    }
+    (orderRows ?? []).forEach((row: any) => {
+      const recordDate = formatDateInZone(row.created_at, timeZone);
+      if (recordDate === today) counts.orders.today += 1;
+      if (recordDate === yesterday) counts.orders.yesterday += 1;
+    });
+
+    return counts;
+  }
+
+  const storage = await readStorage();
+  storage.shiftReports
+    .filter((report) => report.storeId === storeId)
+    .forEach((report) => {
+      if (report.date === today) counts.reports.today += 1;
+      if (report.date === yesterday) counts.reports.yesterday += 1;
+    });
+
+  storage.surveillanceReports
+    .filter((report) => report.storeNumber === storeId)
+    .forEach((report) => {
+      const recordDate = formatDateInZone(report.createdAt, timeZone);
+      if (recordDate === today) counts.surveillance.today += 1;
+      if (recordDate === yesterday) counts.surveillance.yesterday += 1;
+    });
+
+  storage.invoices
+    .filter((invoice) => invoice.storeNumber === storeId)
+    .forEach((invoice) => {
+      const recordDate = formatDateInZone(invoice.createdAt, timeZone);
+      if (recordDate === today) counts.invoices.today += 1;
+      if (recordDate === yesterday) counts.invoices.yesterday += 1;
+    });
+
+  storage.weeklyOrders
+    .filter((order) => order.storeId === storeId)
+    .forEach((order) => {
+      const recordDate = formatDateInZone(order.createdAt, timeZone);
+      if (recordDate === today) counts.orders.today += 1;
+      if (recordDate === yesterday) counts.orders.yesterday += 1;
+    });
+
+  return counts;
 }
 
 type DbReportConfig = {
