@@ -51,7 +51,7 @@ export default function OwnerAssistantModal({ storeId, storeName, onClose }: Pro
     recognition.lang = "en-US";
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
-    recognition.onresult = (event) => {
+    recognition.onresult = (event: any) => {
       const transcript = event.results?.[0]?.[0]?.transcript ?? "";
       setListening(false);
       if (transcript.trim()) {
