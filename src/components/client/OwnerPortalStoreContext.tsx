@@ -13,6 +13,7 @@ import { createPortal } from "react-dom";
 import type { SessionUser } from "@/lib/types";
 import IHModal from "@/components/ui/IHModal";
 import OwnerChatModal from "@/components/client/OwnerChatModal";
+import OwnerAssistantModal from "@/components/client/OwnerAssistantModal";
 
 export type OwnerPortalStoreSummary = {
   storeId: string;
@@ -64,6 +65,7 @@ function OwnerPortalStoreBar({
   const [storePickerOpen, setStorePickerOpen] = useState(false);
   const [managerChatOpen, setManagerChatOpen] = useState(false);
   const [surveillanceChatOpen, setSurveillanceChatOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [chatBadges, setChatBadges] = useState({ manager: 0, surveillance: 0 });
   const [portalNode, setPortalNode] = useState<Element | null>(null);
 
@@ -113,6 +115,8 @@ function OwnerPortalStoreBar({
     };
   }, [loadBadges, selectedStoreId]);
 
+  const canOpenAssistant = Boolean(selectedStoreId);
+
   return (
     <>
       {portalNode &&
@@ -122,7 +126,7 @@ function OwnerPortalStoreBar({
               <button
                 type="button"
                 onClick={() => setStorePickerOpen(true)}
-                className="owner-bottom-bar__icon"
+                className="owner-bottom-bar__icon disabled:cursor-not-allowed disabled:opacity-50"
                 aria-label="Select store"
               >
                 <svg
@@ -181,6 +185,25 @@ function OwnerPortalStoreBar({
                     {chatBadges.surveillance}
                   </span>
                 )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setAssistantOpen(true)}
+                className="owner-bottom-bar__icon"
+                aria-label="Store assistant"
+                disabled={!canOpenAssistant}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-5 w-5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                >
+                  <path d="M12 3l1.6 3.6L17 8.3l-3.4 1.5L12 13.4l-1.6-3.6L7 8.3l3.4-1.7L12 3Z" />
+                  <path d="M5 13l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2Z" />
+                  <path d="M18 14l0.8 1.8L21 17l-2.2 1-0.8 1.8-0.8-1.8-2.2-1 2.2-1.2L18 14Z" />
+                </svg>
               </button>
             </div>
           </div>,
@@ -252,6 +275,13 @@ function OwnerPortalStoreBar({
             setSurveillanceChatOpen(false);
             loadBadges(selectedStoreId);
           }}
+        />
+      )}
+      {assistantOpen && selectedStoreId && (
+        <OwnerAssistantModal
+          storeId={selectedStoreId}
+          storeName={activeLabel}
+          onClose={() => setAssistantOpen(false)}
         />
       )}
     </>
