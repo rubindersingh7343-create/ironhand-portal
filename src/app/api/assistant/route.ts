@@ -17,6 +17,10 @@ const POS_ITEM_STORE_COLUMN =
   process.env.POS_ITEM_STORE_COLUMN ?? POS_STORE_COLUMN;
 
 type AssistantMessage = { role: "user" | "assistant"; content: string };
+type ResponseInputMessage = {
+  role: "system" | "user" | "assistant";
+  content: Array<{ type: "input_text"; text: string }>;
+};
 
 const safeFloat = (value: unknown) => {
   if (value === null || value === undefined) return 0;
@@ -261,7 +265,7 @@ export async function POST(request: Request) {
     "If the user asks for data you do not have, say so and suggest what data is missing. " +
     "Keep responses concise, practical, and store-owner friendly.";
 
-  const messages = [
+  const messages: ResponseInputMessage[] = [
     {
       role: "system" as const,
       content: [{ type: "input_text" as const, text: systemPrompt }],
