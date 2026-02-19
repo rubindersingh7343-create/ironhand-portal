@@ -26,11 +26,15 @@ export default function OwnerAssistantModal({ storeId, storeName, onClose }: Pro
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [voiceMode, setVoiceMode] = useState(false);
-  const [listening, setListening] = useState(false);
-  const [speechSupported, setSpeechSupported] = useState(false);
+  const [realtimeState, setRealtimeState] = useState<
+    "idle" | "connecting" | "connected" | "error"
+  >("idle");
+  const [realtimeError, setRealtimeError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
-  const recognitionRef = useRef<any>(null);
+  const peerRef = useRef<RTCPeerConnection | null>(null);
+  const dataChannelRef = useRef<RTCDataChannel | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const title = useMemo(() => "Store Assistant", []);
 
@@ -39,42 +43,18 @@ export default function OwnerAssistantModal({ storeId, storeName, onClose }: Pro
   }, [messages]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const Speech =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!Speech) {
-      setSpeechSupported(false);
-      return;
-    }
-    setSpeechSupported(true);
-    const recognition = new Speech();
-    recognition.lang = "en-US";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.onresult = (event: any) => {
-      const transcript = event.results?.[0]?.[0]?.transcript ?? "";
-      setListening(false);
-      if (transcript.trim()) {
-        void sendMessage(transcript.trim());
+    return () => {
+      peerRef.current?.close();
+      peerRef.current = null;
+      dataChannelRef.current?.close();
+      dataChannelRef.current = null;
+      localStreamRef.current?.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
+      if (audioRef.current) {
+        audioRef.current.srcObject = null;
       }
     };
-    recognition.onend = () => setListening(false);
-    recognition.onerror = () => setListening(false);
-    recognitionRef.current = recognition;
-    return () => {
-      recognition.stop();
-    };
   }, []);
-
-  const speak = (text: string) => {
-    if (!voiceMode || typeof window === "undefined") return;
-    if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1;
-    utterance.pitch = 1;
-    window.speechSynthesis.speak(utterance);
-  };
 
   const sendMessage = async (content: string) => {
     if (!content.trim() || sending) return;
@@ -119,7 +99,6 @@ export default function OwnerAssistantModal({ storeId, storeName, onClose }: Pro
       setMessages((prev) =>
         prev.map((msg) => (msg.id === pendingId ? { ...msg, content: reply } : msg)),
       );
-      speak(reply);
     } catch (err) {
       setMessages((prev) => prev.filter((msg) => msg.id !== pendingId));
       setError(err instanceof Error ? err.message : "Assistant unavailable.");
@@ -128,18 +107,108 @@ export default function OwnerAssistantModal({ storeId, storeName, onClose }: Pro
     }
   };
 
-  const handleVoiceToggle = () => {
-    if (!speechSupported || !recognitionRef.current) return;
-    if (!voiceMode) {
-      setVoiceMode(true);
+  const supportsRealtime =
+    typeof window !== "undefined" &&
+    typeof RTCPeerConnection !== "undefined" &&
+    navigator.mediaDevices?.getUserMedia;
+
+  const stopRealtime = () => {
+    peerRef.current?.close();
+    peerRef.current = null;
+    dataChannelRef.current?.close();
+    dataChannelRef.current = null;
+    localStreamRef.current?.getTracks().forEach((track) => track.stop());
+    localStreamRef.current = null;
+    if (audioRef.current) {
+      audioRef.current.srcObject = null;
     }
-    if (listening) {
-      recognitionRef.current.stop();
-      setListening(false);
+    setRealtimeState("idle");
+  };
+
+  const startRealtime = async () => {
+    if (!supportsRealtime || realtimeState === "connecting" || realtimeState === "connected") {
       return;
     }
-    setListening(true);
-    recognitionRef.current.start();
+    setRealtimeError(null);
+    setRealtimeState("connecting");
+
+    try {
+      const tokenResponse = await fetch("/api/realtime-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeId }),
+      });
+      const tokenData = await tokenResponse.json().catch(() => ({}));
+      if (!tokenResponse.ok) {
+        throw new Error(tokenData?.error ?? "Unable to start voice.");
+      }
+      const token = tokenData?.value;
+      if (!token) {
+        throw new Error("Realtime token missing.");
+      }
+
+      const pc = new RTCPeerConnection();
+      peerRef.current = pc;
+
+      pc.ontrack = (event) => {
+        if (!audioRef.current) {
+          audioRef.current = new Audio();
+          audioRef.current.autoplay = true;
+        }
+        audioRef.current.srcObject = event.streams[0];
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
+          stopRealtime();
+        }
+      };
+
+      const dataChannel = pc.createDataChannel("oai-events");
+      dataChannelRef.current = dataChannel;
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      localStreamRef.current = stream;
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      const sdpResponse = await fetch("https://api.openai.com/v1/realtime/calls", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/sdp",
+        },
+        body: offer.sdp ?? "",
+      });
+      if (!sdpResponse.ok) {
+        const text = await sdpResponse.text();
+        throw new Error(text || "Realtime connection failed.");
+      }
+      const answer = await sdpResponse.text();
+      await pc.setRemoteDescription({ type: "answer", sdp: answer });
+      setRealtimeState("connected");
+    } catch (err) {
+      setRealtimeError(err instanceof Error ? err.message : "Voice unavailable.");
+      stopRealtime();
+      setRealtimeState("error");
+    }
+  };
+
+  const handleVoiceToggle = () => {
+    if (!supportsRealtime) return;
+    if (realtimeState === "connected" || realtimeState === "connecting") {
+      stopRealtime();
+      return;
+    }
+    void startRealtime();
   };
 
   return (
@@ -159,6 +228,11 @@ export default function OwnerAssistantModal({ storeId, storeName, onClose }: Pro
           {error && (
             <p className="rounded-2xl bg-red-500/10 px-4 py-3 text-sm text-red-100">
               {error}
+            </p>
+          )}
+          {realtimeError && (
+            <p className="mt-3 rounded-2xl bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+              Voice: {realtimeError}
             </p>
           )}
           <div className="space-y-3">
@@ -204,24 +278,26 @@ export default function OwnerAssistantModal({ storeId, storeName, onClose }: Pro
             <button
               type="button"
               onClick={handleVoiceToggle}
-              disabled={!speechSupported}
+              disabled={!supportsRealtime}
               className={`rounded-full border px-4 py-2 text-xs font-semibold transition ${
-                voiceMode
+                realtimeState === "connected"
                   ? "border-emerald-400/60 text-emerald-100"
-                  : "border-white/20 text-slate-200"
-              } ${!speechSupported ? "opacity-50" : ""}`}
+                  : realtimeState === "connecting"
+                    ? "border-amber-300/60 text-amber-100"
+                    : "border-white/20 text-slate-200"
+              } ${!supportsRealtime ? "opacity-50" : ""}`}
             >
-              {speechSupported
-                ? listening
-                  ? "Listening…"
-                  : voiceMode
+              {!supportsRealtime
+                ? "Voice Unavailable"
+                : realtimeState === "connecting"
+                  ? "Connecting…"
+                  : realtimeState === "connected"
                     ? "Voice On"
-                    : "Voice Off"
-                : "Voice Unavailable"}
+                    : "Voice Off"}
             </button>
           </div>
           <p className="mt-3 text-[11px] text-slate-400">
-            Voice replies are AI-generated and use device speech services.
+            Voice uses realtime AI audio. Microphone access is required.
           </p>
         </div>
       </div>
