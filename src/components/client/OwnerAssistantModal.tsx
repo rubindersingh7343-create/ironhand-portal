@@ -41,7 +41,7 @@ export default function OwnerAssistantModal({ storeId, storeName, onClose }: Pro
   useEffect(() => {
     if (typeof window === "undefined") return;
     const Speech =
-      window.SpeechRecognition || (window as any).webkitSpeechRecognition;
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!Speech) {
       setSpeechSupported(false);
       return;
