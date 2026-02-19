@@ -17,7 +17,7 @@ const POS_ITEM_STORE_COLUMN =
   process.env.POS_ITEM_STORE_COLUMN ?? POS_STORE_COLUMN;
 
 type AssistantMessage = { role: "user" | "assistant"; content: string };
-type ResponseInputMessage = {
+type LocalResponseInputMessage = {
   role: "system" | "user" | "assistant";
   content: Array<{ type: "input_text"; text: string }>;
 };
@@ -63,6 +63,9 @@ async function loadPosSummary(storeId: string) {
       .eq(POS_STORE_COLUMN, storeId)
       .gte(POS_DATE_COLUMN, start);
     if (error) {
+      if ((error as any)?.code === "PGRST205") {
+        return { status: "not_configured" };
+      }
       console.error("POS daily query error", error);
       return { status: "unavailable" };
     }
@@ -91,6 +94,18 @@ async function loadPosSummary(storeId: string) {
         .select("*")
         .eq(POS_ITEM_STORE_COLUMN, storeId)
         .gte(POS_ITEM_DATE_COLUMN, start);
+      if ((itemError as any)?.code === "PGRST205") {
+        return {
+          status: "ok",
+          window_start: start,
+          days: dailyRows?.length ?? 0,
+          gross_sales: Number(totalGross.toFixed(2)),
+          net_sales: Number(totalNet.toFixed(2)),
+          transactions: totalTransactions,
+          items_sold: totalItems,
+          top_items: [],
+        };
+      }
       if (!itemError && itemRows?.length) {
         const totals = new Map<string, { quantity: number; gross_sales: number }>();
         itemRows.forEach((row: any) => {
@@ -265,7 +280,7 @@ export async function POST(request: Request) {
     "If the user asks for data you do not have, say so and suggest what data is missing. " +
     "Keep responses concise, practical, and store-owner friendly.";
 
-  const messages: ResponseInputMessage[] = [
+  const messages: LocalResponseInputMessage[] = [
     {
       role: "system" as const,
       content: [{ type: "input_text" as const, text: systemPrompt }],
@@ -311,9 +326,15 @@ export async function POST(request: Request) {
       posStatus: posSummary.status ?? "unknown",
     });
   } catch (error) {
-    console.error("assistant error", error);
+    const err = error as any;
+    console.error("assistant error", {
+      message: err?.message ?? "Unknown error",
+      status: err?.status,
+      code: err?.code,
+      type: err?.type,
+    });
     return NextResponse.json(
-      { error: "Assistant unavailable." },
+      { error: "Assistant unavailable. Please try again in a moment." },
       { status: 502 },
     );
   }
