@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { listScratcherDiscrepancies } from "@/lib/dataStore";
+import { getShiftReportById, listScratcherDiscrepancies } from "@/lib/dataStore";
 
 const hasStoreAccess = (user: Awaited<ReturnType<typeof getSessionUser>>, storeId: string) => {
   if (!user) return false;
@@ -27,5 +27,17 @@ export async function GET(request: Request) {
   }
 
   const discrepancies = await listScratcherDiscrepancies(storeId);
-  return NextResponse.json({ discrepancies });
+  const reports = await Promise.all(
+    discrepancies.map((calc) => getShiftReportById(calc.shiftReportId)),
+  );
+  const reportByShift = new Map(
+    reports
+      .filter((report) => report)
+      .map((report) => [report!.id, report!]),
+  );
+  const hydrated = discrepancies.map((calc) => ({
+    ...calc,
+    report: reportByShift.get(calc.shiftReportId) ?? null,
+  }));
+  return NextResponse.json({ discrepancies: hydrated });
 }

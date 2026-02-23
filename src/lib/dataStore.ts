@@ -792,6 +792,64 @@ export async function getRecentSurveillanceReports(options: {
     );
 }
 
+export async function listRecentSurveillanceReportsForStore(params: {
+  storeId: string;
+  days?: number;
+  limit?: number;
+}): Promise<SurveillanceRecord[]> {
+  const { storeId, days = 7, limit = 20 } = params;
+  if (!storeId) return [];
+
+  const cutoff = Date.now() - Math.max(days, 1) * 24 * 60 * 60 * 1000;
+
+  if (USE_SUPABASE && supabase) {
+    const select = `
+      id,
+      store_number,
+      employee_name,
+      notes,
+      surveillance_label,
+      surveillance_summary,
+      surveillance_grade,
+      surveillance_grade_reason,
+      created_at
+    `;
+    const { data, error } = await supabase
+      .from("records")
+      .select(select)
+      .eq("category", "surveillance")
+      .eq("store_number", storeId)
+      .gte("created_at", new Date(cutoff).toISOString())
+      .order("created_at", { ascending: false })
+      .limit(Math.max(1, Math.min(limit, 100)));
+    if (error) {
+      console.error("Supabase list surveillance reports error:", error);
+      return [];
+    }
+    return (data ?? []).map((row: any) => ({
+      id: row.id,
+      employeeName: row.employee_name ?? "",
+      storeNumber: row.store_number ?? storeId,
+      label: row.surveillance_label ?? "",
+      summary: row.surveillance_summary ?? "",
+      grade: row.surveillance_grade ?? undefined,
+      gradeReason: row.surveillance_grade_reason ?? undefined,
+      notes: row.notes ?? undefined,
+      attachments: [],
+      createdAt: row.created_at ?? new Date().toISOString(),
+    }));
+  }
+
+  const storage = await readStorage();
+  return storage.surveillanceReports
+    .filter((entry) => entry.storeNumber === storeId)
+    .filter((entry) => {
+      const created = new Date(entry.createdAt).getTime();
+      return Number.isFinite(created) && created >= cutoff;
+    })
+    .slice(0, Math.max(1, Math.min(limit, 100)));
+}
+
 export async function getCombinedRecords(
   filters: RecordFilters,
 ): Promise<CombinedRecord[]> {
@@ -5362,6 +5420,65 @@ export async function getLatestScratcherStartSnapshotByStore(
   const storage = await readStorage();
   const snapshots = (storage.scratcherShiftSnapshots ?? [])
     .filter((snap) => snap.storeId === storeId && snap.snapshotType === "start")
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  const snapshot = snapshots[0];
+  if (!snapshot) return getBaselineScratcherSnapshotByStore(storeId);
+  const items = (storage.scratcherShiftSnapshotItems ?? []).filter(
+    (item) => item.snapshotId === snapshot.id,
+  );
+  return { snapshot, items };
+}
+
+export async function getLatestScratcherSnapshotByStore(
+  storeId: string,
+): Promise<{
+  snapshot: ScratcherShiftSnapshot;
+  items: ScratcherShiftSnapshotItem[];
+} | null> {
+  if (USE_SUPABASE && supabase) {
+    const { data: snapshotData, error } = await supabase
+      .from("scratcher_shift_snapshots")
+      .select("*")
+      .eq("store_id", storeId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || !snapshotData) {
+      if (error) {
+        console.error("Supabase scratcher latest snapshot error:", error);
+      }
+      return getBaselineScratcherSnapshotByStore(storeId);
+    }
+    const { data: itemData, error: itemError } = await supabase
+      .from("scratcher_shift_snapshot_items")
+      .select("*")
+      .eq("snapshot_id", snapshotData.id);
+    if (itemError) {
+      console.error("Supabase scratcher latest snapshot items error:", itemError);
+    }
+    const snapshot: ScratcherShiftSnapshot = {
+      id: snapshotData.id,
+      shiftReportId: snapshotData.shift_report_id,
+      storeId: snapshotData.store_id,
+      employeeUserId: snapshotData.employee_user_id,
+      snapshotType: snapshotData.snapshot_type === "end" ? "end" : "start",
+      createdAt: snapshotData.created_at ?? new Date().toISOString(),
+    };
+    const items: ScratcherShiftSnapshotItem[] = (itemData ?? []).map((item) => ({
+      id: item.id,
+      snapshotId: item.snapshot_id,
+      slotId: item.slot_id,
+      packId: item.pack_id ?? null,
+      ticketValue: item.ticket_value,
+      photoFileId: item.photo_file_id ?? null,
+      createdAt: item.created_at ?? new Date().toISOString(),
+    }));
+    return { snapshot, items };
+  }
+
+  const storage = await readStorage();
+  const snapshots = (storage.scratcherShiftSnapshots ?? [])
+    .filter((snap) => snap.storeId === storeId)
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   const snapshot = snapshots[0];
   if (!snapshot) return getBaselineScratcherSnapshotByStore(storeId);

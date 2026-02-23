@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import {
   activateScratcherPack,
+  getLatestScratcherSnapshotByStore,
   getLatestScratcherStartSnapshotByStore,
   listScratcherSlotBundle,
   saveScratcherFile,
@@ -52,8 +53,9 @@ export async function GET(request: Request) {
     return endText;
   };
 
-  const [baseline, initialBundle] = await Promise.all([
+  const [baseline, latestSnapshot, initialBundle] = await Promise.all([
     getLatestScratcherStartSnapshotByStore(storeId),
+    getLatestScratcherSnapshotByStore(storeId),
     listScratcherSlotBundle(storeId),
   ]);
 
@@ -119,5 +121,5 @@ export async function GET(request: Request) {
     console.error("Unable to backfill baseline packs:", error);
   }
 
-  return NextResponse.json({ ...bundle, baseline });
+  return NextResponse.json({ ...bundle, baseline, latestSnapshot });
 }

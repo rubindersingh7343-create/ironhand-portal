@@ -15,9 +15,13 @@ export type TopBarSection = {
 export default function TopBarNav({
   sections,
   sectionSelector = ".portal-section",
+  mode = "scroll",
+  scrollContainerId,
 }: {
   sections: TopBarSection[];
   sectionSelector?: string;
+  mode?: "scroll" | "pager";
+  scrollContainerId?: string;
 }) {
   const [activeSectionId, setActiveSectionId] = useState(
     sections[0]?.id ?? "",
@@ -54,20 +58,22 @@ export default function TopBarNav({
     let raf2 = 0;
     raf1 = window.requestAnimationFrame(() => {
       raf2 = window.requestAnimationFrame(() => {
-      const active =
-        scroller.querySelector<HTMLElement>(".top-bar-nav__btn--active") ??
-        scroller.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
-      if (!active) return;
+        const active =
+          scroller.querySelector<HTMLElement>(".top-bar-nav__btn--active") ??
+          scroller.querySelector<HTMLElement>(
+            '[role="tab"][aria-selected="true"]',
+          );
+        if (!active) return;
 
-      const targetLeft =
-        active.offsetLeft + active.offsetWidth / 2 - scroller.clientWidth / 2;
-      const maxLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
-      const nextLeft = Math.min(maxLeft, Math.max(0, targetLeft));
+        const targetLeft =
+          active.offsetLeft + active.offsetWidth / 2 - scroller.clientWidth / 2;
+        const maxLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+        const nextLeft = Math.min(maxLeft, Math.max(0, targetLeft));
 
-      scroller.scrollTo({
-        left: nextLeft,
-        behavior: prefersReducedMotion ? "auto" : "smooth",
-      });
+        scroller.scrollTo({
+          left: nextLeft,
+          behavior: prefersReducedMotion ? "auto" : "smooth",
+        });
       });
     });
 
@@ -87,6 +93,75 @@ export default function TopBarNav({
 
   useEffect(() => {
     if (!sections.length) return;
+    if (mode === "pager") {
+      const container = scrollContainerId
+        ? document.getElementById(scrollContainerId)
+        : null;
+      if (!container) return;
+      const sectionElsFromIds = sections
+        .map((section) => document.getElementById(section.id))
+        .filter(Boolean) as HTMLElement[];
+      const sectionElsFromSelector = Array.from(
+        container.querySelectorAll<HTMLElement>(sectionSelector),
+      ).filter((section) => sectionIds.has(section.id));
+      const sectionEls = sectionElsFromIds.length
+        ? sectionElsFromIds
+        : sectionElsFromSelector;
+      if (!sectionEls.length) return;
+
+      let raf = 0;
+
+      const commit = (nextId: string) => {
+        if (!nextId) return;
+        setActiveSectionId((prev) => (prev === nextId ? prev : nextId));
+      };
+
+      const setFromScroll = () => {
+        raf = 0;
+        const lock = lockRef.current;
+        if (lock && Date.now() < lock.until) {
+          commit(lock.id);
+          return;
+        }
+        if (lock && Date.now() >= lock.until) {
+          lockRef.current = null;
+        }
+        const width = container.clientWidth || 1;
+        const index = Math.min(
+          sections.length - 1,
+          Math.max(0, Math.round(container.scrollLeft / width)),
+        );
+        const nextId = sections[index]?.id ?? sections[0]?.id ?? "";
+        if (nextId) commit(nextId);
+
+        const containerRect = container.getBoundingClientRect();
+        const focusX = containerRect.left + containerRect.width / 2;
+        sectionEls.forEach((section) => {
+          const rect = section.getBoundingClientRect();
+          const centerX = rect.left + rect.width / 2;
+          const distance = Math.abs(centerX - focusX);
+          const score = Math.max(0, 1 - distance / containerRect.width);
+          section.style.setProperty("--section-focus", score.toFixed(3));
+        });
+      };
+
+      const scheduleScrollCompute = () => {
+        if (raf) return;
+        raf = window.requestAnimationFrame(setFromScroll);
+      };
+
+      container.addEventListener("scroll", scheduleScrollCompute, {
+        passive: true,
+      });
+      window.addEventListener("resize", scheduleScrollCompute);
+      scheduleScrollCompute();
+      return () => {
+        container.removeEventListener("scroll", scheduleScrollCompute);
+        window.removeEventListener("resize", scheduleScrollCompute);
+        if (raf) window.cancelAnimationFrame(raf);
+      };
+    }
+
     const sectionElsFromIds = sections
       .map((section) => document.getElementById(section.id))
       .filter(Boolean) as HTMLElement[];
@@ -164,7 +239,7 @@ export default function TopBarNav({
       window.removeEventListener("resize", scheduleScrollCompute);
       if (raf) window.cancelAnimationFrame(raf);
     };
-  }, [sectionIds, sectionSelector, sections.length]);
+  }, [mode, scrollContainerId, sectionIds, sectionSelector, sections.length]);
 
   if (!navNode || sections.length === 0) return null;
 
@@ -185,10 +260,28 @@ export default function TopBarNav({
             aria-selected={isActive}
             tabIndex={isActive ? 0 : -1}
             onClick={() => {
-              const target = document.getElementById(section.id);
               const prefersReducedMotion =
                 "matchMedia" in window &&
                 window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+              if (mode === "pager" && scrollContainerId) {
+                const container = document.getElementById(scrollContainerId);
+                const index = sections.findIndex(
+                  (item) => item.id === section.id,
+                );
+                if (container && index >= 0) {
+                  lockRef.current = {
+                    id: section.id,
+                    until: Date.now() + (prefersReducedMotion ? 0 : 520),
+                  };
+                  container.scrollTo({
+                    left: index * container.clientWidth,
+                    behavior: prefersReducedMotion ? "auto" : "smooth",
+                  });
+                  setActiveSectionId(section.id);
+                  return;
+                }
+              }
+              const target = document.getElementById(section.id);
               lockRef.current = {
                 id: section.id,
                 until: Date.now() + (prefersReducedMotion ? 0 : 700),

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 const PULL_THRESHOLD = 70;
 const MAX_PULL = 140;
@@ -9,6 +9,7 @@ const HOLD_OFFSET = 36;
 
 export default function ScrollTopBar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [pullProgress, setPullProgress] = useState(0);
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -19,10 +20,31 @@ export default function ScrollTopBar() {
     startScrollY: 0,
     startedAtTop: false,
     ignore: false,
+    container: null as HTMLElement | null,
   });
 
   useEffect(() => {
     if (typeof window === "undefined" || navigator.maxTouchPoints === 0) return;
+
+    const getActiveOwnerPage = () => {
+      const pager = document.getElementById("owner-portal-pager");
+      if (!pager) return null;
+      const pages = Array.from(
+        pager.querySelectorAll<HTMLElement>(".owner-portal-page"),
+      );
+      if (!pages.length) return null;
+      const width = pager.clientWidth || 1;
+      const index = Math.min(
+        pages.length - 1,
+        Math.max(0, Math.round(pager.scrollLeft / width)),
+      );
+      return pages[index] ?? null;
+    };
+
+    const getScrollTop = (container: HTMLElement | null) => {
+      if (container) return container.scrollTop;
+      return window.scrollY;
+    };
 
     const isInteractiveTarget = (target: EventTarget | null) => {
       if (!(target instanceof HTMLElement)) return false;
@@ -37,11 +59,13 @@ export default function ScrollTopBar() {
       if (isInteractiveTarget(event.target)) return;
       const touch = event.touches[0];
       if (!touch) return;
+      const container = getActiveOwnerPage();
       pullRef.current.active = true;
       pullRef.current.startY = touch.clientY;
       pullRef.current.startX = touch.clientX;
-      pullRef.current.startScrollY = window.scrollY;
-      pullRef.current.startedAtTop = window.scrollY <= 2;
+      pullRef.current.container = container;
+      pullRef.current.startScrollY = getScrollTop(container);
+      pullRef.current.startedAtTop = getScrollTop(container) <= 2;
       pullRef.current.ignore = false;
     };
 
@@ -50,7 +74,8 @@ export default function ScrollTopBar() {
       if (pullRef.current.ignore) return;
       const touch = event.touches[0];
       if (!touch) return;
-      if (!pullRef.current.startedAtTop && window.scrollY <= 2) {
+      const currentScroll = getScrollTop(pullRef.current.container);
+      if (!pullRef.current.startedAtTop && currentScroll <= 2) {
         pullRef.current.startedAtTop = true;
       }
       const deltaX = touch.clientX - pullRef.current.startX;
@@ -71,10 +96,7 @@ export default function ScrollTopBar() {
         setPullDistance(0);
         return;
       }
-      const consumedScroll = Math.max(
-        0,
-        pullRef.current.startScrollY - window.scrollY,
-      );
+      const consumedScroll = Math.max(0, pullRef.current.startScrollY - currentScroll);
       const pull = Math.max(0, delta - consumedScroll);
       if (pull === 0) {
         setPullProgress(0);
@@ -90,13 +112,23 @@ export default function ScrollTopBar() {
     const finishPull = () => {
       if (!pullRef.current.active) return;
       pullRef.current.active = false;
+      pullRef.current.container = null;
       pullRef.current.ignore = false;
       if (pullProgress >= 1 && !isRefreshing) {
         setIsRefreshing(true);
         setPullDistance(HOLD_OFFSET);
         window.setTimeout(() => {
-          window.location.reload();
-        }, 200);
+          try {
+            router.refresh();
+            window.dispatchEvent(new Event("ih-nav-badges-refresh"));
+          } finally {
+            window.setTimeout(() => {
+              setIsRefreshing(false);
+              setPullDistance(0);
+              setPullProgress(0);
+            }, 500);
+          }
+        }, 180);
         return;
       }
       setPullProgress(0);
@@ -150,7 +182,9 @@ export default function ScrollTopBar() {
         <span>Iron Hand</span>
         <span className="scroll-top-bar__spinner" />
       </div>
-      <div id="top-bar-nav" className="scroll-top-bar__nav" />
+      <div id="top-bar-nav" className="scroll-top-bar__nav">
+        <div className="top-bar-nav__skeleton ui-skeleton" aria-hidden="true" />
+      </div>
     </div>
   );
 }

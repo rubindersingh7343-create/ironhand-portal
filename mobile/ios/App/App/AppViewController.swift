@@ -1,8 +1,5 @@
-//
-//  AppViewController.swift
-//  App
-//
-//  Created by Rubin Singh on 2/5/26.
-//
+import UIKit
+import Capacitor
 
-import Foundation
+@objc(AppViewController)
+class AppViewController: CAPBridgeViewController {}

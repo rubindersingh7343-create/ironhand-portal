@@ -31,13 +31,22 @@ export default function ScratchersAdminPanel({
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [slotDrafts, setSlotDrafts] = useState<Record<string, { label: string; isActive: boolean; defaultProductId: string }>>({});
+  const [priceConfirmations, setPriceConfirmations] = useState<Record<string, boolean>>({});
   const [baselineItems, setBaselineItems] = useState<Record<string, string>>({});
   const [baselineOriginal, setBaselineOriginal] = useState<Record<string, string>>({});
   const [baselineSnapshot, setBaselineSnapshot] = useState<BaselineSnapshot | null>(null);
-  const [baselineLoading, setBaselineLoading] = useState(false);
-  const [baselineDirty, setBaselineDirty] = useState(false);
-  const [showInactiveSlots, setShowInactiveSlots] = useState(false);
+  const [addingPrice, setAddingPrice] = useState(false);
+  const [newProduct, setNewProduct] = useState({ name: "", price: "" });
+  const [savingAllSlots, setSavingAllSlots] = useState(false);
   const baselineDirtyRef = useRef(false);
+
+  const isSlotBlank = useCallback(
+    (draft: { label: string; defaultProductId: string }, baselineValue: string) =>
+      !draft.label.trim() &&
+      !(draft.defaultProductId || "").trim() &&
+      !baselineValue.trim(),
+    [],
+  );
 
   const loadBundle = useCallback(async () => {
     if (!storeId) return;
@@ -107,26 +116,34 @@ export default function ScratchersAdminPanel({
       });
       return next;
     });
+    setPriceConfirmations((prev) => {
+      const next = { ...prev };
+      bundle.slots.forEach((slot) => {
+        if (!(slot.id in next)) {
+          next[slot.id] = true;
+        }
+      });
+      return next;
+    });
   }, [bundle?.slots]);
-
-  useEffect(() => {
-    baselineDirtyRef.current = baselineDirty;
-  }, [baselineDirty]);
 
   useEffect(() => {
     if (isOpen) return;
     setBaselineItems({});
     setBaselineOriginal({});
     setBaselineSnapshot(null);
-    setBaselineDirty(false);
+    baselineDirtyRef.current = false;
     setNotice(null);
     setSlotDrafts({});
+    setPriceConfirmations({});
+    setAddingPrice(false);
+    setNewProduct({ name: "", price: "" });
   }, [isOpen]);
 
   const priceOptions = useMemo(() => {
     const byPrice = new Map<number, ScratcherProduct>();
     (products ?? [])
-      .filter((product) => product.isActive)
+      .filter((product) => product.isActive && product.price > 0)
       .forEach((product) => {
         if (!byPrice.has(product.price)) {
           byPrice.set(product.price, product);
@@ -135,7 +152,7 @@ export default function ScratchersAdminPanel({
     return Array.from(byPrice.values()).sort((a, b) => a.price - b.price);
   }, [products]);
 
-  const handleSlotUpdate = async (
+  const updateSlot = async (
     slotId: string,
     updates: { label?: string; isActive?: boolean; defaultProductId?: string | null },
   ) => {
@@ -147,10 +164,9 @@ export default function ScratchersAdminPanel({
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       setNotice(data?.error ?? "Unable to update slot.");
-      return;
+      return false;
     }
-    await loadBundle();
-    onRefresh?.();
+    return true;
   };
 
   const handleSlotAdd = async () => {
@@ -168,16 +184,6 @@ export default function ScratchersAdminPanel({
     onRefresh?.();
   };
 
-  const handleSlotSave = async (slotId: string) => {
-    const draft = slotDrafts[slotId];
-    if (!draft) return;
-    await handleSlotUpdate(slotId, {
-      label: draft.label.trim(),
-      isActive: draft.isActive,
-      defaultProductId: draft.defaultProductId || null,
-    });
-  };
-
   const handleInitSlots = async () => {
     const response = await fetch("/api/scratchers/slots/init32", {
       method: "POST",
@@ -193,48 +199,129 @@ export default function ScratchersAdminPanel({
     onRefresh?.();
   };
 
-  const handleBaselineSave = async () => {
-    if (!storeId) return;
-    const slots = (bundle?.slots ?? []).filter((slot) =>
-      showInactiveSlots ? true : slot.isActive,
-    );
-    const requiredSlots = slots.filter((slot) => slot.isActive);
-    const missingRequired = requiredSlots.filter(
-      (slot) => !baselineItems[slot.id]?.trim(),
-    );
-    if (missingRequired.length > 0) {
-      setNotice("Enter a start ticket for every active slot before saving.");
-      return;
-    }
-
-    const payloadItems = slots
-      .map((slot) => ({
-        slotId: slot.id,
-        ticketValue: baselineItems[slot.id]?.trim() ?? "",
-      }))
-      .filter((item) => item.ticketValue.length > 0);
-
-    if (payloadItems.length === 0) {
-      setNotice("Provide at least one baseline ticket value.");
-      return;
-    }
-
-    setBaselineLoading(true);
-    setNotice(null);
-    const response = await fetch("/api/scratchers/snapshots/baseline", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ storeId, items: payloadItems }),
+  const dirtySlots = useMemo(() => {
+    if (!bundle?.slots?.length) return [];
+    return bundle.slots.filter((slot) => {
+      const draft = slotDrafts[slot.id];
+      if (!draft) return false;
+      const label = draft.label.trim();
+      const defaultProductId = draft.defaultProductId || "";
+      const slotLabel = slot.label ?? "";
+      const slotProductId = slot.defaultProductId ?? "";
+      return (
+        label !== slotLabel ||
+        draft.isActive !== slot.isActive ||
+        defaultProductId !== slotProductId
+      );
     });
-    const data = await response.json().catch(() => ({}));
-    setBaselineLoading(false);
-    if (!response.ok) {
-      setNotice(data?.error ?? "Unable to save baseline snapshot.");
+  }, [bundle?.slots, slotDrafts]);
+
+  const baselineDirty = useMemo(() => {
+    const allKeys = new Set([
+      ...Object.keys(baselineItems),
+      ...Object.keys(baselineOriginal),
+    ]);
+    for (const key of allKeys) {
+      if ((baselineItems[key] ?? "") !== (baselineOriginal[key] ?? "")) {
+        return true;
+      }
+    }
+    return false;
+  }, [baselineItems, baselineOriginal]);
+
+  const handleSaveAllSlots = async () => {
+    if (!dirtySlots.length && !baselineDirty) return;
+    setSavingAllSlots(true);
+    setNotice(null);
+    const unconfirmed = dirtySlots.filter((slot) => {
+      const originalProductId = slot.defaultProductId ?? "";
+      const draft = slotDrafts[slot.id];
+      if (!draft) return false;
+      const draftProductId = draft.defaultProductId || "";
+      if (draftProductId === originalProductId) return false;
+      return priceConfirmations[slot.id] === false;
+    });
+    if (unconfirmed.length > 0) {
+      setSavingAllSlots(false);
+      setNotice("Confirm price changes before saving.");
       return;
     }
-    setBaselineDirty(false);
+    if (baselineDirty) {
+      const requiredSlots = (bundle?.slots ?? []).filter((slot) => slot.isActive);
+      const missingRequired = requiredSlots.filter(
+        (slot) => !baselineItems[slot.id]?.trim(),
+      );
+      if (missingRequired.length > 0) {
+        setSavingAllSlots(false);
+        setNotice("Enter a baseline start ticket for every active slot.");
+        return;
+      }
+    }
+
+    const results = await Promise.all(
+      dirtySlots.map((slot) => {
+        const draft = slotDrafts[slot.id];
+        if (!draft) return Promise.resolve(true);
+        return updateSlot(slot.id, {
+          label: draft.label.trim(),
+          isActive: draft.isActive,
+          defaultProductId: draft.defaultProductId || null,
+        });
+      }),
+    );
+    if (baselineDirty) {
+      const slots = bundle?.slots ?? [];
+      const payloadItems = slots
+        .map((slot) => ({
+          slotId: slot.id,
+          ticketValue: baselineItems[slot.id]?.trim() ?? "",
+        }))
+        .filter((item) => item.ticketValue.length > 0);
+      const baselineResponse = await fetch("/api/scratchers/snapshots/baseline", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeId, items: payloadItems }),
+      });
+      const baselineData = await baselineResponse.json().catch(() => ({}));
+      if (!baselineResponse.ok) {
+        setSavingAllSlots(false);
+        setNotice(baselineData?.error ?? "Unable to save baseline snapshot.");
+        return;
+      }
+      baselineDirtyRef.current = false;
+    }
+    setSavingAllSlots(false);
+    if (results.some((ok) => !ok)) {
+      setNotice("Some slots did not save. Please try again.");
+      return;
+    }
     await loadBundle();
     onRefresh?.();
+  };
+
+  const handleAddPrice = async () => {
+    const priceValue = Number(newProduct.price);
+    if (!Number.isFinite(priceValue) || priceValue <= 0) {
+      setNotice("Enter a valid price greater than 0.");
+      return;
+    }
+    const response = await fetch("/api/scratchers/products/upsert", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: newProduct.name.trim() || null,
+        price: priceValue,
+        isActive: true,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setNotice(data?.error ?? "Unable to add price.");
+      return;
+    }
+    setNewProduct({ name: "", price: "" });
+    setAddingPrice(false);
+    await loadBundle();
   };
 
   const activeSlots = bundle?.slots ?? [];
@@ -260,15 +347,8 @@ export default function ScratchersAdminPanel({
               Maintain catalog, slots, and the baseline start snapshot used to audit shifts.
             </p>
           </div>
-          <div className="flex items-center gap-3 pr-6 text-xs uppercase tracking-[0.35em] text-slate-400">
-            <button
-              type="button"
-              onClick={() => setShowInactiveSlots((prev) => !prev)}
-              className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[0.6rem] font-semibold uppercase tracking-[0.25em] text-slate-200 transition hover:bg-white/20"
-            >
-              {showInactiveSlots ? "Hide inactive" : "Show inactive"}
-            </button>
-            <span>Owner & Manager</span>
+          <div className="pr-6 text-xs uppercase tracking-[0.35em] text-slate-400">
+            Owner & Manager
           </div>
         </div>
 
@@ -281,151 +361,251 @@ export default function ScratchersAdminPanel({
         {loading ? (
           <div className="text-sm text-slate-300">Loading scratcher setup…</div>
         ) : (
-          <div className="space-y-3 overflow-y-auto pr-2">
-            {baselineSnapshot && (
-              <div className="rounded-2xl border border-white/10 bg-[#0f1a33] px-4 py-2 text-xs text-slate-300">
-                Baseline last saved {new Date(baselineSnapshot.createdAt).toLocaleString()}
+          <>
+            <div className="flex-1 min-h-0 space-y-4 overflow-y-auto pr-2">
+              {baselineSnapshot && (
+                <div className="rounded-2xl border border-white/10 bg-[#0f1a33] px-4 py-2 text-xs text-slate-300">
+                  Baseline last saved {new Date(baselineSnapshot.createdAt).toLocaleString()}
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#0f1a33] p-4">
+                <div className="text-xs uppercase tracking-[0.2em] text-slate-300">
+                  Slot setup
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {activeSlots.length < 32 && (
+                    <button type="button" className="ui-button" onClick={handleInitSlots}>
+                      Init 32
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="ui-button"
+                    onClick={() => setAddingPrice((prev) => !prev)}
+                  >
+                    {addingPrice ? "Cancel price" : "Add price"}
+                  </button>
+                </div>
               </div>
-            )}
 
-            {activeSlots.map((slot) => {
-              const draft = slotDrafts[slot.id] ?? {
-                label: slot.label ?? "",
-                isActive: slot.isActive,
-                defaultProductId: slot.defaultProductId ?? "",
-              };
-              const baselineValue = baselineItems[slot.id] ?? "";
-              const baselineChanged =
-                baselineValue !== (baselineOriginal[slot.id] ?? "");
-              return (
-                <div
-                  key={slot.id}
-                  className="rounded-2xl border border-white/10 bg-[#0f1a33] p-4"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-white">
-                        Slot {slot.slotNumber}
-                      </p>
-                      <p className="text-xs text-slate-300">
-                        {draft.isActive ? "Active" : "Inactive"}
-                      </p>
-                    </div>
-                    <span
-                      className={`rounded-full px-2 py-1 text-[0.65rem] uppercase tracking-[0.3em] ${
-                        draft.isActive ? "bg-emerald-500/15 text-emerald-200" : "bg-white/10 text-slate-300"
-                      }`}
-                    >
-                      {draft.isActive ? "active" : "inactive"}
-                    </span>
-                  </div>
-
-                  <div className="mt-3 grid gap-3 sm:grid-cols-[2fr,1fr]">
+              {addingPrice && (
+                <div className="rounded-2xl border border-white/10 bg-[#0f1a33] p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-300">
+                    New price
+                  </p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-[2fr,1fr,auto]">
                     <input
-                      value={draft.label}
+                      value={newProduct.name}
                       onChange={(event) =>
-                        setSlotDrafts((prev) => ({
-                          ...prev,
-                          [slot.id]: {
-                            ...draft,
-                            label: event.target.value,
-                          },
-                        }))
+                        setNewProduct((prev) => ({ ...prev, name: event.target.value }))
                       }
                       placeholder="Name (optional)"
                       className="ui-field"
                     />
-                    <select
-                      value={draft.defaultProductId}
-                      onChange={(event) =>
-                        setSlotDrafts((prev) => ({
-                          ...prev,
-                          [slot.id]: {
-                            ...draft,
-                            defaultProductId: event.target.value,
-                          },
-                        }))
-                      }
-                      className="ui-field"
-                    >
-                      <option value="">Select price</option>
-                      {priceOptions.map((option) => (
-                        <option key={option.id} value={option.id}>
-                          ${option.price}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="mt-3 grid gap-3 sm:grid-cols-[1fr,auto]">
                     <input
-                      value={baselineValue}
-                      onChange={(event) => {
-                        setBaselineItems((prev) => ({
-                          ...prev,
-                          [slot.id]: event.target.value,
-                        }));
-                        setBaselineDirty(true);
-                      }}
-                      placeholder="Baseline start ticket"
+                      value={newProduct.price}
+                      onChange={(event) =>
+                        setNewProduct((prev) => ({ ...prev, price: event.target.value }))
+                      }
+                      placeholder="Price"
+                      inputMode="decimal"
                       className="ui-field"
-                      inputMode="numeric"
                     />
-                    <button
-                      type="button"
-                      className={`ui-button ${baselineChanged ? "ui-button-primary" : "ui-button-ghost"}`}
-                      onClick={handleBaselineSave}
-                      disabled={!baselineChanged || baselineLoading}
-                    >
-                      {baselineLoading ? "Saving..." : "Confirm"}
-                    </button>
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-300">
-                    <label className="inline-flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={draft.isActive}
-                        onChange={(event) =>
-                          setSlotDrafts((prev) => ({
-                            ...prev,
-                            [slot.id]: {
-                              ...draft,
-                              isActive: event.target.checked,
-                            },
-                          }))
-                        }
-                      />
-                      Active
-                    </label>
-                    <button
-                      type="button"
-                      className="ui-button ui-button-ghost"
-                      onClick={() => handleSlotSave(slot.id)}
-                    >
-                      Save slot
+                    <button type="button" className="ui-button" onClick={handleAddPrice}>
+                      Save
                     </button>
                   </div>
                 </div>
-              );
-            })}
+              )}
 
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#0f1a33] p-4">
-              <div className="text-xs text-slate-300">
-                Add slots as new scratcher columns.
-              </div>
-              <div className="flex gap-2">
-                {!activeSlots.length && (
-                  <button type="button" className="ui-button" onClick={handleInitSlots}>
-                    Init 32
+              {activeSlots.map((slot) => {
+                const draft = slotDrafts[slot.id] ?? {
+                  label: slot.label ?? "",
+                  isActive: slot.isActive,
+                  defaultProductId: slot.defaultProductId ?? "",
+                };
+                const baselineValue = baselineItems[slot.id] ?? "";
+                const originalProductId = slot.defaultProductId ?? "";
+                const priceChanged = (draft.defaultProductId || "") !== originalProductId;
+                const priceConfirmed = priceConfirmations[slot.id] ?? true;
+                const needsConfirm = priceChanged && !priceConfirmed;
+                const slotIsBlank = isSlotBlank(draft, baselineValue);
+                return (
+                  <div
+                    key={slot.id}
+                    className="rounded-2xl border border-white/10 bg-[#0f1a33] p-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-white">
+                          Slot {slot.slotNumber}
+                        </p>
+                        <p className="text-xs text-slate-300">
+                          {draft.isActive ? "Active" : "Inactive"}
+                        </p>
+                      </div>
+                      <span
+                        className={`rounded-full px-2 py-1 text-[0.65rem] uppercase tracking-[0.3em] ${
+                          draft.isActive ? "bg-emerald-500/15 text-emerald-200" : "bg-white/10 text-slate-300"
+                        }`}
+                      >
+                        {draft.isActive ? "active" : "inactive"}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid gap-3">
+                      <input
+                        value={draft.label}
+                        onChange={(event) =>
+                          setSlotDrafts((prev) => {
+                            const current = prev[slot.id] ?? draft;
+                            const next = {
+                              ...prev,
+                              [slot.id]: {
+                                ...current,
+                                label: event.target.value,
+                              },
+                            };
+                            const nextDraft = next[slot.id];
+                            if (isSlotBlank(nextDraft, baselineItems[slot.id] ?? "")) {
+                              next[slot.id] = { ...nextDraft, isActive: false };
+                            }
+                            return next;
+                          })
+                        }
+                        placeholder="Name (optional)"
+                        className="ui-field"
+                      />
+                      <div className="grid gap-3 sm:grid-cols-[1fr,auto]">
+                        <select
+                          value={draft.defaultProductId}
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+                            setSlotDrafts((prev) => {
+                              const current = prev[slot.id] ?? draft;
+                              const next = {
+                                ...prev,
+                                [slot.id]: {
+                                  ...current,
+                                  defaultProductId: nextValue,
+                                },
+                              };
+                              const nextDraft = next[slot.id];
+                              if (isSlotBlank(nextDraft, baselineItems[slot.id] ?? "")) {
+                                next[slot.id] = { ...nextDraft, isActive: false };
+                              }
+                              return next;
+                            });
+                            setPriceConfirmations((prev) => ({
+                              ...prev,
+                              [slot.id]: nextValue === originalProductId,
+                            }));
+                          }}
+                          className="ui-field"
+                        >
+                          <option value="">Select price</option>
+                          {priceOptions.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              ${option.price}
+                            </option>
+                          ))}
+                        </select>
+                        {priceChanged && (
+                          <button
+                            type="button"
+                            className={`ui-button ${needsConfirm ? "ui-button-primary" : "ui-button-ghost"}`}
+                            onClick={() =>
+                              setPriceConfirmations((prev) => ({
+                                ...prev,
+                                [slot.id]: true,
+                              }))
+                            }
+                          >
+                            {needsConfirm ? "Confirm price" : "Price confirmed"}
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        value={baselineValue}
+                        onChange={(event) => {
+                          const nextValue = event.target.value;
+                          setBaselineItems((prev) => ({
+                            ...prev,
+                            [slot.id]: nextValue,
+                          }));
+                          setSlotDrafts((prev) => {
+                            const current = prev[slot.id] ?? draft;
+                            if (isSlotBlank(current, nextValue)) {
+                              return {
+                                ...prev,
+                                [slot.id]: {
+                                  ...current,
+                                  isActive: false,
+                                },
+                              };
+                            }
+                            return prev;
+                          });
+                          baselineDirtyRef.current = true;
+                        }}
+                        placeholder="Baseline start ticket"
+                        className="ui-field"
+                        inputMode="numeric"
+                      />
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-300">
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={draft.isActive}
+                          onChange={(event) =>
+                            setSlotDrafts((prev) => {
+                              const current = prev[slot.id] ?? draft;
+                              const nextActive =
+                                event.target.checked && !slotIsBlank;
+                              return {
+                                ...prev,
+                                [slot.id]: {
+                                  ...current,
+                                  isActive: nextActive,
+                                },
+                              };
+                            })
+                          }
+                        />
+                        Active
+                      </label>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-[#0b142b]/90 px-4 py-3 shadow-[0_-12px_30px_rgba(4,10,24,0.55)] backdrop-blur">
+              <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-200">
+                <span>
+                  {dirtySlots.length || baselineDirty
+                    ? `${dirtySlots.length} slot${dirtySlots.length === 1 ? "" : "s"} with changes`
+                    : "All slot changes saved"}
+                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" className="ui-button" onClick={handleSlotAdd}>
+                    Add slot
                   </button>
-                )}
-                <button type="button" className="ui-button ui-button-primary" onClick={handleSlotAdd}>
-                  Add slot
-                </button>
+                  <button
+                    type="button"
+                    className={`ui-button ${dirtySlots.length || baselineDirty ? "ui-button-primary" : "ui-button-ghost"}`}
+                    onClick={handleSaveAllSlots}
+                    disabled={(!dirtySlots.length && !baselineDirty) || savingAllSlots}
+                  >
+                    {savingAllSlots ? "Saving..." : "Save setup"}
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          </>
         )}
       </div>
     </IHModal>

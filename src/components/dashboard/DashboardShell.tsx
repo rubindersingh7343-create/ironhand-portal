@@ -50,7 +50,7 @@ export default async function DashboardShell({ user }: { user: SessionUser }) {
 
   const shellPadding =
     user.role === "client"
-      ? "px-2 pt-0 pb-10 text-white sm:px-6 sm:pt-0"
+      ? "px-2 pt-0 pb-0 text-white sm:px-6 sm:pt-0"
       : "px-4 pt-6 pb-10 text-white sm:px-8 sm:pt-8";
 
   const shellClassName =
@@ -59,6 +59,7 @@ export default async function DashboardShell({ user }: { user: SessionUser }) {
       : `${shellPadding} portal-shell`;
 
   const isClient = user.role === "client";
+  const showHeaderInShell = !isClient;
   const headerClassName = isClient
     ? "ui-card ui-card--compact owner-portal-header"
     : "ui-card ui-card--compact";
@@ -89,34 +90,39 @@ export default async function DashboardShell({ user }: { user: SessionUser }) {
         {topNavSections.length > 0 && (
           <TopBarNav sections={topNavSections} sectionSelector=".portal-section" />
         )}
-        <header className={headerClassName}>
-          <div className="owner-portal-header__content flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="mt-1 text-2xl font-semibold text-slate-50">
-                {copy.headline}
-              </h1>
-              {user.role === "client" || user.role === "ironhand" ? (
-                <p className="text-xs text-slate-400">Stores: {storeCount}</p>
-              ) : (
-                <p className="text-xs text-slate-400">Store {user.storeNumber}</p>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center gap-3 text-sm text-slate-100">
+        {showHeaderInShell && (
+          <header className={headerClassName}>
+            <div className="owner-portal-header__content flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-base font-semibold text-slate-100">
-                  {user.name}
-                </p>
-                <p className="text-xs text-slate-400">
-                  {roleLabel}
-                </p>
+                <h1 className="mt-1 text-2xl font-semibold text-slate-50">
+                  {copy.headline}
+                </h1>
+                {user.role === "client" || user.role === "ironhand" ? (
+                  <p className="text-xs text-slate-400">Stores: {storeCount}</p>
+                ) : (
+                  <p className="text-xs text-slate-400">Store {user.storeNumber}</p>
+                )}
               </div>
-              <div className="flex items-center gap-2">
-                <SettingsButton user={user} />
-                <LogoutButton />
+              <div className="flex flex-wrap items-center gap-3 text-sm text-slate-100">
+                <div>
+                  <p className="text-base font-semibold text-slate-100">
+                    {user.name}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {roleLabel}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <SettingsButton
+                    user={user}
+                    className={isClient ? "ui-pill-primary" : undefined}
+                  />
+                  <LogoutButton className={isClient ? "ui-pill-primary" : undefined} />
+                </div>
               </div>
             </div>
-          </div>
-        </header>
+          </header>
+        )}
 
         {user.role === "employee" && (
           <>
@@ -153,7 +159,9 @@ export default async function DashboardShell({ user }: { user: SessionUser }) {
           </>
         )}
 
-        {user.role === "client" && <OwnerPortalDashboard user={user} />}
+        {user.role === "client" && (
+          <OwnerPortalDashboard user={user} storeCount={storeCount} />
+        )}
       </div>
     </div>
   );

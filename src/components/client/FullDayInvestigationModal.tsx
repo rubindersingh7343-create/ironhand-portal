@@ -10,6 +10,7 @@ type LocalStatus = "default" | "investigating" | "resolved";
 type FullDayInvestigationModalProps = {
   report: CombinedRecord;
   storeName: string;
+  hasManager?: boolean;
   defaultStatus?: LocalStatus;
   onClose: () => void;
   onStatusChange?: (reportId: string, status: LocalStatus) => void;
@@ -80,6 +81,7 @@ const parseThread = (notes?: string | null) => {
 export default function FullDayInvestigationModal({
   report,
   storeName,
+  hasManager = false,
   defaultStatus = "default",
   onClose,
   onStatusChange,
@@ -452,6 +454,7 @@ export default function FullDayInvestigationModal({
                 <button
                   type="button"
                   onClick={async () => {
+                    if (!hasManager) return;
                     const trimmed = notes.trim();
                     if (!trimmed) return;
                     const nextMessage = {
@@ -488,7 +491,12 @@ export default function FullDayInvestigationModal({
                       onToast?.("Unable to send message.");
                     }
                   }}
-                  className="rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-blue-500"
+                  disabled={!hasManager}
+                  className={`rounded-full px-4 py-2 text-xs font-semibold text-white transition ${
+                    hasManager
+                      ? "bg-blue-600 hover:bg-blue-500"
+                      : "cursor-not-allowed bg-blue-900/40 text-slate-400"
+                  }`}
                 >
                   Send to Manager
                 </button>

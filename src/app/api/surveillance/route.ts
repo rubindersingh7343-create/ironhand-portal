@@ -35,10 +35,14 @@ export async function POST(request: Request) {
         .filter((file) => file && "name" in file && file.name)
     : [];
   const footageLabels = !isJson
-    ? (formData?.getAll("footageLabel") as string[])
+    ? (formData?.getAll("footageLabel") as string[]).map((value) =>
+        String(value ?? "").trim(),
+      )
     : [];
   const footageSummaries = !isJson
-    ? (formData?.getAll("footageSummary") as string[])
+    ? (formData?.getAll("footageSummary") as string[]).map((value) =>
+        String(value ?? "").trim(),
+      )
     : [];
   const storeId =
     (isJson ? payload?.storeId : (formData?.get("storeId") as string | null)) ??
@@ -65,13 +69,18 @@ export async function POST(request: Request) {
     );
   }
 
+  const primaryFootageLabel = footageLabels.find(Boolean) ?? "";
+  const primaryFootageSummary = footageSummaries.find(Boolean) ?? "";
+
+  if (!isJson && !primaryFootageLabel) {
+    return NextResponse.json(
+      { error: "Choose a classification for the footage." },
+      { status: 400 },
+    );
+  }
   if (
-    (!isJson &&
-      footageSummaries
-        .slice(0, footageFiles.length)
-        .some((value) => !String(value ?? "").trim())) ||
-    (isJson &&
-      jsonFiles.some((file: any) => !String(file?.summary ?? "").trim()))
+    (!isJson && !primaryFootageSummary) ||
+    (isJson && jsonFiles.some((file: any) => !String(file?.summary ?? "").trim()))
   ) {
     return NextResponse.json(
       { error: "Add a short summary for each file." },
@@ -106,8 +115,9 @@ export async function POST(request: Request) {
             (file, index) =>
               saveUploadedFile(file as File, {
                 folder: "surveillance",
-                label: footageLabels[index] ?? label,
-                summary: footageSummaries[index] ?? undefined,
+                label: footageLabels[index] || primaryFootageLabel || label,
+                summary:
+                  footageSummaries[index] || primaryFootageSummary || undefined,
               }),
           ),
         );

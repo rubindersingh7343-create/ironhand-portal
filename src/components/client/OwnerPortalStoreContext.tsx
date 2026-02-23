@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -14,6 +15,15 @@ import type { SessionUser } from "@/lib/types";
 import IHModal from "@/components/ui/IHModal";
 import OwnerChatModal from "@/components/client/OwnerChatModal";
 import OwnerAssistantModal from "@/components/client/OwnerAssistantModal";
+import { useRealtimeVoice } from "@/components/client/useRealtimeVoice";
+import {
+  DEFAULT_ASSISTANT_VOICE,
+  type AssistantVoice,
+  isAssistantVoice,
+} from "@/components/client/assistantVoice";
+import {
+  DEFAULT_ASSISTANT_LANGUAGE_PRIMARY,
+} from "@/components/client/assistantLanguages";
 
 export type OwnerPortalStoreSummary = {
   storeId: string;
@@ -68,6 +78,38 @@ function OwnerPortalStoreBar({
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [chatBadges, setChatBadges] = useState({ manager: 0, surveillance: 0 });
   const [portalNode, setPortalNode] = useState<Element | null>(null);
+  const [assistantVoice, setAssistantVoice] = useState<AssistantVoice>(() => {
+    if (typeof window === "undefined") return DEFAULT_ASSISTANT_VOICE;
+    const stored = window.localStorage.getItem("ih-assistant-voice");
+    return stored && isAssistantVoice(stored) ? stored : DEFAULT_ASSISTANT_VOICE;
+  });
+  const [assistantPrimaryLanguage, setAssistantPrimaryLanguage] = useState(() => {
+    if (typeof window === "undefined") return DEFAULT_ASSISTANT_LANGUAGE_PRIMARY;
+    const stored = window.localStorage.getItem("ih-assistant-lang-primary");
+    return stored?.trim() || DEFAULT_ASSISTANT_LANGUAGE_PRIMARY;
+  });
+  const [assistantSecondaryLanguage, setAssistantSecondaryLanguage] = useState(() => {
+    if (typeof window === "undefined") return "";
+    const stored = window.localStorage.getItem("ih-assistant-lang-secondary");
+    return stored?.trim() || "";
+  });
+  const {
+    supportsRealtime,
+    state: voiceState,
+    listening: voiceListening,
+    start: startVoice,
+    stop: stopVoice,
+    mute: muteVoice,
+    toggleListening,
+  } = useRealtimeVoice(
+    selectedStoreId ?? "",
+    assistantVoice,
+    assistantPrimaryLanguage,
+    assistantSecondaryLanguage,
+    activeLabel,
+  );
+  const voiceIdleTimer = useRef<number | null>(null);
+  const voiceToggleGuard = useRef(0);
 
   const loadBadges = useCallback(async (storeId: string) => {
     if (!storeId) return;
@@ -102,6 +144,21 @@ function OwnerPortalStoreBar({
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("ih-assistant-voice", assistantVoice);
+  }, [assistantVoice]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("ih-assistant-lang-primary", assistantPrimaryLanguage);
+  }, [assistantPrimaryLanguage]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("ih-assistant-lang-secondary", assistantSecondaryLanguage);
+  }, [assistantSecondaryLanguage]);
+
+  useEffect(() => {
     if (!selectedStoreId) return;
     loadBadges(selectedStoreId);
     const interval = window.setInterval(() => loadBadges(selectedStoreId), 15000);
@@ -116,95 +173,173 @@ function OwnerPortalStoreBar({
   }, [loadBadges, selectedStoreId]);
 
   const canOpenAssistant = Boolean(selectedStoreId);
+  const canUseVoice = canOpenAssistant && supportsRealtime;
+
+  useEffect(() => {
+    if (!canUseVoice) return;
+    if (typeof navigator === "undefined") return;
+    const warmConnection = async () => {
+      try {
+        if (!("permissions" in navigator)) return;
+        const status = await navigator.permissions.query({
+          name: "microphone" as PermissionName,
+        });
+        if (status.state === "granted") {
+          startVoice();
+          muteVoice();
+        }
+      } catch (error) {
+        console.warn("Unable to prewarm voice connection", error);
+      }
+    };
+    warmConnection();
+  }, [canUseVoice, startVoice, muteVoice]);
+
+  const handleVoiceToggle = () => {
+    if (!canUseVoice) return;
+    const now = Date.now();
+    if (now - voiceToggleGuard.current < 350) return;
+    voiceToggleGuard.current = now;
+    toggleListening();
+    if (voiceIdleTimer.current) {
+      window.clearTimeout(voiceIdleTimer.current);
+      voiceIdleTimer.current = null;
+    }
+    if (!voiceListening) {
+      voiceIdleTimer.current = window.setTimeout(() => {
+        stopVoice();
+        voiceIdleTimer.current = null;
+      }, 300000);
+    }
+  };
 
   return (
     <>
       {portalNode &&
         createPortal(
           <div className="owner-bottom-bar">
-            <div className="owner-bottom-bar__label">
+            <div className="owner-bottom-bar__label owner-bottom-bar__label--ai">
+              <div className="owner-bottom-bar__slot">
+                <button
+                  type="button"
+                  onClick={() => setStorePickerOpen(true)}
+                  className="owner-bottom-bar__icon disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Select store"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M4 9l2-4h12l2 4" />
+                    <path d="M5 9v10h14V9" />
+                    <path d="M3 9h18" />
+                    <path d="M9 19v-6h6v6" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setManagerChatOpen(true)}
+                  className="owner-bottom-bar__icon"
+                  aria-label="Manager chat"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                  >
+                    <path d="M6 7h12a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-4 3v-3H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z" />
+                  </svg>
+                  {chatBadges.manager > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-semibold text-slate-950">
+                      {chatBadges.manager}
+                    </span>
+                  )}
+                </button>
+              </div>
               <button
                 type="button"
-                onClick={() => setStorePickerOpen(true)}
-                className="owner-bottom-bar__icon disabled:cursor-not-allowed disabled:opacity-50"
-                aria-label="Select store"
+                className="owner-bottom-bar__ai"
+                aria-label="Toggle voice assistant"
+                disabled={!canUseVoice}
+                data-state={voiceState}
+                data-listening={voiceListening ? "true" : "false"}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  handleVoiceToggle();
+                }}
+                onClick={handleVoiceToggle}
               >
-                <svg
-                  viewBox="0 0 24 24"
-                  className="h-5 w-5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinejoin="round"
-                >
-                  <path d="M4 9l2-4h12l2 4" />
-                  <path d="M5 9v10h14V9" />
-                  <path d="M3 9h18" />
-                  <path d="M9 19v-6h6v6" />
-                </svg>
+                <span className="owner-bottom-bar__ai-core">
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                  >
+                    <path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 1 1-6 0V6a3 3 0 0 1 3-3Z" />
+                    <path d="M19 11a7 7 0 0 1-14 0" />
+                    <path d="M12 18v3" />
+                  </svg>
+                </span>
+                <span className="owner-bottom-bar__ai-label">
+                  {voiceState === "connecting"
+                    ? "Connecting"
+                    : voiceListening
+                      ? "Listening"
+                      : "Tap to talk"}
+                </span>
               </button>
-              <button
-                type="button"
-                onClick={() => setManagerChatOpen(true)}
-                className="owner-bottom-bar__icon"
-                aria-label="Manager chat"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  className="h-5 w-5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
+              <div className="owner-bottom-bar__slot owner-bottom-bar__slot--right">
+                <button
+                  type="button"
+                  onClick={() => setSurveillanceChatOpen(true)}
+                  className="owner-bottom-bar__icon"
+                  aria-label="Surveillance chat"
                 >
-                  <path d="M6 7h12a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-4 3v-3H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z" />
-                </svg>
-                {chatBadges.manager > 0 && (
-                  <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-semibold text-slate-950">
-                    {chatBadges.manager}
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setSurveillanceChatOpen(true)}
-                className="owner-bottom-bar__icon"
-                aria-label="Surveillance chat"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  className="h-5 w-5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                  >
+                    <path d="M7 8h10a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-5l-4 3v-3H7a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2Z" />
+                    <path d="M9.5 11h5" />
+                  </svg>
+                  {chatBadges.surveillance > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-semibold text-slate-950">
+                      {chatBadges.surveillance}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAssistantOpen(true)}
+                  className="owner-bottom-bar__icon"
+                  aria-label="Open assistant"
+                  disabled={!canOpenAssistant}
                 >
-                  <path d="M7 8h10a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-5l-4 3v-3H7a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2Z" />
-                  <path d="M9.5 11h5" />
-                </svg>
-                {chatBadges.surveillance > 0 && (
-                  <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-semibold text-slate-950">
-                    {chatBadges.surveillance}
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setAssistantOpen(true)}
-                className="owner-bottom-bar__icon"
-                aria-label="Store assistant"
-                disabled={!canOpenAssistant}
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  className="h-5 w-5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                >
-                  <path d="M12 3l1.6 3.6L17 8.3l-3.4 1.5L12 13.4l-1.6-3.6L7 8.3l3.4-1.7L12 3Z" />
-                  <path d="M5 13l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2Z" />
-                  <path d="M18 14l0.8 1.8L21 17l-2.2 1-0.8 1.8-0.8-1.8-2.2-1 2.2-1.2L18 14Z" />
-                </svg>
-              </button>
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                  >
+                    <path d="M12 3l1.6 3.6L17 8.3l-3.4 1.5L12 13.4l-1.6-3.6L7 8.3l3.4-1.7L12 3Z" />
+                    <path d="M5 13l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2Z" />
+                    <path d="M18 14l0.8 1.8L21 17l-2.2 1-0.8 1.8-0.8-1.8-2.2-1 2.2-1.2L18 14Z" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>,
           portalNode,
@@ -282,6 +417,12 @@ function OwnerPortalStoreBar({
           storeId={selectedStoreId}
           storeName={activeLabel}
           onClose={() => setAssistantOpen(false)}
+          voice={assistantVoice}
+          onVoiceChange={setAssistantVoice}
+          primaryLanguage={assistantPrimaryLanguage}
+          secondaryLanguage={assistantSecondaryLanguage}
+          onPrimaryLanguageChange={setAssistantPrimaryLanguage}
+          onSecondaryLanguageChange={setAssistantSecondaryLanguage}
         />
       )}
     </>

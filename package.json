@@ -11,6 +11,8 @@
   "dependencies": {
     "@capacitor/app": "^7.0.0",
     "@capacitor/browser": "^7.0.0",
+    "@capacitor/camera": "^8.0.1",
+    "@pantrist/capacitor-plugin-ml-kit-text-recognition": "^8.0.0",
     "@supabase/supabase-js": "^2.86.0",
     "clsx": "^2.1.1",
     "jsonwebtoken": "^9.0.2",

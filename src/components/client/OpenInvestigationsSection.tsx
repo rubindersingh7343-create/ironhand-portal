@@ -301,6 +301,9 @@ export default function OpenInvestigationsSection({ user }: { user: SessionUser 
         <FullDayInvestigationModal
           report={activeFull}
           storeName={storeNameFor(activeFull.storeNumber)}
+          hasManager={Boolean(
+            stores.find((store) => store.storeId === activeFull.storeNumber)?.hasManager,
+          )}
           defaultStatus={fullDayStatus[activeFull.id] ?? "investigating"}
           onClose={() => setActiveFull(null)}
           onStatusChange={(id, status) => {

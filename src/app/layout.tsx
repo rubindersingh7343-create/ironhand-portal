@@ -23,6 +23,11 @@ export const metadata: Metadata = {
   title: "Iron Hand Operations Desk",
   description:
     "Minimal workflow for Iron Hand managers, employees, and clients to exchange shift records.",
+  appleWebApp: {
+    capable: true,
+    title: "Iron Hand",
+    statusBarStyle: "black-translucent",
+  },
 };
 
 export const viewport: Viewport = {
@@ -32,6 +37,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
+  themeColor: "#0b142b",
 };
 
 export default function RootLayout({

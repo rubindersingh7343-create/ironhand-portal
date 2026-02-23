@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Iron Hand</string>
+    <string name="title_activity_main">Iron Hand</string>
+    <string name="package_name">com.ironhand.operations</string>
+    <string name="custom_url_scheme">com.ironhand.operations</string>
+</resources>

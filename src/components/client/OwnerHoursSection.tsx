@@ -519,7 +519,7 @@ export default function OwnerHoursSection({ user }: { user: SessionUser }) {
             return (
               <div
                 key={employeeId}
-                className="rounded-2xl border border-white/10 bg-[#0f1a33] p-4"
+                className="ui-ink-inverse rounded-2xl border border-white/10 bg-[#0f1a33] p-4"
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>

@@ -105,6 +105,26 @@
   ],
   "reports": [
     {
+      "employeeName": "Rubinder Singh",
+      "storeNumber": "IH-JRTJYJ",
+      "reportType": "daily",
+      "notes": "",
+      "textContent": "def",
+      "attachments": [
+        {
+          "id": "6dce9e6c-06c2-4849-8b64-60ddf6be9eb4",
+          "path": "/uploads/reports/6dce9e6c-06c2-4849-8b64-60ddf6be9eb4-Screenshot_2025-11-29_at_1.50.34_PM.png",
+          "originalName": "Screenshot 2025-11-29 at 1.50.34 PM.png",
+          "mimeType": "image/png",
+          "size": 1562104,
+          "label": "Daily Report Media",
+          "kind": "image"
+        }
+      ],
+      "id": "1db56dec-7805-42ca-8ecb-e4582da4a5d6",
+      "createdAt": "2025-11-29T22:29:42.193Z"
+    },
+    {
       "employeeName": "Rubin Singh",
       "storeNumber": "IH-JRTJYJ",
       "reportType": "weekly",
@@ -226,5 +246,6 @@
       "id": "7d353d43-2aea-4796-8ab6-17a824d986a0",
       "createdAt": "2025-11-26T12:55:00.596Z"
     }
-  ]
+  ],
+  "invoices": []
 }

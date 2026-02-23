@@ -1,0 +1,12 @@
+{
+  "resources": {
+    "icon": {
+      "src": "./bluebglogo.jpeg",
+      "backgroundColor": "#0f1f3d"
+    },
+    "splash": {
+      "src": "./splash.png",
+      "backgroundColor": "#0f1f3d"
+    }
+  }
+}

@@ -1,10 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import IHModal from "@/components/ui/IHModal";
 import type { SessionUser } from "@/lib/types";
 
-export default function SettingsButton({ user }: { user: SessionUser }) {
+export default function SettingsButton({
+  user,
+  className,
+}: {
+  user: SessionUser;
+  className?: string;
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email);
@@ -22,14 +28,14 @@ export default function SettingsButton({ user }: { user: SessionUser }) {
     setEmail(user.email);
   }, [user]);
 
-const closeDialog = () => {
-  setIsOpen(false);
-  setCurrentPassword("");
-  setNewPassword("");
-  setConfirmPassword("");
-  setStatus("idle");
-  setMessage(null);
-};
+  const closeDialog = useCallback(() => {
+    setIsOpen(false);
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setStatus("idle");
+    setMessage(null);
+  }, []);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -225,12 +231,20 @@ const closeDialog = () => {
       </IHModal>
     ) : null;
 
+  const baseClassName =
+    "ui-button--slim rounded-full px-4 py-2 text-xs font-semibold transition";
+  const defaultClassName =
+    "border border-white/30 text-white hover:border-white/60";
+  const buttonClassName = className
+    ? `${baseClassName} ${className}`
+    : `${baseClassName} ${defaultClassName}`;
+
   return (
     <>
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="ui-button--slim rounded-full border border-white/30 px-4 py-2 text-xs font-semibold text-white transition hover:border-white/60"
+        className={buttonClassName}
       >
         Settings
       </button>

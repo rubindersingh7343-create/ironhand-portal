@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { getSessionUser, requireRole } from "@/lib/auth";
 import {
   createBaselineShiftReport,
-  createScratcherSnapshot,
   getLatestScratcherStartSnapshotByStore,
+  upsertScratcherBaselineSnapshot,
 } from "@/lib/dataStore";
 
 const hasStoreAccess = (user: Awaited<ReturnType<typeof getSessionUser>>, storeId: string) => {
@@ -61,11 +61,10 @@ export async function POST(request: Request) {
     createdByName: manager.name,
   });
 
-  const result = await createScratcherSnapshot({
+  const result = await upsertScratcherBaselineSnapshot({
     shiftReportId: report.id,
     storeId,
-    employeeUserId: manager.id,
-    snapshotType: "start",
+    createdByUserId: manager.id,
     items: items.map((item: any) => ({
       slotId: String(item.slotId ?? ""),
       ticketValue: String(item.ticketValue ?? "").trim(),

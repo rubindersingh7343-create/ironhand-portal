@@ -30,6 +30,11 @@ export default function IHModal({
   const [portalNode, setPortalNode] = useState<Element | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const lastActive = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -53,7 +58,7 @@ export default function IHModal({
     const handleKeydown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== "Tab") return;
@@ -79,7 +84,7 @@ export default function IHModal({
       document.documentElement.classList.remove("ui-modal-open");
       lastActive.current?.focus?.();
     };
-  }, [isOpen, onClose, portalNode]);
+  }, [isOpen, portalNode]);
 
   if (!isOpen || !portalNode) return null;
 
@@ -108,6 +113,11 @@ export default function IHModal({
           <button
             type="button"
             onClick={onClose}
+            onTouchEnd={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onClose();
+            }}
             aria-label="Close"
             className="absolute right-4 top-4 z-10 rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-xs font-semibold text-white transition hover:border-white/50"
           >

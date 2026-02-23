@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   ScratcherPackEvent,
+  ScratcherPack,
+  ScratcherProduct,
   ScratcherShiftCalculation,
+  ScratcherShiftSnapshot,
+  ScratcherShiftSnapshotItem,
+  ScratcherSlot,
   SessionUser,
   StoredFile,
 } from "@/lib/types";
@@ -35,6 +40,12 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
   const [calculations, setCalculations] = useState<
     Array<ScratcherShiftCalculation & { report?: ShiftReport | null }>
   >([]);
+  const [slotBundle, setSlotBundle] = useState<{
+    slots: ScratcherSlot[];
+    packs: ScratcherPack[];
+    products: ScratcherProduct[];
+    latestSnapshot?: { snapshot: ScratcherShiftSnapshot; items: ScratcherShiftSnapshotItem[] } | null;
+  } | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [setupOpen, setSetupOpen] = useState(false);
   const [activeFile, setActiveFile] = useState<StoredFile | null>(null);
@@ -55,7 +66,7 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
     if (!activeStoreId) return;
     setStatus("loading");
     try {
-      const [discrepancyRes, eventRes, calcRes] = await Promise.all([
+      const [discrepancyRes, eventRes, calcRes, slotRes] = await Promise.all([
         fetch(`/api/scratchers/discrepancies?store_id=${encodeURIComponent(activeStoreId)}`, {
           cache: "no-store",
         }),
@@ -65,10 +76,14 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
         fetch(`/api/scratchers/calculations?store_id=${encodeURIComponent(activeStoreId)}`, {
           cache: "no-store",
         }),
+        fetch(`/api/scratchers/slots?store_id=${encodeURIComponent(activeStoreId)}`, {
+          cache: "no-store",
+        }),
       ]);
       const discrepancyData = await discrepancyRes.json().catch(() => ({}));
       const eventData = await eventRes.json().catch(() => ({}));
       const calcData = await calcRes.json().catch(() => ({}));
+      const slotData = await slotRes.json().catch(() => ({}));
       setDiscrepancies(
         Array.isArray(discrepancyData.discrepancies)
           ? discrepancyData.discrepancies
@@ -77,6 +92,16 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
       setEvents(Array.isArray(eventData.events) ? eventData.events : []);
       setCalculations(
         Array.isArray(calcData.calculations) ? calcData.calculations : [],
+      );
+      setSlotBundle(
+        slotRes.ok
+          ? {
+              slots: Array.isArray(slotData.slots) ? slotData.slots : [],
+              packs: Array.isArray(slotData.packs) ? slotData.packs : [],
+              products: Array.isArray(slotData.products) ? slotData.products : [],
+              latestSnapshot: slotData.latestSnapshot ?? null,
+            }
+          : null,
       );
       setStatus("idle");
     } catch (error) {
@@ -188,6 +213,36 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
       ),
     [filteredCalculations],
   );
+
+  const latestSnapshot = slotBundle?.latestSnapshot ?? null;
+  const latestSnapshotDate = useMemo(() => {
+    if (!latestSnapshot?.snapshot?.createdAt) return "";
+    return normalizeDate(latestSnapshot.snapshot.createdAt);
+  }, [latestSnapshot, normalizeDate]);
+
+  const slotRows = useMemo(() => {
+    const slots = slotBundle?.slots ?? [];
+    const packs = slotBundle?.packs ?? [];
+    const products = slotBundle?.products ?? [];
+    const itemMap = new Map(
+      (latestSnapshot?.items ?? []).map((item) => [item.slotId, item.ticketValue]),
+    );
+    const packMap = new Map(packs.map((pack) => [pack.id, pack]));
+    const productMap = new Map(products.map((product) => [product.id, product]));
+    return slots
+      .filter((slot) => slot.isActive)
+      .map((slot) => {
+        const pack = slot.activePackId ? packMap.get(slot.activePackId) : undefined;
+        const product = pack ? productMap.get(pack.productId) : undefined;
+        return {
+          id: slot.id,
+          slotNumber: slot.slotNumber,
+          label: slot.label ?? null,
+          productName: product?.name ?? "Unassigned",
+          ticketValue: itemMap.get(slot.id) ?? "--",
+        };
+      });
+  }, [latestSnapshot, slotBundle]);
 
   const recentUploads = useMemo(() => {
     const entries = filteredCalculations
@@ -447,6 +502,46 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
       )}
 
       <div className="mt-4 space-y-4">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs uppercase tracking-[0.24em] text-slate-300">
+              Current scratcher numbers
+            </p>
+            {latestSnapshotDate && (
+              <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                As of {latestSnapshotDate}
+              </p>
+            )}
+          </div>
+          {status === "loading" ? (
+            <p className="mt-3 text-sm text-slate-400">Loading scratchers…</p>
+          ) : slotRows.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-400">
+              No scratcher slots available yet.
+            </p>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {slotRows.map((row) => (
+                <div
+                  key={row.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#0f1a33] px-4 py-3 text-sm text-slate-200"
+                >
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                      Slot {row.slotNumber}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-200">
+                      {row.label || row.productName}
+                    </p>
+                  </div>
+                  <p className="ui-tabular text-base text-white">
+                    {row.ticketValue}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
           <p className="text-xs uppercase tracking-[0.24em] text-slate-300">
             Recent uploads

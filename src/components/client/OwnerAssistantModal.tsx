@@ -2,11 +2,28 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import IHModal from "@/components/ui/IHModal";
+import { useRealtimeVoice } from "@/components/client/useRealtimeVoice";
+import {
+  ASSISTANT_VOICES,
+  DEFAULT_ASSISTANT_VOICE,
+  type AssistantVoice,
+  isAssistantVoice,
+} from "@/components/client/assistantVoice";
+import {
+  ASSISTANT_LANGUAGES,
+  DEFAULT_ASSISTANT_LANGUAGE_PRIMARY,
+} from "@/components/client/assistantLanguages";
 
 type Props = {
   storeId: string;
   storeName: string;
   onClose: () => void;
+  voice: AssistantVoice;
+  onVoiceChange: (voice: AssistantVoice) => void;
+  primaryLanguage: string;
+  secondaryLanguage: string;
+  onPrimaryLanguageChange: (language: string) => void;
+  onSecondaryLanguageChange: (language: string) => void;
 };
 
 type AssistantMessage = {
@@ -21,40 +38,35 @@ const initialMessage: AssistantMessage = {
   content: "Ask me about sales, reports, staffing, or recent activity.",
 };
 
-export default function OwnerAssistantModal({ storeId, storeName, onClose }: Props) {
+export default function OwnerAssistantModal({
+  storeId,
+  storeName,
+  onClose,
+  voice,
+  onVoiceChange,
+  primaryLanguage,
+  secondaryLanguage,
+  onPrimaryLanguageChange,
+  onSecondaryLanguageChange,
+}: Props) {
   const [messages, setMessages] = useState<AssistantMessage[]>([initialMessage]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [realtimeState, setRealtimeState] = useState<
-    "idle" | "connecting" | "connected" | "error"
-  >("idle");
-  const [realtimeError, setRealtimeError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
-  const peerRef = useRef<RTCPeerConnection | null>(null);
-  const dataChannelRef = useRef<RTCDataChannel | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const {
+    supportsRealtime,
+    state: realtimeState,
+    error: realtimeError,
+    listening,
+    toggleListening,
+  } = useRealtimeVoice(storeId, voice, primaryLanguage, secondaryLanguage, storeName);
 
   const title = useMemo(() => "Store Assistant", []);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
-
-  useEffect(() => {
-    return () => {
-      peerRef.current?.close();
-      peerRef.current = null;
-      dataChannelRef.current?.close();
-      dataChannelRef.current = null;
-      localStreamRef.current?.getTracks().forEach((track) => track.stop());
-      localStreamRef.current = null;
-      if (audioRef.current) {
-        audioRef.current.srcObject = null;
-      }
-    };
-  }, []);
 
   const sendMessage = async (content: string) => {
     if (!content.trim() || sending) return;
@@ -89,6 +101,8 @@ export default function OwnerAssistantModal({ storeId, storeName, onClose }: Pro
           storeId,
           message: content,
           history: history.slice(-8),
+          primaryLanguage,
+          secondaryLanguage,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -107,121 +121,48 @@ export default function OwnerAssistantModal({ storeId, storeName, onClose }: Pro
     }
   };
 
-  const supportsRealtime =
-    typeof window !== "undefined" &&
-    typeof RTCPeerConnection !== "undefined" &&
-    navigator.mediaDevices?.getUserMedia;
-
-  const stopRealtime = () => {
-    peerRef.current?.close();
-    peerRef.current = null;
-    dataChannelRef.current?.close();
-    dataChannelRef.current = null;
-    localStreamRef.current?.getTracks().forEach((track) => track.stop());
-    localStreamRef.current = null;
-    if (audioRef.current) {
-      audioRef.current.srcObject = null;
-    }
-    setRealtimeState("idle");
-  };
-
-  const startRealtime = async () => {
-    if (!supportsRealtime || realtimeState === "connecting" || realtimeState === "connected") {
-      return;
-    }
-    setRealtimeError(null);
-    setRealtimeState("connecting");
-
-    try {
-      const tokenResponse = await fetch("/api/realtime-token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeId }),
-      });
-      const tokenData = await tokenResponse.json().catch(() => ({}));
-      if (!tokenResponse.ok) {
-        throw new Error(tokenData?.error ?? "Unable to start voice.");
-      }
-      const token = tokenData?.value;
-      if (!token) {
-        throw new Error("Realtime token missing.");
-      }
-
-      const pc = new RTCPeerConnection();
-      peerRef.current = pc;
-
-      pc.ontrack = (event) => {
-        if (!audioRef.current) {
-          audioRef.current = new Audio();
-          audioRef.current.autoplay = true;
-        }
-        audioRef.current.srcObject = event.streams[0];
-      };
-
-      pc.onconnectionstatechange = () => {
-        if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
-          stopRealtime();
-        }
-      };
-
-      const dataChannel = pc.createDataChannel("oai-events");
-      dataChannelRef.current = dataChannel;
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-      localStreamRef.current = stream;
-      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      const sdpResponse = await fetch("https://api.openai.com/v1/realtime/calls", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/sdp",
-        },
-        body: offer.sdp ?? "",
-      });
-      if (!sdpResponse.ok) {
-        const text = await sdpResponse.text();
-        throw new Error(text || "Realtime connection failed.");
-      }
-      const answer = await sdpResponse.text();
-      await pc.setRemoteDescription({ type: "answer", sdp: answer });
-      setRealtimeState("connected");
-    } catch (err) {
-      setRealtimeError(err instanceof Error ? err.message : "Voice unavailable.");
-      stopRealtime();
-      setRealtimeState("error");
-    }
-  };
-
   const handleVoiceToggle = () => {
     if (!supportsRealtime) return;
-    if (realtimeState === "connected" || realtimeState === "connecting") {
-      stopRealtime();
-      return;
-    }
-    void startRealtime();
+    toggleListening();
+  };
+
+  const handleVoiceSelect = (value: string) => {
+    if (!isAssistantVoice(value)) return;
+    onVoiceChange(value);
+  };
+
+  const handlePrimaryLanguageChange = (value: string) => {
+    onPrimaryLanguageChange(value);
+  };
+
+  const handleSecondaryLanguageChange = (value: string) => {
+    onSecondaryLanguageChange(value);
   };
 
   return (
-    <IHModal isOpen onClose={onClose} allowOutsideClose>
-      <div className="flex h-[82vh] max-h-[680px] w-[min(640px,92vw)] flex-col overflow-hidden">
-        <div className="border-b border-white/10 px-6 py-4">
-          <p className="text-xs uppercase tracking-[0.26em] text-slate-400">
+    <IHModal isOpen onClose={onClose} allowOutsideClose panelClassName="assistant-modal">
+      <div className="assistant-shell flex h-[82vh] max-h-[700px] w-[min(720px,92vw)] flex-col overflow-hidden">
+        <div className="assistant-header border-b border-white/10 px-6 py-5">
+          <p className="text-xs uppercase tracking-[0.32em] text-slate-400">
             {title}
           </p>
-          <h2 className="mt-2 text-lg font-semibold text-white">{storeName}</h2>
-          <p className="text-xs text-slate-400">
-            Use voice or text to ask about this store.
-          </p>
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-semibold text-white">{storeName}</h2>
+              <p className="text-xs text-slate-400">
+                Tap the mic to speak, or type it in.
+              </p>
+            </div>
+            <div
+              className={`assistant-voice-halo ${
+                listening ? "listening" : realtimeState
+              }`}
+              aria-hidden="true"
+            >
+              <span className="assistant-voice-core" />
+              <span className="assistant-voice-ring" />
+            </div>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-4">
@@ -259,7 +200,7 @@ export default function OwnerAssistantModal({ storeId, storeName, onClose }: Pro
           </div>
         </div>
 
-        <div className="border-t border-white/10 px-4 py-3">
+        <div className="assistant-input border-t border-white/10 px-4 py-3">
           <div className="flex flex-wrap items-center gap-2">
             <input
               value={draft}
@@ -277,28 +218,74 @@ export default function OwnerAssistantModal({ storeId, storeName, onClose }: Pro
             </button>
             <button
               type="button"
-              onClick={handleVoiceToggle}
               disabled={!supportsRealtime}
-              className={`rounded-full border px-4 py-2 text-xs font-semibold transition ${
-                realtimeState === "connected"
-                  ? "border-emerald-400/60 text-emerald-100"
-                  : realtimeState === "connecting"
-                    ? "border-amber-300/60 text-amber-100"
-                    : "border-white/20 text-slate-200"
-              } ${!supportsRealtime ? "opacity-50" : ""}`}
+              aria-label="Toggle voice assistant"
+              className={`assistant-voice-icon ${realtimeState} ${
+                !supportsRealtime ? "disabled" : ""
+              } ${listening ? "listening" : ""}`}
+              onClick={handleVoiceToggle}
             >
-              {!supportsRealtime
-                ? "Voice Unavailable"
-                : realtimeState === "connecting"
-                  ? "Connecting…"
-                  : realtimeState === "connected"
-                    ? "Voice On"
-                    : "Voice Off"}
+              <svg
+                viewBox="0 0 24 24"
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              >
+                <path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 1 1-6 0V6a3 3 0 0 1 3-3Z" />
+                <path d="M19 11a7 7 0 0 1-14 0" />
+                <path d="M12 18v3" />
+              </svg>
             </button>
           </div>
-          <p className="mt-3 text-[11px] text-slate-400">
-            Voice uses realtime AI audio. Microphone access is required.
-          </p>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-400">
+            <span>Voice uses realtime AI audio. Microphone access is required.</span>
+            <label className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-slate-300">
+              Voice
+              <select
+                value={voice ?? DEFAULT_ASSISTANT_VOICE}
+                onChange={(event) => handleVoiceSelect(event.target.value)}
+                className="bg-transparent text-slate-100 outline-none"
+              >
+                {ASSISTANT_VOICES.map((option) => (
+                  <option key={option} value={option} className="text-slate-900">
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="mt-3 grid gap-2 text-[11px] text-slate-400 sm:grid-cols-2">
+            <label className="flex flex-col gap-2">
+              <span className="text-[10px] uppercase tracking-[0.18em] text-slate-400">
+                Primary language
+              </span>
+              <input
+                list="assistant-language-list"
+                value={primaryLanguage}
+                onChange={(event) => handlePrimaryLanguageChange(event.target.value)}
+                placeholder={DEFAULT_ASSISTANT_LANGUAGE_PRIMARY}
+                className="ui-field bg-white/5 text-xs"
+              />
+            </label>
+            <label className="flex flex-col gap-2">
+              <span className="text-[10px] uppercase tracking-[0.18em] text-slate-400">
+                Secondary language
+              </span>
+              <input
+                list="assistant-language-list"
+                value={secondaryLanguage}
+                onChange={(event) => handleSecondaryLanguageChange(event.target.value)}
+                placeholder="Optional"
+                className="ui-field bg-white/5 text-xs"
+              />
+            </label>
+            <datalist id="assistant-language-list">
+              {ASSISTANT_LANGUAGES.map((language) => (
+                <option value={language} key={language} />
+              ))}
+            </datalist>
+          </div>
         </div>
       </div>
     </IHModal>

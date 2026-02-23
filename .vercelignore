@@ -1,0 +1,9 @@
+# Exclude large local assets not needed at runtime to keep serverless bundles small.
+mobile/
+public/uploads/
+screenshots/
+.codex.env
+.vercel/
+.git/
+.DS_Store
+*.log

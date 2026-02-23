@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import IHModal from "@/components/ui/IHModal";
 import type { CombinedRecord } from "@/lib/types";
 
@@ -93,10 +93,9 @@ export default function SurveillanceSummaryViewer({
     [report.attachments],
   );
   const [activeIndex, setActiveIndex] = useState(0);
-  const [fullScreenSrc, setFullScreenSrc] = useState<string | null>(null);
-  const [fullScreenKind, setFullScreenKind] = useState<
-    "image" | "video" | "document" | null
-  >(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(0);
+  const viewerRef = useRef<HTMLDivElement | null>(null);
   const activeAttachment = attachments[activeIndex];
   const label = report.surveillanceLabel ?? "Routine";
   const effectiveLabel = mode === "routine" ? "routine" : label;
@@ -107,17 +106,23 @@ export default function SurveillanceSummaryViewer({
   const labelKey = (effectiveLabel ?? "").toLowerCase();
   const isIncident = mode === "incident" || ["critical", "theft", "incident"].includes(labelKey);
 
-  const attachmentKind = activeAttachment?.kind ?? "document";
-  const isVideo = attachmentKind === "video";
-  const isImage = attachmentKind === "image";
   const isRoutine = (effectiveLabel ?? "").toLowerCase() === "routine";
-  const openFullScreen = (attachment?: (typeof attachments)[number]) => {
-    if (!attachment) return;
+  const openFullScreen = (attachment: (typeof attachments)[number], index: number) => {
     const src = buildAttachmentSrc(attachment.path);
     if (!src) return;
-    setFullScreenSrc(src);
-    const kind = isPreviewable(attachment.kind) ? attachment.kind : "document";
-    setFullScreenKind(kind as "image" | "video" | "document");
+    setViewerIndex(index);
+    setViewerOpen(true);
+    requestAnimationFrame(() => {
+      const container = viewerRef.current;
+      if (!container) return;
+      const slide = container.querySelectorAll<HTMLElement>("[data-slide]")[index];
+      if (slide) {
+        container.scrollTo({
+          left: slide.offsetLeft,
+          behavior: "instant" as ScrollBehavior,
+        });
+      }
+    });
   };
 
   return (
@@ -197,50 +202,6 @@ export default function SurveillanceSummaryViewer({
               </div>
             ) : (
               <div className="space-y-3">
-                <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
-                  {isVideo && (
-                    <button
-                      type="button"
-                      onClick={() => openFullScreen(activeAttachment)}
-                      className="w-full"
-                      aria-label="Open video full screen"
-                    >
-                      <video
-                        controls
-                        playsInline
-                        preload="metadata"
-                        className="aspect-video w-full object-contain"
-                        src={buildAttachmentSrc(activeAttachment.path)}
-                      />
-                    </button>
-                  )}
-                  {isImage && (
-                    <button
-                      type="button"
-                      onClick={() => openFullScreen(activeAttachment)}
-                      className="w-full cursor-zoom-in"
-                      aria-label="Open image full screen"
-                    >
-                      <img
-                        src={buildAttachmentSrc(activeAttachment.path)}
-                        alt={activeAttachment.originalName}
-                        className="aspect-video w-full object-contain"
-                      />
-                    </button>
-                    )}
-                  {!isVideo && !isImage && (
-                    <div className="flex flex-col items-center justify-center gap-3 px-6 py-10 text-sm text-slate-300">
-                      <p>{activeAttachment.originalName}</p>
-                      <button
-                        type="button"
-                        onClick={() => openFullScreen(activeAttachment)}
-                        className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold text-white transition hover:border-white/50"
-                      >
-                        Open document
-                      </button>
-                    </div>
-                  )}
-                </div>
                 {activeAttachment.summary && (
                   <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
                     <p className="text-xs uppercase tracking-[0.2em] text-slate-300">
@@ -249,98 +210,115 @@ export default function SurveillanceSummaryViewer({
                     <p className="mt-2">{activeAttachment.summary}</p>
                   </div>
                 )}
-                {activeAttachment && (
-                  <button
-                    type="button"
-                    onClick={() => openFullScreen(activeAttachment)}
-                    className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:border-white/50"
-                  >
-                    Open full screen
-                  </button>
-                )}
-
-                {attachments.length > 1 && (
-                  <div className="space-y-2">
-                    {attachments.map((file, index) => (
-                      <button
-                        type="button"
-                        key={file.id}
-                        onClick={() => setActiveIndex(index)}
-                        className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm transition ${
-                          index === activeIndex
-                            ? "border-white/30 bg-white/10 text-white"
-                            : "border-white/10 bg-white/5 text-slate-200"
-                        }`}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <p className="font-semibold break-words text-wrap">
-                            {file.originalName ?? "Attachment"}
+                <div className="space-y-2">
+                  {attachments.map((file, index) => (
+                    <button
+                      type="button"
+                      key={file.id}
+                      onClick={() => {
+                        setActiveIndex(index);
+                        openFullScreen(file, index);
+                      }}
+                      className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm transition ${
+                        index === activeIndex
+                          ? "border-white/30 bg-white/10 text-white"
+                          : "border-white/10 bg-white/5 text-slate-200"
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold break-words text-wrap">
+                          {file.originalName ?? "Attachment"}
+                        </p>
+                        {file.summary && (
+                          <p className="mt-1 text-xs text-slate-400">
+                            {file.summary}
                           </p>
-                          {file.summary && (
-                            <p className="mt-1 text-xs text-slate-400">
-                              {file.summary}
-                            </p>
-                          )}
-                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                            <span>
-                              {(file.kind ?? "file").toUpperCase()}{" "}
-                              {formatBytes(file.size)}
-                            </span>
-                            <span
-                              className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${labelChipStyle(
-                                file.label ?? report.surveillanceLabel,
-                              )}`}
-                            >
-                              {(file.label ?? report.surveillanceLabel ?? "routine").toUpperCase()}
-                            </span>
-                          </div>
+                        )}
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                          <span>
+                            {(file.kind ?? "file").toUpperCase()}{" "}
+                            {formatBytes(file.size)}
+                          </span>
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${labelChipStyle(
+                              file.label ?? report.surveillanceLabel,
+                            )}`}
+                          >
+                            {(file.label ?? report.surveillanceLabel ?? "routine").toUpperCase()}
+                          </span>
                         </div>
-                        <span className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                          Open
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                      </div>
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/20 text-slate-200">
+                        <svg
+                          viewBox="0 0 24 24"
+                          className="h-4 w-4"
+                          fill="currentColor"
+                          aria-hidden="true"
+                        >
+                          <path d="M8 5.5v13l11-6.5-11-6.5Z" />
+                        </svg>
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
         </div>
 
-        {fullScreenSrc && (
+        {viewerOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-4">
             <button
               type="button"
-              onClick={() => {
-                setFullScreenSrc(null);
-                setFullScreenKind(null);
-              }}
+              onClick={() => setViewerOpen(false)}
               aria-label="Close"
               className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full border border-white/20 text-sm font-semibold text-slate-200"
             >
               X
             </button>
-            {fullScreenKind === "video" ? (
-              <video
-                controls
-                playsInline
-                autoPlay
-                className="max-h-[90vh] w-full max-w-[1200px] object-contain"
-                src={fullScreenSrc}
-              />
-            ) : fullScreenKind === "image" ? (
-              <img
-                src={fullScreenSrc}
-                alt="Attachment preview"
-                className="max-h-[90vh] w-full max-w-[1200px] object-contain"
-              />
-            ) : (
-              <iframe
-                src={fullScreenSrc}
-                title="Attachment preview"
-                className="h-[90vh] w-full max-w-[1200px] rounded-lg bg-white"
-              />
-            )}
+            <div
+              ref={viewerRef}
+              className="flex h-[90vh] w-full max-w-[1200px] snap-x snap-mandatory overflow-x-auto rounded-2xl"
+              onScroll={(event) => {
+                const target = event.currentTarget;
+                const slide = Math.round(target.scrollLeft / target.clientWidth);
+                if (slide !== viewerIndex) setViewerIndex(slide);
+              }}
+            >
+              {attachments.map((file, index) => {
+                const kind = file.kind ?? "document";
+                const src = buildAttachmentSrc(file.path);
+                return (
+                  <div
+                    key={file.id}
+                    data-slide
+                    className="flex h-full w-full flex-none snap-center items-center justify-center"
+                  >
+                    {kind === "video" ? (
+                      <video
+                        controls
+                        playsInline
+                        autoPlay={index === viewerIndex}
+                        className="max-h-[90vh] w-full object-contain"
+                        src={src}
+                      />
+                    ) : kind === "image" ? (
+                      <img
+                        src={src}
+                        alt={file.originalName ?? "Attachment preview"}
+                        className="max-h-[90vh] w-full object-contain"
+                      />
+                    ) : (
+                      <iframe
+                        src={src}
+                        title={file.originalName ?? "Attachment preview"}
+                        className="h-[90vh] w-full rounded-lg bg-white"
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
