@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Capacitor } from "@capacitor/core";
 import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 import { CapacitorPluginMlKitTextRecognition as TextRecognition } from "@pantrist/capacitor-plugin-ml-kit-text-recognition";
 import IHModal from "@/components/ui/IHModal";
@@ -68,7 +67,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   const [scannerHint, setScannerHint] = useState<string | null>(null);
   const lastAutoSlotRef = useRef<string | null>(null);
   const scanBusyRef = useRef(false);
-  const isNative = Capacitor.isNativePlatform();
 
   const endSnapshotStorageKey = useMemo(
     () => `ih:scratchers:endSnapshot:${user.storeNumber}:${snapshotDate}`,
@@ -221,14 +219,9 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
 
   const captureAndDetectTicket = useCallback(async () => {
     if (!scannerOpen || scanBusyRef.current) return;
-    if (!isNative) {
-      setScannerStatus("error");
-      setScannerHint("Camera not available here. Use the mobile app.");
-      return;
-    }
     scanBusyRef.current = true;
     setScannerStatus("scanning");
-    setScannerHint(null);
+    setScannerHint("Opening camera...");
     try {
       await ensureCameraPermissions();
       const photo = await Camera.getPhoto({
@@ -276,7 +269,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     } finally {
       scanBusyRef.current = false;
     }
-  }, [scannerOpen, isNative, ensureCameraPermissions, pickEndTicketFromResult]);
+  }, [scannerOpen, ensureCameraPermissions, pickEndTicketFromResult]);
 
   const productMap = useMemo(
     () => new Map((bundle?.products ?? []).map((item) => [item.id, item])),
