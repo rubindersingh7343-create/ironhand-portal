@@ -69,6 +69,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   const lastAutoSlotRef = useRef<string | null>(null);
   const scanBusyRef = useRef(false);
   const isNative = Capacitor.isNativePlatform();
+  const hasCameraPlugin = Capacitor.isPluginAvailable("Camera");
 
   const endSnapshotStorageKey = useMemo(
     () => `ih:scratchers:endSnapshot:${user.storeNumber}:${snapshotDate}`,
@@ -203,17 +204,34 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     [extractEndTicket],
   );
 
+  const ensureCameraPermissions = useCallback(async () => {
+    try {
+      const current = await Camera.checkPermissions();
+      if (current.camera === "granted") return;
+      const requested = await Camera.requestPermissions({ permissions: ["camera"] });
+      if (requested.camera !== "granted") {
+        throw new Error("camera-denied");
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message === "camera-denied") {
+        throw error;
+      }
+      // Some platforms throw on checkPermissions; fall through to request on use.
+    }
+  }, []);
+
   const captureAndDetectTicket = useCallback(async () => {
     if (!scannerOpen || scanBusyRef.current) return;
-    if (!isNative) {
+    if (!hasCameraPlugin) {
       setScannerStatus("error");
-      setScannerHint("Scanner is available in the mobile app.");
+      setScannerHint("Camera not available here. Use the mobile app.");
       return;
     }
     scanBusyRef.current = true;
     setScannerStatus("scanning");
     setScannerHint(null);
     try {
+      await ensureCameraPermissions();
       const photo = await Camera.getPhoto({
         source: CameraSource.Camera,
         resultType: CameraResultType.Base64,
@@ -240,29 +258,20 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       setScannerHint("No match yet. Try again or enter manually.");
     } catch (error) {
       console.error("OCR capture failed", error);
-      const message =
-        error instanceof Error && error.message.toLowerCase().includes("cancel")
-          ? "Capture canceled. Try again."
-          : "Capture failed. Try again.";
+      let message = "Capture failed. Try again.";
+      if (error instanceof Error) {
+        if (error.message === "camera-denied") {
+          message = "Camera permission denied. Enable it in Settings.";
+        } else if (error.message.toLowerCase().includes("cancel")) {
+          message = "Capture canceled. Try again.";
+        }
+      }
       setScannerStatus("error");
       setScannerHint(message);
     } finally {
       scanBusyRef.current = false;
     }
-  }, [scannerOpen, isNative, pickEndTicketFromResult]);
-
-  useEffect(() => {
-    if (!scannerOpen) {
-      lastAutoSlotRef.current = null;
-      return;
-    }
-    if (!isNative) return;
-    if (!scannerSlotId) return;
-    if (scannerStatus === "scanning" || scannerStatus === "detected") return;
-    if (lastAutoSlotRef.current === scannerSlotId) return;
-    lastAutoSlotRef.current = scannerSlotId;
-    captureAndDetectTicket();
-  }, [scannerOpen, scannerSlotId, isNative, scannerStatus, captureAndDetectTicket]);
+  }, [scannerOpen, hasCameraPlugin, ensureCameraPermissions, pickEndTicketFromResult]);
 
   const productMap = useMemo(
     () => new Map((bundle?.products ?? []).map((item) => [item.id, item])),
