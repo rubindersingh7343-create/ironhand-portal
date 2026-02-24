@@ -69,7 +69,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   const lastAutoSlotRef = useRef<string | null>(null);
   const scanBusyRef = useRef(false);
   const isNative = Capacitor.isNativePlatform();
-  const hasCameraPlugin = Capacitor.isPluginAvailable("Camera");
 
   const endSnapshotStorageKey = useMemo(
     () => `ih:scratchers:endSnapshot:${user.storeNumber}:${snapshotDate}`,
@@ -222,7 +221,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
 
   const captureAndDetectTicket = useCallback(async () => {
     if (!scannerOpen || scanBusyRef.current) return;
-    if (!hasCameraPlugin) {
+    if (!isNative) {
       setScannerStatus("error");
       setScannerHint("Camera not available here. Use the mobile app.");
       return;
@@ -264,6 +263,12 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
           message = "Camera permission denied. Enable it in Settings.";
         } else if (error.message.toLowerCase().includes("cancel")) {
           message = "Capture canceled. Try again.";
+        } else if (
+          error.message.toLowerCase().includes("not implemented") ||
+          error.message.toLowerCase().includes("not available") ||
+          error.message.toLowerCase().includes("no implementation")
+        ) {
+          message = "Camera unavailable in this build. Reinstall the app.";
         }
       }
       setScannerStatus("error");
@@ -271,7 +276,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     } finally {
       scanBusyRef.current = false;
     }
-  }, [scannerOpen, hasCameraPlugin, ensureCameraPermissions, pickEndTicketFromResult]);
+  }, [scannerOpen, isNative, ensureCameraPermissions, pickEndTicketFromResult]);
 
   const productMap = useMemo(
     () => new Map((bundle?.products ?? []).map((item) => [item.id, item])),
