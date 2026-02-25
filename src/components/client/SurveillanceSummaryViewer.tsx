@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import IHModal from "@/components/ui/IHModal";
 import type { CombinedRecord } from "@/lib/types";
 
@@ -95,7 +95,6 @@ export default function SurveillanceSummaryViewer({
   const [activeIndex, setActiveIndex] = useState(0);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
-  const viewerRef = useRef<HTMLDivElement | null>(null);
   const activeAttachment = attachments[activeIndex];
   const label = report.surveillanceLabel ?? "Routine";
   const effectiveLabel = mode === "routine" ? "routine" : label;
@@ -107,22 +106,22 @@ export default function SurveillanceSummaryViewer({
   const isIncident = mode === "incident" || ["critical", "theft", "incident"].includes(labelKey);
 
   const isRoutine = (effectiveLabel ?? "").toLowerCase() === "routine";
-  const openFullScreen = (attachment: (typeof attachments)[number], index: number) => {
-    const src = buildAttachmentSrc(attachment.path);
-    if (!src) return;
+  const openFullScreen = (_attachment: (typeof attachments)[number], index: number) => {
     setViewerIndex(index);
     setViewerOpen(true);
-    requestAnimationFrame(() => {
-      const container = viewerRef.current;
-      if (!container) return;
-      const slide = container.querySelectorAll<HTMLElement>("[data-slide]")[index];
-      if (slide) {
-        container.scrollTo({
-          left: slide.offsetLeft,
-          behavior: "instant" as ScrollBehavior,
-        });
-      }
-    });
+  };
+
+  const viewerAttachment = attachments[viewerIndex];
+  const viewerSrc = buildAttachmentSrc(viewerAttachment?.path);
+  const canPrev = attachments.length > 1;
+  const canNext = attachments.length > 1;
+  const goPrev = () => {
+    if (!attachments.length) return;
+    setViewerIndex((prev) => (prev - 1 + attachments.length) % attachments.length);
+  };
+  const goNext = () => {
+    if (!attachments.length) return;
+    setViewerIndex((prev) => (prev + 1) % attachments.length);
   };
 
   return (
@@ -266,61 +265,104 @@ export default function SurveillanceSummaryViewer({
           </div>
         </div>
 
-        {viewerOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-4">
-            <button
-              type="button"
-              onClick={() => setViewerOpen(false)}
-              aria-label="Close"
-              className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full border border-white/20 text-sm font-semibold text-slate-200"
-            >
-              X
-            </button>
-            <div
-              ref={viewerRef}
-              className="flex h-[90vh] w-full max-w-[1200px] snap-x snap-mandatory overflow-x-auto rounded-2xl"
-              onScroll={(event) => {
-                const target = event.currentTarget;
-                const slide = Math.round(target.scrollLeft / target.clientWidth);
-                if (slide !== viewerIndex) setViewerIndex(slide);
-              }}
-            >
-              {attachments.map((file, index) => {
-                const kind = file.kind ?? "document";
-                const src = buildAttachmentSrc(file.path);
-                return (
-                  <div
-                    key={file.id}
-                    data-slide
-                    className="flex h-full w-full flex-none snap-center items-center justify-center"
+        <IHModal
+          isOpen={viewerOpen}
+          onClose={() => setViewerOpen(false)}
+          allowOutsideClose
+          panelClassName="media-modal max-w-6xl"
+        >
+          <div className="media-shell flex max-h-[82vh] flex-col overflow-hidden">
+            <div className="media-header border-b border-white/10 px-6 py-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs uppercase tracking-[0.26em] text-slate-300">
+                    Attachment
+                  </p>
+                  <h2 className="mt-2 truncate text-lg font-semibold text-white">
+                    {viewerAttachment?.originalName ?? "Viewer"}
+                  </h2>
+                  <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-300">
+                    {viewerAttachment?.kind ? (
+                      <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-slate-200">
+                        {viewerAttachment.kind.toUpperCase()}
+                      </span>
+                    ) : null}
+                    {formatBytes(viewerAttachment?.size) ? (
+                      <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-slate-200">
+                        {formatBytes(viewerAttachment?.size)}
+                      </span>
+                    ) : null}
+                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-slate-200">
+                      {Math.min(viewerIndex + 1, attachments.length)}/{attachments.length}
+                    </span>
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={goPrev}
+                    className="media-chip"
+                    disabled={!canPrev}
+                    aria-label="Previous attachment"
                   >
-                    {kind === "video" ? (
-                      <video
-                        controls
-                        playsInline
-                        autoPlay={index === viewerIndex}
-                        className="max-h-[90vh] w-full object-contain"
-                        src={src}
-                      />
-                    ) : kind === "image" ? (
-                      <img
-                        src={src}
-                        alt={file.originalName ?? "Attachment preview"}
-                        className="max-h-[90vh] w-full object-contain"
-                      />
-                    ) : (
-                      <iframe
-                        src={src}
-                        title={file.originalName ?? "Attachment preview"}
-                        className="h-[90vh] w-full rounded-lg bg-white"
-                      />
-                    )}
+                    Prev
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goNext}
+                    className="media-chip"
+                    disabled={!canNext}
+                    aria-label="Next attachment"
+                  >
+                    Next
+                  </button>
+                  {viewerSrc ? (
+                    <a
+                      href={viewerSrc}
+                      className="media-chip"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-5">
+              <div className="media-stage flex max-h-[70vh] items-center justify-center p-2">
+                {!viewerAttachment || !viewerSrc ? (
+                  <div className="px-4 py-10 text-sm text-slate-300">
+                    No attachment selected.
                   </div>
-                );
-              })}
+                ) : viewerAttachment.kind === "video" ? (
+                  <video
+                    controls
+                    playsInline
+                    autoPlay
+                    className="max-h-[68vh] w-full rounded-xl bg-black object-contain"
+                    src={viewerSrc}
+                  />
+                ) : viewerAttachment.kind === "image" ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={viewerSrc}
+                    alt={viewerAttachment.originalName ?? "Attachment preview"}
+                    className="max-h-[68vh] w-full rounded-xl object-contain"
+                  />
+                ) : (
+                  <iframe
+                    src={viewerSrc}
+                    title={viewerAttachment.originalName ?? "Attachment preview"}
+                    className="h-[68vh] w-full rounded-xl bg-white"
+                  />
+                )}
+              </div>
             </div>
           </div>
-        )}
+        </IHModal>
 
         <div className="flex flex-wrap items-center justify-end gap-3 border-t border-white/10 px-6 py-4">
           <button

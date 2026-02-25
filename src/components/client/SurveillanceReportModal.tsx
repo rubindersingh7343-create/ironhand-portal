@@ -63,9 +63,14 @@ export default function SurveillanceReportModal({
   const grade = report.surveillanceGrade;
   const gradeReason = report.surveillanceGradeReason;
   return (
-    <IHModal isOpen onClose={onClose} allowOutsideClose panelClassName="max-w-[860px]">
-      <div className="flex max-h-full flex-col overflow-hidden">
-        <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-4">
+    <IHModal
+      isOpen
+      onClose={onClose}
+      allowOutsideClose
+      panelClassName="media-modal max-w-[860px]"
+    >
+      <div className="media-shell flex max-h-full flex-col overflow-hidden">
+        <div className="media-header flex items-start justify-between gap-4 border-b border-white/10 px-6 py-4">
           <div>
             <p className="text-xs uppercase tracking-[0.22em] text-slate-300">
               Surveillance Report
@@ -82,7 +87,7 @@ export default function SurveillanceReportModal({
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-300">
-                  Video Preview
+                  Preview
                 </p>
                 {attachments.length > 1 && (
                   <div className="flex items-center gap-2">
@@ -113,11 +118,11 @@ export default function SurveillanceReportModal({
                   </div>
                 )}
               </div>
-              <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+              <div className="media-stage p-2">
                 <video
                   controls
                   playsInline
-                  className="aspect-video w-full"
+                  className="relative z-0 aspect-video w-full rounded-xl bg-black"
                   src={buildAttachmentSrc(activeAttachment.path)}
                 />
               </div>

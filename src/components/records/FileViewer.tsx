@@ -4,6 +4,20 @@ import { useEffect, useRef, useState } from "react";
 import IHModal from "@/components/ui/IHModal";
 import type { StoredFile } from "@/lib/types";
 
+const formatBytes = (value?: number | null) => {
+  const bytes = Number(value ?? 0);
+  if (!Number.isFinite(bytes) || bytes <= 0) return "";
+  const units = ["B", "KB", "MB", "GB"];
+  let size = bytes;
+  let index = 0;
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024;
+    index += 1;
+  }
+  const precision = index === 0 ? 0 : size >= 10 ? 1 : 2;
+  return `${size.toFixed(precision)} ${units[index]}`;
+};
+
 export default function FileViewer({
   file,
   onClose,
@@ -102,40 +116,52 @@ export default function FileViewer({
       isOpen={Boolean(file)}
       onClose={onClose}
       allowOutsideClose
-      panelClassName="max-w-3xl"
+      panelClassName="media-modal max-w-5xl"
     >
-      <div className="flex max-h-[82vh] flex-col gap-3">
-        <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0 space-y-1">
-              <p className="text-lg font-semibold text-white">
-                {file.label || file.originalName || "File"}
+      <div className="media-shell flex max-h-[82vh] flex-col overflow-hidden">
+        <div className="media-header border-b border-white/10 px-6 py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs uppercase tracking-[0.26em] text-slate-300">
+                Viewer
               </p>
-              <p className="truncate text-xs text-slate-300">
-                {file.originalName}
+              <h2 className="mt-2 truncate text-lg font-semibold text-white">
+                {file.label || file.originalName || "File"}
+              </h2>
+              <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-300">
+                {file.originalName ? (
+                  <span className="truncate">{file.originalName}</span>
+                ) : null}
+                {file.mimeType ? (
+                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-slate-200">
+                    {file.mimeType}
+                  </span>
+                ) : null}
+                {formatBytes(file.size) ? (
+                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-slate-200">
+                    {formatBytes(file.size)}
+                  </span>
+                ) : null}
               </p>
             </div>
+
             <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-              <button
-                type="button"
-                onClick={zoomOut}
-                className="rounded-full border border-white/20 px-3 py-1 text-xs text-white hover:bg-white/10"
-              >
-                -
+              <button type="button" onClick={zoomOut} className="media-chip" aria-label="Zoom out">
+                −
               </button>
-              <button
-                type="button"
-                onClick={zoomIn}
-                className="rounded-full border border-white/20 px-3 py-1 text-xs text-white hover:bg-white/10"
-              >
+              <button type="button" onClick={zoomIn} className="media-chip" aria-label="Zoom in">
                 +
               </button>
+              <a href={src} className="media-chip" target="_blank" rel="noreferrer">
+                Open
+              </a>
             </div>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto" style={{ touchAction: "pan-y" }}>
+
+        <div className="flex-1 overflow-y-auto px-6 py-5" style={{ touchAction: "pan-y" }}>
           <div
-            className="relative max-h-[70vh] overflow-hidden rounded-xl border border-white/10 bg-black/20 p-2"
+            className="media-stage relative max-h-[70vh] p-2"
             onTouchStart={(event) => {
               if (event.touches.length === 2) {
                 pinchStartDist.current = getDistance(event.touches);
@@ -197,7 +223,7 @@ export default function FileViewer({
                 loading="eager"
                 onLoad={markLoaded}
                 onError={markFailed}
-                className="mx-auto block h-auto max-h-[64vh] w-auto"
+                className="relative z-0 mx-auto block h-auto max-h-[64vh] w-auto rounded-xl"
                 style={contentStyle}
               />
             ) : isVideo ? (
@@ -207,7 +233,7 @@ export default function FileViewer({
                 preload="metadata"
                 onLoadedData={markLoaded}
                 onError={markFailed}
-                className="mx-auto block h-auto max-h-[64vh] w-auto max-w-none rounded-lg bg-black"
+                className="relative z-0 mx-auto block h-auto max-h-[64vh] w-auto max-w-none rounded-xl bg-black"
                 style={contentStyle}
               />
             ) : (
@@ -215,19 +241,9 @@ export default function FileViewer({
                 src={src}
                 title={file.originalName}
                 onLoad={markLoaded}
-                className="block h-[60vh] w-auto min-w-[80vw] rounded-lg bg-white"
+                className="relative z-0 block h-[60vh] w-auto min-w-[80vw] rounded-xl bg-white"
                 style={{ ...contentStyle, height: "60vh" }}
               />
-            )}
-            {isVideo && (
-              <div className="mt-3 text-center text-xs text-slate-300">
-                <a
-                  href={src}
-                  className="text-blue-200 underline underline-offset-4 hover:text-white"
-                >
-                  Open directly / download
-                </a>
-              </div>
             )}
           </div>
         </div>

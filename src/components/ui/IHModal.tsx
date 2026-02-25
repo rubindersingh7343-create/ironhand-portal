@@ -31,6 +31,7 @@ export default function IHModal({
   const panelRef = useRef<HTMLDivElement | null>(null);
   const lastActive = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
+  const didLockScrollRef = useRef(false);
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -44,8 +45,11 @@ export default function IHModal({
   useEffect(() => {
     if (!isOpen || !portalNode) return;
     lastActive.current = document.activeElement as HTMLElement | null;
+    const nextCount = Number(document.body.dataset.ihModalCount ?? "0") + 1;
+    document.body.dataset.ihModalCount = String(nextCount);
     document.body.classList.add("ui-modal-open");
     document.documentElement.classList.add("ui-modal-open");
+    didLockScrollRef.current = true;
     const autoFocusTarget = panelRef.current?.querySelector<HTMLElement>(
       "[data-autofocus='true']",
     );
@@ -80,8 +84,20 @@ export default function IHModal({
     document.addEventListener("keydown", handleKeydown);
     return () => {
       document.removeEventListener("keydown", handleKeydown);
-      document.body.classList.remove("ui-modal-open");
-      document.documentElement.classList.remove("ui-modal-open");
+      if (didLockScrollRef.current) {
+        didLockScrollRef.current = false;
+        const current = Math.max(
+          0,
+          Number(document.body.dataset.ihModalCount ?? "1") - 1,
+        );
+        if (current === 0) {
+          delete document.body.dataset.ihModalCount;
+          document.body.classList.remove("ui-modal-open");
+          document.documentElement.classList.remove("ui-modal-open");
+        } else {
+          document.body.dataset.ihModalCount = String(current);
+        }
+      }
       lastActive.current?.focus?.();
     };
   }, [isOpen, portalNode]);
@@ -119,7 +135,7 @@ export default function IHModal({
               onClose();
             }}
             aria-label="Close"
-            className="absolute right-4 top-4 z-10 rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-xs font-semibold text-white transition hover:border-white/50"
+            className="ih-modal-close absolute right-4 top-4 z-10 rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-xs font-semibold text-white transition hover:border-white/50"
           >
             ×
           </button>
