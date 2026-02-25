@@ -1864,10 +1864,22 @@ body:has(.owner-portal-shell) {
   overflow: hidden;
 }
 
-.scanner-video {
+.scanner-body--preview {
+  background: transparent;
+}
+
+.scanner-preview-host {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.scanner-capture {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  z-index: 2;
+  position: relative;
 }
 
 .scanner-placeholder {
@@ -1879,6 +1891,7 @@ body:has(.owner-portal-shell) {
   padding: 24px;
   text-align: center;
   color: rgba(148, 163, 184, 0.9);
+  z-index: 2;
 }
 
 .scanner-guide {

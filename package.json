@@ -9,9 +9,11 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@capacitor/app": "^7.0.0",
-    "@capacitor/browser": "^7.0.0",
+    "@capacitor-community/camera-preview": "^7.0.5",
+    "@capacitor/app": "^8.0.1",
+    "@capacitor/browser": "^8.0.1",
     "@capacitor/camera": "^8.0.1",
+    "@capacitor-community/camera-preview": "^7.0.5",
     "@pantrist/capacitor-plugin-ml-kit-text-recognition": "^8.0.0",
     "@supabase/supabase-js": "^2.86.0",
     "clsx": "^2.1.1",

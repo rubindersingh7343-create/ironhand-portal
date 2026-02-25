@@ -13,6 +13,7 @@
     "@capacitor/core": "^8.0.1",
     "@capacitor/ios": "^8.0.1",
     "@capacitor/camera": "^8.0.1",
+    "@capacitor-community/camera-preview": "^7.0.5",
     "@pantrist/capacitor-plugin-ml-kit-text-recognition": "^8.0.0"
   },
   "devDependencies": {

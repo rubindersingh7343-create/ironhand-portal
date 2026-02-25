@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
+import { Camera } from "@capacitor/camera";
+import { CameraPreview } from "@capacitor-community/camera-preview";
 import { CapacitorPluginMlKitTextRecognition as TextRecognition } from "@pantrist/capacitor-plugin-ml-kit-text-recognition";
 import IHModal from "@/components/ui/IHModal";
 import type {
@@ -65,8 +66,11 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     "idle" | "scanning" | "detected" | "error"
   >("idle");
   const [scannerHint, setScannerHint] = useState<string | null>(null);
+  const [previewActive, setPreviewActive] = useState(false);
   const lastAutoSlotRef = useRef<string | null>(null);
   const scanBusyRef = useRef(false);
+  const previewRef = useRef<HTMLDivElement | null>(null);
+  const guideRef = useRef<HTMLDivElement | null>(null);
 
   const endSnapshotStorageKey = useMemo(
     () => `ih:scratchers:endSnapshot:${user.storeNumber}:${snapshotDate}`,
@@ -179,11 +183,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       }
     }
     if (lastCandidate) return lastCandidate;
-
-    const lastShort = [...numericParts]
-      .reverse()
-      .find((part) => part.length === 2 || part.length === 3);
-    return lastShort ?? null;
+    return null;
   }, []);
 
   const pickEndTicketFromResult = useCallback(
@@ -200,6 +200,88 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     },
     [extractEndTicket],
   );
+
+  const cropBase64ToGuide = useCallback(
+    async (base64Image: string) => {
+      const dataUrl = base64Image.startsWith("data:image")
+        ? base64Image
+        : `data:image/jpeg;base64,${base64Image}`;
+      const img = new Image();
+      img.src = dataUrl;
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+      });
+
+      const width = img.naturalWidth || img.width;
+      const height = img.naturalHeight || img.height;
+      if (!width || !height) return { base64: base64Image, dataUrl };
+
+      const guideWidth = width * 0.78;
+      const guideHeight = height * 0.18;
+      const boxX = (width - guideWidth) / 2;
+      const boxY = (height - guideHeight) / 2;
+      const roiWidth = Math.min(width, guideWidth * 1.1);
+      const roiHeight = Math.min(height, guideHeight * 1.8);
+      const roiX = Math.max(0, Math.floor(boxX - (roiWidth - guideWidth) / 2));
+      const roiY = Math.max(0, Math.floor(boxY - (roiHeight - guideHeight) / 2));
+
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.floor(roiWidth);
+      canvas.height = Math.floor(roiHeight);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return { base64: base64Image, dataUrl };
+      ctx.drawImage(
+        img,
+        roiX,
+        roiY,
+        roiWidth,
+        roiHeight,
+        0,
+        0,
+        canvas.width,
+        canvas.height,
+      );
+      const croppedDataUrl = canvas.toDataURL("image/jpeg", 0.92);
+      const croppedBase64 = croppedDataUrl.split(",")[1] ?? base64Image;
+      return { base64: croppedBase64, dataUrl: croppedDataUrl };
+    },
+    [],
+  );
+
+  const startPreview = useCallback(async () => {
+    if (!previewRef.current) return;
+    const rect = previewRef.current.getBoundingClientRect();
+    const width = Math.max(1, Math.round(rect.width));
+    const height = Math.max(1, Math.round(rect.height));
+    try {
+      await CameraPreview.start({
+        parent: "scanner-preview",
+        className: "scanner-preview",
+        position: "rear",
+        width,
+        height,
+        toBack: true,
+        enableZoom: true,
+        disableAudio: true,
+      });
+      setPreviewActive(true);
+    } catch (error) {
+      console.error("Camera preview start failed", error);
+      setScannerStatus("error");
+      setScannerHint("Camera failed to start. Try again.");
+    }
+  }, []);
+
+  const stopPreview = useCallback(async () => {
+    try {
+      await CameraPreview.stop();
+    } catch {
+      // ignore
+    } finally {
+      setPreviewActive(false);
+    }
+  }, []);
 
   const ensureCameraPermissions = useCallback(async () => {
     try {
@@ -224,20 +306,18 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     setScannerHint("Opening camera...");
     try {
       await ensureCameraPermissions();
-      const photo = await Camera.getPhoto({
-        source: CameraSource.Camera,
-        resultType: CameraResultType.Base64,
-        quality: 95,
-        width: 1600,
-        correctOrientation: true,
+      const captured = await CameraPreview.capture({
+        quality: 90,
+        width: 2000,
       });
-      if (!photo?.base64String) {
+      const base64Image = captured?.value;
+      if (!base64Image) {
         throw new Error("Missing image data.");
       }
-      const base64Image = photo.base64String;
-      setScannerImage(`data:image/${photo.format ?? "jpeg"};base64,${base64Image}`);
+      const cropped = await cropBase64ToGuide(base64Image);
+      setScannerImage(cropped.dataUrl);
       const result = await TextRecognition.detectText({
-        base64Image,
+        base64Image: cropped.base64,
         rotation: 0,
       });
       const candidate = pickEndTicketFromResult(result);
@@ -269,7 +349,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     } finally {
       scanBusyRef.current = false;
     }
-  }, [scannerOpen, ensureCameraPermissions, pickEndTicketFromResult]);
+  }, [scannerOpen, ensureCameraPermissions, pickEndTicketFromResult, cropBase64ToGuide]);
 
   const productMap = useMemo(
     () => new Map((bundle?.products ?? []).map((item) => [item.id, item])),
@@ -401,6 +481,20 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     lastAutoSlotRef.current = null;
     captureAndDetectTicket();
   }, [captureAndDetectTicket]);
+
+  useEffect(() => {
+    if (!scannerOpen) {
+      stopPreview();
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      startPreview();
+    }, 150);
+    return () => {
+      window.clearTimeout(timer);
+      stopPreview();
+    };
+  }, [scannerOpen, startPreview, stopPreview]);
 
   const handleActivatePack = async () => {
     if (!activationSlotId) return;
@@ -777,17 +871,18 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
               </button>
             </div>
           </div>
-          <div className="scanner-body">
+          <div className={`scanner-body ${previewActive ? "scanner-body--preview" : ""}`}>
+            <div id="scanner-preview" ref={previewRef} className="scanner-preview-host" />
             {scannerImage ? (
-              <img src={scannerImage} alt="Captured ticket" className="scanner-video" />
+              <img src={scannerImage} alt="Captured ticket" className="scanner-capture" />
             ) : (
               <div className="scanner-placeholder">
                 <p className="text-sm text-slate-300">
-                  Aim the number line and tap Capture.
+                  Line up the number line inside the box, then tap Capture.
                 </p>
               </div>
             )}
-            <div className="scanner-guide" />
+            <div className="scanner-guide" ref={guideRef} />
             {scannerStatus === "scanning" && (
               <div className="scanner-processing">
                 <p className="text-sm text-slate-200">Processing…</p>
