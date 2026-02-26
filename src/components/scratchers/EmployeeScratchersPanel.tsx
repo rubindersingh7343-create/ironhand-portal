@@ -1,9 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Camera } from "@capacitor/camera";
-import { CameraPreview } from "@capacitor-community/camera-preview";
-import { CapacitorPluginMlKitTextRecognition as TextRecognition } from "@pantrist/capacitor-plugin-ml-kit-text-recognition";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import IHModal from "@/components/ui/IHModal";
 import type {
   ScratcherPackEvent,
@@ -57,20 +54,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     receipt: null as File | null,
   });
   const [notice, setNotice] = useState<string | null>(null);
-  const [manualEntry, setManualEntry] = useState<Record<string, boolean>>({});
-  const [scannerOpen, setScannerOpen] = useState(false);
-  const [scannerSlotId, setScannerSlotId] = useState<string | null>(null);
-  const [scannerDetected, setScannerDetected] = useState<string | null>(null);
-  const [scannerImage, setScannerImage] = useState<string | null>(null);
-  const [scannerStatus, setScannerStatus] = useState<
-    "idle" | "scanning" | "detected" | "error"
-  >("idle");
-  const [scannerHint, setScannerHint] = useState<string | null>(null);
-  const [previewActive, setPreviewActive] = useState(false);
-  const lastAutoSlotRef = useRef<string | null>(null);
-  const scanBusyRef = useRef(false);
-  const previewRef = useRef<HTMLDivElement | null>(null);
-  const guideRef = useRef<HTMLDivElement | null>(null);
 
   const endSnapshotStorageKey = useMemo(
     () => `ih:scratchers:endSnapshot:${user.storeNumber}:${snapshotDate}`,
@@ -144,213 +127,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     loadBundle();
   }, [loadBundle]);
 
-  const extractEndTicket = useCallback((rawText: string) => {
-    if (!rawText) return null;
-    const cleaned = rawText
-      .replace(/[Oo]/g, "0")
-      .replace(/[Il]/g, "1")
-      .replace(/[Ss]/g, "5")
-      .replace(/[Bb]/g, "8")
-      .replace(/[–—−]/g, "-");
-
-    const matches = [...cleaned.matchAll(/(\d{4})[\s-]*(\d{6,7})[\s-]*(\d)[\s-]*(\d{2,3})/g)];
-    if (matches.length) {
-      return matches[matches.length - 1][4];
-    }
-
-    const packed = cleaned.replace(/\D+/g, "");
-    const packedMatches = [...packed.matchAll(/(\d{4})(\d{6,7})(\d)(\d{2,3})/g)];
-    if (packedMatches.length) {
-      return packedMatches[packedMatches.length - 1][4];
-    }
-
-    const normalized = cleaned.replace(/[^0-9]+/g, " ").trim();
-    if (!normalized) return null;
-    const numericParts = normalized.split(" ").filter(Boolean);
-    let lastCandidate: string | null = null;
-    for (let i = 0; i + 3 < numericParts.length; i += 1) {
-      const a = numericParts[i];
-      const b = numericParts[i + 1];
-      const c = numericParts[i + 2];
-      const d = numericParts[i + 3];
-      if (
-        a.length === 4 &&
-        (b.length === 6 || b.length === 7) &&
-        c.length === 1 &&
-        (d.length === 2 || d.length === 3)
-      ) {
-        lastCandidate = d;
-      }
-    }
-    if (lastCandidate) return lastCandidate;
-    return null;
-  }, []);
-
-  const pickEndTicketFromResult = useCallback(
-    (result: { text?: string; blocks?: Array<{ lines?: Array<{ text?: string }> }> }) => {
-      const fromText = extractEndTicket(result?.text ?? "");
-      if (fromText) return fromText;
-      const lines = result?.blocks?.flatMap((block) => block.lines ?? []) ?? [];
-      let candidate: string | null = null;
-      for (const line of lines) {
-        const value = extractEndTicket(line.text ?? "");
-        if (value) candidate = value;
-      }
-      return candidate;
-    },
-    [extractEndTicket],
-  );
-
-  const cropBase64ToGuide = useCallback(
-    async (base64Image: string) => {
-      const dataUrl = base64Image.startsWith("data:image")
-        ? base64Image
-        : `data:image/jpeg;base64,${base64Image}`;
-      const img = new Image();
-      img.src = dataUrl;
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-      });
-
-      const width = img.naturalWidth || img.width;
-      const height = img.naturalHeight || img.height;
-      if (!width || !height) return { base64: base64Image, dataUrl };
-
-      const guideWidth = width * 0.78;
-      const guideHeight = height * 0.18;
-      const boxX = (width - guideWidth) / 2;
-      const boxY = (height - guideHeight) / 2;
-      const roiWidth = Math.min(width, guideWidth * 1.1);
-      const roiHeight = Math.min(height, guideHeight * 1.8);
-      const roiX = Math.max(0, Math.floor(boxX - (roiWidth - guideWidth) / 2));
-      const roiY = Math.max(0, Math.floor(boxY - (roiHeight - guideHeight) / 2));
-
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.floor(roiWidth);
-      canvas.height = Math.floor(roiHeight);
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return { base64: base64Image, dataUrl };
-      ctx.drawImage(
-        img,
-        roiX,
-        roiY,
-        roiWidth,
-        roiHeight,
-        0,
-        0,
-        canvas.width,
-        canvas.height,
-      );
-      const croppedDataUrl = canvas.toDataURL("image/jpeg", 0.92);
-      const croppedBase64 = croppedDataUrl.split(",")[1] ?? base64Image;
-      return { base64: croppedBase64, dataUrl: croppedDataUrl };
-    },
-    [],
-  );
-
-  const startPreview = useCallback(async () => {
-    if (!previewRef.current) return;
-    const rect = previewRef.current.getBoundingClientRect();
-    const width = Math.max(1, Math.round(rect.width));
-    const height = Math.max(1, Math.round(rect.height));
-    try {
-      await CameraPreview.start({
-        parent: "scanner-preview",
-        className: "scanner-preview",
-        position: "rear",
-        width,
-        height,
-        toBack: true,
-        enableZoom: true,
-        disableAudio: true,
-      });
-      setPreviewActive(true);
-    } catch (error) {
-      console.error("Camera preview start failed", error);
-      setScannerStatus("error");
-      setScannerHint("Camera failed to start. Try again.");
-    }
-  }, []);
-
-  const stopPreview = useCallback(async () => {
-    try {
-      await CameraPreview.stop();
-    } catch {
-      // ignore
-    } finally {
-      setPreviewActive(false);
-    }
-  }, []);
-
-  const ensureCameraPermissions = useCallback(async () => {
-    try {
-      const current = await Camera.checkPermissions();
-      if (current.camera === "granted") return;
-      const requested = await Camera.requestPermissions({ permissions: ["camera"] });
-      if (requested.camera !== "granted") {
-        throw new Error("camera-denied");
-      }
-    } catch (error) {
-      if (error instanceof Error && error.message === "camera-denied") {
-        throw error;
-      }
-      // Some platforms throw on checkPermissions; fall through to request on use.
-    }
-  }, []);
-
-  const captureAndDetectTicket = useCallback(async () => {
-    if (!scannerOpen || scanBusyRef.current) return;
-    scanBusyRef.current = true;
-    setScannerStatus("scanning");
-    setScannerHint("Opening camera...");
-    try {
-      await ensureCameraPermissions();
-      const captured = await CameraPreview.capture({
-        quality: 90,
-        width: 2000,
-      });
-      const base64Image = captured?.value;
-      if (!base64Image) {
-        throw new Error("Missing image data.");
-      }
-      const cropped = await cropBase64ToGuide(base64Image);
-      setScannerImage(cropped.dataUrl);
-      const result = await TextRecognition.detectText({
-        base64Image: cropped.base64,
-        rotation: 0,
-      });
-      const candidate = pickEndTicketFromResult(result);
-      if (candidate) {
-        setScannerDetected(candidate);
-        setScannerStatus("detected");
-        return;
-      }
-      setScannerStatus("idle");
-      setScannerHint("No match yet. Try again or enter manually.");
-    } catch (error) {
-      console.error("OCR capture failed", error);
-      let message = "Capture failed. Try again.";
-      if (error instanceof Error) {
-        if (error.message === "camera-denied") {
-          message = "Camera permission denied. Enable it in Settings.";
-        } else if (error.message.toLowerCase().includes("cancel")) {
-          message = "Capture canceled. Try again.";
-        } else if (
-          error.message.toLowerCase().includes("not implemented") ||
-          error.message.toLowerCase().includes("not available") ||
-          error.message.toLowerCase().includes("no implementation")
-        ) {
-          message = "Camera unavailable in this build. Reinstall the app.";
-        }
-      }
-      setScannerStatus("error");
-      setScannerHint(message);
-    } finally {
-      scanBusyRef.current = false;
-    }
-  }, [scannerOpen, ensureCameraPermissions, pickEndTicketFromResult, cropBase64ToGuide]);
-
   const productMap = useMemo(
     () => new Map((bundle?.products ?? []).map((item) => [item.id, item])),
     [bundle?.products],
@@ -373,81 +149,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     return showInactive ? slots : slots.filter((slot) => slot.isActive);
   }, [bundle?.slots, showInactive]);
 
-  const scanTargets = useMemo(() => {
-    return [...visibleSlots]
-      .filter((slot) => {
-        if (!slot.isActive) return false;
-        if (!slot.activePackId) return false;
-        const pack = packMap.get(slot.activePackId);
-        return Boolean(pack && pack.status === "active");
-      })
-      .sort((a, b) => a.slotNumber - b.slotNumber);
-  }, [visibleSlots, packMap]);
-
-  const scannerSlot = useMemo(() => {
-    if (!scannerSlotId) return null;
-    const slot = visibleSlots.find((entry) => entry.id === scannerSlotId) ?? null;
-    if (!slot) return null;
-    const pack = slot.activePackId ? packMap.get(slot.activePackId) : null;
-    const product = pack ? productMap.get(pack.productId) : null;
-    return { slot, product };
-  }, [scannerSlotId, visibleSlots, packMap, productMap]);
-
-  const closeScanner = useCallback(() => {
-    setScannerOpen(false);
-    setScannerSlotId(null);
-    setScannerDetected(null);
-    setScannerImage(null);
-    setScannerStatus("idle");
-    setScannerHint(null);
-    lastAutoSlotRef.current = null;
-  }, []);
-
-  const openScannerForSlot = useCallback((slotId: string) => {
-    setScannerSlotId(slotId);
-    setScannerDetected(null);
-    setScannerImage(null);
-    setScannerStatus("idle");
-    setScannerHint(null);
-    setScannerOpen(true);
-    lastAutoSlotRef.current = null;
-  }, []);
-
-  const getNextScanSlotId = useCallback(
-    (currentId: string | null) => {
-      if (!scanTargets.length) return null;
-      const currentIndex = scanTargets.findIndex((slot) => slot.id === currentId);
-      const startIndex = currentIndex >= 0 ? currentIndex + 1 : 0;
-      for (let i = startIndex; i < scanTargets.length; i += 1) {
-        const slotId = scanTargets[i].id;
-        if (!String(endValues[slotId] ?? "").trim()) {
-          return slotId;
-        }
-      }
-      return null;
-    },
-    [scanTargets, endValues],
-  );
-
-  const applyScannedValue = useCallback(
-    (slotId: string, value: string) => {
-      setEndValue(slotId, value);
-      setManualEntry((prev) => ({ ...prev, [slotId]: false }));
-      setScannerDetected(null);
-      setScannerImage(null);
-      setScannerStatus("idle");
-      setScannerHint(null);
-      const nextSlotId = getNextScanSlotId(slotId);
-      if (nextSlotId) {
-        setScannerSlotId(nextSlotId);
-        lastAutoSlotRef.current = null;
-        return;
-      }
-      closeScanner();
-    },
-    [setEndValue, getNextScanSlotId, closeScanner],
-  );
-
   const openActivationForSlot = (slotId: string) => {
     const slot = bundle?.slots?.find((entry) => entry.id === slotId);
     const defaultProductId = slot?.defaultProductId ?? "";
@@ -467,34 +168,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     setReturnNote("");
     setReturnOpen(true);
   };
-
-  const confirmScannerValue = useCallback(() => {
-    if (!scannerSlotId || !scannerDetected) return;
-    applyScannedValue(scannerSlotId, scannerDetected);
-  }, [scannerSlotId, scannerDetected, applyScannedValue]);
-
-  const rescanTicket = useCallback(() => {
-    setScannerDetected(null);
-    setScannerImage(null);
-    setScannerStatus("idle");
-    setScannerHint(null);
-    lastAutoSlotRef.current = null;
-    captureAndDetectTicket();
-  }, [captureAndDetectTicket]);
-
-  useEffect(() => {
-    if (!scannerOpen) {
-      stopPreview();
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      startPreview();
-    }, 150);
-    return () => {
-      window.clearTimeout(timer);
-      stopPreview();
-    };
-  }, [scannerOpen, startPreview, stopPreview]);
 
   const handleActivatePack = async () => {
     if (!activationSlotId) return;
@@ -652,7 +325,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
             Slot snapshots
           </h3>
           <p className="mt-1 text-sm text-slate-300">
-            Scan end-of-shift ticket numbers. Start snapshot is set by owner/manager.
+            Enter end-of-shift ticket numbers. Start snapshot is set by owner/manager.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -697,7 +370,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
         <span className="text-slate-200">
           End snapshot:{" "}
           <span className="text-slate-300">
-            scan the end ticket inside each active slot (auto-submits with shift package)
+            fill the end ticket inside each active slot (auto-submits with shift package)
           </span>
         </span>
       </div>
@@ -711,39 +384,37 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
           No scratcher slots are configured yet. Ask a manager to initialize slots.
         </div>
       ) : (
-        <div className="grid gap-3 min-[420px]:grid-cols-2">
+        <div className="grid gap-3">
           {visibleSlots.map((slot) => {
             const packId = slot.activePackId ?? null;
             const pack = packId ? packMap.get(packId) : null;
             const baselineItem = baselineMap.get(slot.id);
-            const product = pack ? productMap.get(pack.productId) : null;
-            const defaultProduct = slot.defaultProductId
+            const baselineProduct = slot.defaultProductId
               ? productMap.get(slot.defaultProductId)
               : null;
-            const hasActivePack = Boolean(pack && pack.status === "active");
-            const statusLabel = !slot.isActive
-              ? "inactive"
-              : hasActivePack
-                ? "active"
-                : "inactive";
-            const label = hasActivePack
-              ? product?.name ?? "Active pack"
-              : "No active pack";
-            const price = hasActivePack
-              ? product
-                ? `$${product.price}`
-                : defaultProduct
-                  ? `$${defaultProduct.price}`
-                  : "—"
-              : defaultProduct
-                ? `$${defaultProduct.price}`
+            const baselineActive = !pack && baselineExists;
+            const product = pack
+              ? productMap.get(pack.productId)
+              : baselineActive
+                ? baselineProduct
+                : null;
+            const label =
+              product?.name ?? (baselineActive ? "Baseline pack" : "No active pack");
+            const price = product
+              ? `$${product.price}`
+              : baselineActive
+                ? "Price not set"
                 : "—";
-            const endValue = endValues[slot.id] ?? "";
-            const manualMode = manualEntry[slot.id] ?? false;
+            const statusLabel =
+              pack?.status === "active"
+                ? "active"
+                : baselineActive
+                  ? "active"
+                  : "inactive";
             return (
-              <div key={slot.id} className="h-full rounded-2xl border border-white/10 bg-white/5 p-3 sm:p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
+              <div key={slot.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
                     <p className="text-sm font-semibold text-white">
                       Slot {slot.slotNumber}
                     </p>
@@ -752,82 +423,47 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-slate-200">
+                    <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-slate-200">
                       {statusLabel}
                     </span>
-                    {slot.isActive && hasActivePack && pack ? (
+                    {pack?.status === "active" ? (
                       <button
                         type="button"
                         className="ui-button ui-button-ghost"
                         onClick={() => openReturnForPack(pack.id)}
                       >
-                        <span className="min-[420px]:hidden">Return pack</span>
-                        <span className="hidden min-[420px]:inline">Return</span>
+                        Return pack
                       </button>
-                    ) : slot.isActive ? (
+                    ) : !baselineActive ? (
                       <button
                         type="button"
                         className="ui-button ui-button-ghost"
                         onClick={() => openActivationForSlot(slot.id)}
                       >
-                        <span className="min-[420px]:hidden">Activate pack</span>
-                        <span className="hidden min-[420px]:inline">Activate</span>
+                        Activate pack
                       </button>
                     ) : null}
                   </div>
                 </div>
 
-                {slot.isActive && hasActivePack && (
-                  <div className="mt-3 space-y-2">
-                    <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-300">
-                      <span>End ticket</span>
-                      {endValue ? (
-                        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white">
-                          {endValue}
-                        </span>
-                      ) : null}
-                    </div>
-                    {!manualMode ? (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          className="ui-button"
-                          onClick={() => openScannerForSlot(slot.id)}
-                        >
-                          {endValue ? "Rescan end ticket" : "Scan end ticket"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setManualEntry((prev) => ({ ...prev, [slot.id]: true }))
-                          }
-                          className="text-xs text-slate-300 underline"
-                        >
-                          Enter manually
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={endValue}
-                          onChange={(event) => setEndValue(slot.id, event.target.value)}
-                          placeholder="End ticket"
-                          className="ui-field ui-field--slim"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => openScannerForSlot(slot.id)}
-                          className="text-xs text-slate-300 underline"
-                        >
-                          Scan instead
-                        </button>
-                      </div>
-                    )}
+                {slot.isActive && (
+                  <div className="mt-3">
+                    <label className="flex flex-col gap-2 text-sm text-slate-200">
+                      <span className="text-xs uppercase tracking-[0.2em] text-slate-300">
+                        End ticket
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={endValues[slot.id] ?? ""}
+                        onChange={(event) => setEndValue(slot.id, event.target.value)}
+                        placeholder="Ending ticket number"
+                        className="ui-field ui-field--slim"
+                      />
+                    </label>
                   </div>
                 )}
-                {slot.isActive && baselineExists && !baselineItem && (
+                {baselineActive && !baselineItem && (
                   <p className="mt-2 text-xs text-amber-200/90">
                     Baseline ticket missing for this slot. Ask a manager to refresh the baseline.
                   </p>
@@ -837,137 +473,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
           })}
         </div>
       )}
-
-      <IHModal
-        isOpen={scannerOpen}
-        onClose={closeScanner}
-        allowOutsideClose
-        panelClassName="scanner-modal"
-        backdropClassName="scanner-backdrop"
-        showCloseButton={false}
-      >
-        <div className="scanner-shell">
-          <div className="scanner-header">
-            <div>
-              <p className="text-xs uppercase tracking-[0.32em] text-slate-400">
-                Scan end ticket
-              </p>
-              <h3 className="mt-1 text-lg font-semibold text-white">
-                {scannerSlot?.slot
-                  ? `Slot ${scannerSlot.slot.slotNumber}`
-                  : "Scratchers"}
-              </h3>
-              {scannerSlot?.product?.name && (
-                <p className="text-xs text-slate-400">{scannerSlot.product.name}</p>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={closeScanner}
-                className="ui-button ui-button-ghost"
-              >
-                Stop
-              </button>
-            </div>
-          </div>
-          <div className={`scanner-body ${previewActive ? "scanner-body--preview" : ""}`}>
-            <div id="scanner-preview" ref={previewRef} className="scanner-preview-host" />
-            {scannerImage ? (
-              <img src={scannerImage} alt="Captured ticket" className="scanner-capture" />
-            ) : (
-              <div className="scanner-placeholder">
-                <p className="text-sm text-slate-300">
-                  Line up the number line inside the box, then tap Capture.
-                </p>
-              </div>
-            )}
-            <div className="scanner-guide" ref={guideRef} />
-            {scannerStatus === "scanning" && (
-              <div className="scanner-processing">
-                <p className="text-sm text-slate-200">Processing…</p>
-              </div>
-            )}
-            {scannerHint && scannerStatus !== "detected" && (
-              <div className="scanner-hint">
-                <p className="text-sm text-slate-100">{scannerHint}</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="ui-button"
-                    onClick={captureAndDetectTicket}
-                  >
-                    Try again
-                  </button>
-                  {scannerSlotId && (
-                    <button
-                      type="button"
-                      className="ui-button ui-button-ghost"
-                      onClick={() => {
-                        setManualEntry((prev) => ({
-                          ...prev,
-                          [scannerSlotId]: true,
-                        }));
-                        closeScanner();
-                      }}
-                    >
-                      Enter manually
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-            {scannerStatus === "detected" && scannerDetected && (
-              <div className="scanner-detected">
-                <p className="text-xs uppercase tracking-[0.28em] text-slate-300">
-                  Detected
-                </p>
-                <p className="mt-2 text-3xl font-semibold text-white">
-                  {scannerDetected}
-                </p>
-                <div className="mt-4 flex flex-wrap justify-center gap-3">
-                  <button type="button" className="ui-button" onClick={confirmScannerValue}>
-                    Confirm
-                  </button>
-                  <button type="button" className="ui-button ui-button-ghost" onClick={rescanTicket}>
-                    Rescan
-                  </button>
-                </div>
-                <p className="mt-3 text-xs text-slate-400">
-                  Auto-advancing to next slot after confirm.
-                </p>
-              </div>
-            )}
-            {scannerStatus !== "detected" && (
-              <div className="scanner-actions">
-                <button
-                  type="button"
-                  className="ui-button"
-                  onClick={captureAndDetectTicket}
-                  disabled={scannerStatus === "scanning"}
-                >
-                  Capture
-                </button>
-                {scannerSlotId && (
-                  <button
-                    type="button"
-                    className="ui-button ui-button-ghost"
-                    onClick={() => {
-                      setManualEntry((prev) => ({
-                        ...prev,
-                        [scannerSlotId]: true,
-                      }));
-                      closeScanner();
-                    }}
-                  >
-                    Enter manually
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </IHModal>
 
       <IHModal isOpen={activationOpen} onClose={() => setActivationOpen(false)} allowOutsideClose>
         <div className="space-y-4">

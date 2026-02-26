@@ -33,6 +33,8 @@ const controller = {
   pendingGreeting: false,
   pendingListenAfterGreet: false,
   desiredMicEnabled: false,
+  responseInFlight: false,
+  lastResponseCreateAt: 0,
   peer: null as RTCPeerConnection | null,
   dataChannel: null as RTCDataChannel | null,
   audioSender: null as RTCRtpSender | null,
@@ -175,6 +177,8 @@ const stop = () => {
   controller.pendingGreeting = false;
   controller.pendingListenAfterGreet = false;
   controller.desiredMicEnabled = false;
+  controller.responseInFlight = false;
+  controller.lastResponseCreateAt = 0;
   controller.needsPlaybackKick = false;
   notify();
 };
@@ -255,6 +259,8 @@ const sendGreeting = () => {
     controller.pendingGreeting = true;
     return;
   }
+  controller.responseInFlight = true;
+  controller.lastResponseCreateAt = Date.now();
   controller.pendingGreeting = false;
   controller.greeted = true;
   controller.pendingListenAfterGreet = true;
@@ -280,13 +286,63 @@ const sendVadConfig = () => {
             threshold,
             prefix_padding_ms: 300,
             silence_duration_ms,
-            create_response: true,
+            // We'll create responses manually after we see a clear user intent.
+            create_response: false,
             interrupt_response: true,
           },
         },
       },
     },
   });
+};
+
+const normalizeTranscript = (value: unknown) =>
+  String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const looksLikeFiller = (text: string) => {
+  const normalized = text.toLowerCase().trim();
+  if (!normalized) return true;
+  if (normalized.length < 3) return true;
+  if (/^(um+|uh+|erm+|hmm+|mm+|ah+|eh+)$/.test(normalized)) return true;
+  return false;
+};
+
+const looksLikeIntent = (text: string) => {
+  const normalized = text.toLowerCase();
+  if (!normalized.trim()) return false;
+  // Short confirmations still matter in a voice back-and-forth.
+  if (/^(ok|okay|yes|no|yeah|yep|nope|sure|correct|right)$/i.test(normalized.trim()))
+    return true;
+  if (normalized.length >= 12) return true;
+  if (/[?]/.test(normalized)) return true;
+  if (/\b(what|why|how|show|tell|check|compare|pull up|give me|can you|do we|did we|is there|are there)\b/.test(normalized))
+    return true;
+  if (/\b(sales|gross|net|profit|margin|pos|transactions|items)\b/.test(normalized))
+    return true;
+  if (/\b(surveillance|camera|incident|theft|critical|investigation)\b/.test(normalized))
+    return true;
+  if (/\b(scratchers?|invoice|orders?|hours?|cases?|advanced)\b/.test(normalized))
+    return true;
+  if (/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b|\b\d{4}-\d{2}-\d{2}\b/.test(normalized))
+    return true;
+  return false;
+};
+
+const extractInputTranscript = (payload: any): string => {
+  // Common Realtime shapes:
+  // - { type: "conversation.item.input_audio_transcription.completed", transcript: "..." }
+  // - { type: "...", transcription: { text: "..." } }
+  // - { type: "...", item: { content: [{ transcript: "..." }] } }
+  return normalizeTranscript(
+    payload?.transcript ??
+      payload?.text ??
+      payload?.transcription?.text ??
+      payload?.item?.content?.[0]?.transcript ??
+      payload?.item?.content?.[0]?.text ??
+      "",
+  );
 };
 
 const clearAudioDoneFallback = () => {
@@ -419,6 +475,29 @@ const start = async (
       try {
         const payload = JSON.parse(event.data);
         const type = payload?.type;
+        if (
+          typeof type === "string" &&
+          type.includes("input_audio_transcription") &&
+          (type.endsWith("completed") || type.endsWith("done"))
+        ) {
+          const transcript = extractInputTranscript(payload);
+          // Ignore background noise / filler. Only create a response when there's a real intent.
+          const now = Date.now();
+          const recentlyTriggered = now - controller.lastResponseCreateAt < 800;
+          if (
+            !controller.responseInFlight &&
+            !recentlyTriggered &&
+            !looksLikeFiller(transcript) &&
+            looksLikeIntent(transcript)
+          ) {
+            controller.responseInFlight = true;
+            controller.lastResponseCreateAt = now;
+            sendRealtimeEvent({
+              type: "response.create",
+              response: { output_modalities: ["audio"] },
+            });
+          }
+        }
         // While the assistant is speaking, keep the mic muted to avoid feedback loops.
         // Do not stop/recreate the mic stream each turn (that causes the distracting beep).
         if (type === "response.created" || type === "response.audio.start") {
@@ -428,10 +507,12 @@ const start = async (
         // When a response finishes, continue listening automatically if voice mode is "on".
         // IMPORTANT (iPhone fix): prefer audio.done for mic state transitions.
         if (type === "response.done") {
+          controller.responseInFlight = false;
           scheduleAudioDoneFallback();
         }
 
         if (type === "response.audio.done") {
+          controller.responseInFlight = false;
           clearAudioDoneFallback();
           if (controller.pendingListenAfterGreet) {
             controller.pendingListenAfterGreet = false;

@@ -338,6 +338,9 @@ export async function POST(request: Request) {
     "Be concise but not abrupt: default to 1-4 short sentences. Use bullets only when clarity improves. " +
     "Never invent numbers or claim totals unless they are explicitly present in the store context JSON. " +
     "If the user asks for profit or margin: use report_margins_percent (percent). Estimated profit dollars can be computed as amount * marginPercent / 100. " +
+    "Before you answer, confirm the user's intent category. Decide whether the request is about Sales, Surveillance, or Another category. " +
+    'If you are not sure which one, ask exactly: "Quick check — is this about sales, surveillance, or something else?" Then stop. ' +
+    "Do not answer the underlying question until the category is confirmed. " +
     "Never speak unprompted. Only respond after the user has asked a question or made a request. " +
     "Never switch languages unless the user's most recent message is clearly in that language. If unsure, use the primary language. " +
     "If asked for data you don't have, say what is missing and offer the next best available info. " +
@@ -378,7 +381,8 @@ export async function POST(request: Request) {
             threshold: 0.45,
             prefix_padding_ms: 300,
             silence_duration_ms: 250,
-            create_response: true,
+            // We'll create responses manually after we see a clear user intent.
+            create_response: false,
             interrupt_response: true,
           },
         },
