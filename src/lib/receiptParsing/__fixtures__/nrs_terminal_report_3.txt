@@ -1,0 +1,34 @@
+NRS Terminal Reports
+02/12/2026 08:00 AM to 02/13/2026 08:00 AM
+
+Sales
+Gross Sales  98  $2,345.67
+Cash             $500.00
+Check             $25.00
+Credit/Debit    $1,820.67
+Total Tax and Fees  $200.00
+
+Taxes & Fees Collection Summary
+Taxable Sales  $2,000.00
+Tax             $195.00
+CRV (Fee)         $5.00
+
+Cashbacks
+Cash Back From Lottery $10.00
+Cash Back From Scratch $15.00
+
+Net Product Sales
+Beer 5 $60.00
+Liquor 2 $80.00
+Tobacco 1 $12.00
+Soda 3 $9.00
+
+Net Other Sales
+Scratchers $102.48
+Lotto $1,000.00
+
+Other Information
+Lottery Redemption $600.00
+Scratch Off Redemption $200.00
+
+Net Sales $2,145.67

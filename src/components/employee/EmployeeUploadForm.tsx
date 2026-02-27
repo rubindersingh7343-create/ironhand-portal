@@ -12,8 +12,14 @@ import { supabasePublic, publicBucket } from "@/lib/supabaseClient";
 import clsx from "clsx";
 import { getDefaultReportItems, normalizeReportItems } from "@/lib/reportConfig";
 import EmployeeScratchersPanel from "@/components/scratchers/EmployeeScratchersPanel";
-import IHModal from "@/components/ui/IHModal";
 import InvoiceUploadCard from "@/components/invoices/InvoiceUploadCard";
+import ShiftReceiptScanModal, {
+  type ShiftReceiptSalesFields,
+} from "@/components/employee/ShiftReceiptScanModal";
+import ShiftTerminalReportAutoFillModal, {
+  type ReceiptParseMeta,
+} from "@/components/employee/ShiftTerminalReportAutoFillModal";
+import type { NrsTerminalReportJson } from "@/lib/receiptParsing/nrsTerminalReport";
 
 interface EmployeeUploadFormProps {
   user: SessionUser;
@@ -23,7 +29,6 @@ interface EmployeeUploadFormProps {
 
 const requiredFiles = [
   { id: "cashPhoto", label: "Cash Count Photo", accept: "image/*" },
-  { id: "salesPhoto", label: "Sales Report Photo", accept: "image/*" },
 ];
 
 export default function EmployeeUploadForm({
@@ -52,89 +57,25 @@ export default function EmployeeUploadForm({
   const [hoursStartTime, setHoursStartTime] = useState("");
   const [hoursEndTime, setHoursEndTime] = useState("");
   const [hoursBreakMinutes, setHoursBreakMinutes] = useState<number>(0);
-  const [scratcherRowPhotos, setScratcherRowPhotos] = useState<Array<File | null>>(
-    () => Array.from({ length: 2 }).map(() => null),
-  );
-  const [scratcherRowPreviewUrls, setScratcherRowPreviewUrls] = useState<
-    Array<string | null>
-  >(() => Array.from({ length: 2 }).map(() => null));
-  const [scratcherCaptureOpen, setScratcherCaptureOpen] = useState(false);
-  const [scratcherCaptureRow, setScratcherCaptureRow] = useState<number>(0);
-  const [scratcherPreviewUrl, setScratcherPreviewUrl] = useState<string | null>(
-    null,
-  );
-  const [scratcherTempFile, setScratcherTempFile] = useState<File | null>(null);
-  const scratcherCaptureInputRef = useRef<HTMLInputElement | null>(null);
-  const scratcherTempUrlRef = useRef<string | null>(null);
-  const scratcherRowPreviewUrlsRef = useRef<Array<string | null>>(
-    Array.from({ length: 2 }).map(() => null),
-  );
   const [reportConfig, setReportConfig] = useState<ReportItemConfig[]>(
     getDefaultReportItems(),
   );
   const [reportValues, setReportValues] = useState<Record<string, string>>({});
   const [customValues, setCustomValues] = useState<Record<string, string>>({});
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
-
-  const scratcherCapturedCount = useMemo(
-    () => scratcherRowPhotos.filter(Boolean).length,
-    [scratcherRowPhotos],
+  const [receiptScanOpen, setReceiptScanOpen] = useState(false);
+  const [terminalScanOpen, setTerminalScanOpen] = useState(false);
+  const [receiptAutofillKeys, setReceiptAutofillKeys] = useState<string[]>([]);
+  const [receiptAutofillConfirmed, setReceiptAutofillConfirmed] = useState(true);
+  const [receiptPhotoDataUrl, setReceiptPhotoDataUrl] = useState<string | null>(
+    null,
   );
-  const scratcherFirstMissingRow = useMemo(() => {
-    const idx = scratcherRowPhotos.findIndex((file) => !file);
-    return idx >= 0 ? idx : 0;
-  }, [scratcherRowPhotos]);
-
-  useEffect(() => {
-    return () => {
-      if (scratcherTempUrlRef.current) {
-        URL.revokeObjectURL(scratcherTempUrlRef.current);
-        scratcherTempUrlRef.current = null;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    scratcherRowPreviewUrlsRef.current = scratcherRowPreviewUrls;
-  }, [scratcherRowPreviewUrls]);
-
-  useEffect(() => {
-    return () => {
-      scratcherRowPreviewUrlsRef.current.forEach((url) => {
-        if (url) URL.revokeObjectURL(url);
-      });
-    };
-  }, []);
-
-  const resetScratcherTemp = useCallback(() => {
-    setScratcherTempFile(null);
-    if (scratcherTempUrlRef.current) {
-      URL.revokeObjectURL(scratcherTempUrlRef.current);
-      scratcherTempUrlRef.current = null;
-    }
-    setScratcherPreviewUrl(null);
-  }, []);
-
-  const closeScratcherCapture = useCallback(() => {
-    resetScratcherTemp();
-    setScratcherCaptureOpen(false);
-  }, [resetScratcherTemp]);
-
-  const openScratcherCapture = useCallback(
-    (row: number) => {
-      resetScratcherTemp();
-      setScratcherCaptureRow(row);
-      setScratcherCaptureOpen(true);
-    },
-    [resetScratcherTemp],
+  const [receiptParseMeta, setReceiptParseMeta] = useState<ReceiptParseMeta | null>(
+    null,
   );
-
-  const triggerScratcherCamera = () => {
-    const input = scratcherCaptureInputRef.current;
-    if (!input) return;
-    input.value = "";
-    input.click();
-  };
+  const [receiptParsedJson, setReceiptParsedJson] = useState<NrsTerminalReportJson | null>(
+    null,
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -216,11 +157,119 @@ export default function EmployeeUploadForm({
     return null;
   }, [status, errorMessage]);
 
+  const receiptAutofillKeySet = useMemo(
+    () => new Set(receiptAutofillKeys),
+    [receiptAutofillKeys],
+  );
+
+  const receiptNeedsConfirm =
+    receiptAutofillKeys.length > 0 && !receiptAutofillConfirmed;
+
+  const receiptNeedsPhoto = !receiptPhotoDataUrl;
+
+  const cashFieldEnabled = useMemo(() => {
+    const cashItem = reportConfig.find((item) => item.key === "cash");
+    return cashItem ? Boolean(cashItem.enabled) : true;
+  }, [reportConfig]);
+
+  const cashNeedsEntry =
+    cashFieldEnabled && !String(reportValues.cash ?? "").trim();
+
   const toNumber = useCallback((value: string) => {
     const trimmed = value.trim();
     if (!trimmed) return 0;
     const parsed = Number(trimmed);
     return Number.isFinite(parsed) ? parsed : 0;
+  }, []);
+
+  const applyReceiptScan = useCallback((result: ShiftReceiptSalesFields) => {
+    const format = (value: number | null) =>
+      value === null || !Number.isFinite(value) ? null : value.toFixed(2);
+
+    const updates: Array<[string, string]> = [];
+    const gross = format(result.gross);
+    const scr = format(result.scr);
+    const lotto = format(result.lotto);
+    const liquor = format(result.liquor);
+    const beer = format(result.beer);
+    const cig = format(result.cigarettes);
+    const tobacco = format(result.tobacco);
+    const gas = format(result.gas);
+    const lottoPo = format(result.lotto_payout);
+
+    if (gross !== null) updates.push(["gross", gross]);
+    if (scr !== null) updates.push(["scr", scr]);
+    if (lotto !== null) updates.push(["lotto", lotto]);
+    if (liquor !== null) updates.push(["liquor", liquor]);
+    if (beer !== null) updates.push(["beer", beer]);
+    if (cig !== null) updates.push(["cig", cig]);
+    if (tobacco !== null) updates.push(["tobacco", tobacco]);
+    if (gas !== null) updates.push(["gas", gas]);
+    if (lottoPo !== null) updates.push(["lottoPo", lottoPo]);
+
+    if (updates.length === 0) {
+      setReceiptAutofillKeys([]);
+      setReceiptAutofillConfirmed(true);
+      return;
+    }
+
+    setReportValues((prev) => {
+      const next = { ...prev };
+      for (const [key, value] of updates) {
+        // Sales-only: never touch cash/atm/deposit.
+        if (key === "cash" || key === "atm" || key === "deposit") continue;
+        next[key] = value;
+      }
+      return next;
+    });
+
+    setReceiptAutofillKeys(updates.map(([key]) => key));
+    setReceiptAutofillConfirmed(false);
+  }, []);
+
+  const applyTerminalReceiptScan = useCallback((result: NrsTerminalReportJson) => {
+    const format = (value: number | null) =>
+      value === null || !Number.isFinite(value) ? null : value.toFixed(2);
+
+    const updates: Array<[string, string]> = [];
+    const gross = format(result.gross_sales);
+    const scr = format(result.scratcher_sales);
+    const lotto = format(result.lotto_sales);
+    const lottoPo = format(result.lotto_payout);
+    const cash = format(result.cash);
+
+    const liquor = format(result.categories?.liquor ?? null);
+    const beer = format(result.categories?.beer ?? null);
+    const cig = format(result.categories?.cigarettes ?? null);
+    const tobacco = format(result.categories?.tobacco ?? null);
+
+    if (gross !== null) updates.push(["gross", gross]);
+    if (scr !== null) updates.push(["scr", scr]);
+    if (lotto !== null) updates.push(["lotto", lotto]);
+    if (liquor !== null) updates.push(["liquor", liquor]);
+    if (beer !== null) updates.push(["beer", beer]);
+    if (cig !== null) updates.push(["cig", cig]);
+    if (tobacco !== null) updates.push(["tobacco", tobacco]);
+    if (lottoPo !== null) updates.push(["lottoPo", lottoPo]);
+    if (cash !== null) updates.push(["cash", cash]);
+
+    if (updates.length === 0) {
+      setReceiptAutofillKeys([]);
+      setReceiptAutofillConfirmed(true);
+      return;
+    }
+
+    setReportValues((prev) => {
+      const next = { ...prev };
+      for (const [key, value] of updates) {
+        next[key] = value;
+      }
+      return next;
+    });
+
+    setReceiptAutofillKeys(updates.map(([key]) => key));
+    // The terminal report flow already includes a review/confirm step in the modal.
+    setReceiptAutofillConfirmed(true);
   }, []);
 
   const hoursPreview = useMemo(() => {
@@ -269,6 +318,20 @@ export default function EmployeeUploadForm({
       }
     },
     [inputOrder],
+  );
+
+  const onReportFieldChange = useCallback(
+    (field: ReportItemConfig, nextValue: string) => {
+      if (field.isCustom) {
+        setCustomValues((prev) => ({ ...prev, [field.key]: nextValue }));
+        return;
+      }
+      setReportValues((prev) => ({ ...prev, [field.key]: nextValue }));
+      if (receiptAutofillKeySet.has(field.key)) {
+        setReceiptAutofillConfirmed(false);
+      }
+    },
+    [receiptAutofillKeySet],
   );
 
   const fetchRecentUploads = useCallback(async () => {
@@ -352,6 +415,13 @@ export default function EmployeeUploadForm({
       }
     }
 
+    if (cashFieldEnabled && !String(reportValues.cash ?? "").trim()) {
+      setStatus("error");
+      setErrorMessage("Enter the cash amount.");
+      setUploadingShift(false);
+      return;
+    }
+
     let endSnapshotItems: Array<{ slotId: string; ticketValue: string }> | null = null;
     if (isEmployee) {
       try {
@@ -407,16 +477,41 @@ export default function EmployeeUploadForm({
       }
     }
 
-    const cash = formElement.cashPhoto?.files?.[0];
-    const sales = formElement.salesPhoto?.files?.[0];
-    const scratcherPhotos = scratcherRowPhotos.filter(
-      (file): file is File => Boolean(file),
-    );
-    if (scratcherPhotos.length !== 2 || !cash || !sales) {
+    const cash = formElement.cashPhoto?.files?.[0] as File | undefined;
+    if (!cash) {
       setStatus("error");
-      setErrorMessage(
-        "Please upload 2 scratcher photos (rows 1-4 and 5-8), plus cash + sales photos.",
+      setErrorMessage("Please upload a Cash Count Photo.");
+      setUploadingShift(false);
+      return;
+    }
+
+    if (!receiptPhotoDataUrl) {
+      setStatus("error");
+      setErrorMessage("Scan the receipt to attach the sales report photo.");
+      setUploadingShift(false);
+      return;
+    }
+
+    const dataUrlToFile = async (dataUrl: string, filename: string) => {
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      return new File([blob], filename, {
+        type: blob.type || "image/jpeg",
+      });
+    };
+
+    const dateForName = isEmployee
+      ? hoursDate
+      : new Date().toISOString().slice(0, 10);
+    let sales: File;
+    try {
+      sales = await dataUrlToFile(
+        receiptPhotoDataUrl,
+        `sales-report-${user.storeNumber}-${dateForName}.jpg`,
       );
+    } catch {
+      setStatus("error");
+      setErrorMessage("Unable to attach the receipt photo. Please rescan.");
       setUploadingShift(false);
       return;
     }
@@ -429,11 +524,6 @@ export default function EmployeeUploadForm({
     }
 
     const files = [
-      ...scratcherPhotos.map((file, index) => ({
-        file,
-        label: index === 0 ? "Scratcher Rows 1-4" : "Scratcher Rows 5-8",
-        field: `scratcherRow${index + 1}`,
-      })),
       { file: cash, label: "Cash Count Photo", field: "cashPhoto" },
       { file: sales, label: "Sales Report Photo", field: "salesPhoto" },
     ];
@@ -492,21 +582,17 @@ export default function EmployeeUploadForm({
       .filter((field) => field.label);
 
     // Build metadata and submit JSON payload
-    const scratcherPhotosMeta = uploads
-      .slice(0, 2)
-      .map((upload: any, index: number) => ({
-        id: upload.path,
-        path: upload.path,
-        originalName: files[index].file.name,
-        mimeType: files[index].file.type,
-        size: files[index].file.size,
-        label: files[index].label,
-        kind: "image" as const,
-      }));
     const payload = {
       shiftNotes: formElement.shiftNotes?.value ?? "",
       reportFields,
       customFields,
+      receiptParse:
+        receiptParseMeta && receiptParsedJson
+          ? {
+              ...receiptParseMeta,
+              parsed_json: receiptParsedJson,
+            }
+          : null,
       storeId: isOwner ? user.storeNumber : undefined,
       hours: isEmployee
         ? {
@@ -523,23 +609,22 @@ export default function EmployeeUploadForm({
           }
         : undefined,
       files: {
-        scratcherPhotos: scratcherPhotosMeta,
         cashPhoto: {
-          id: uploads[2].path,
-          path: uploads[2].path,
-          originalName: files[2].file.name,
-          mimeType: files[2].file.type,
-          size: files[2].file.size,
-          label: files[2].label,
+          id: uploads[0].path,
+          path: uploads[0].path,
+          originalName: files[0].file.name,
+          mimeType: files[0].file.type,
+          size: files[0].file.size,
+          label: files[0].label,
           kind: "image",
         },
         salesPhoto: {
-          id: uploads[3].path,
-          path: uploads[3].path,
-          originalName: files[3].file.name,
-          mimeType: files[3].file.type,
-          size: files[3].file.size,
-          label: files[3].label,
+          id: uploads[1].path,
+          path: uploads[1].path,
+          originalName: files[1].file.name,
+          mimeType: files[1].file.type,
+          size: files[1].file.size,
+          label: files[1].label,
           kind: "image",
         },
       },
@@ -582,13 +667,11 @@ export default function EmployeeUploadForm({
       });
       return next;
     });
-    setScratcherRowPhotos(Array.from({ length: 2 }).map(() => null));
-    setScratcherRowPreviewUrls((prev) => {
-      prev.forEach((url) => {
-        if (url) URL.revokeObjectURL(url);
-      });
-      return Array.from({ length: 2 }).map(() => null);
-    });
+    setReceiptAutofillKeys([]);
+    setReceiptAutofillConfirmed(true);
+    setReceiptPhotoDataUrl(null);
+    setReceiptParseMeta(null);
+    setReceiptParsedJson(null);
     setStatus("success");
     fetchRecentUploads();
     setTimeout(() => setStatus("idle"), 6000);
@@ -627,6 +710,58 @@ export default function EmployeeUploadForm({
           <p className="mt-2 text-sm text-slate-300">
             Enter the totals from your receipt and end-of-shift counts.
           </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="ui-button ui-button-ghost"
+              onClick={() => setReceiptScanOpen(true)}
+            >
+              Scan receipt
+            </button>
+            <button
+              type="button"
+              className="ui-button ui-button-primary"
+              onClick={() => setTerminalScanOpen(true)}
+            >
+              Take Pic (Auto-Fill)
+            </button>
+            {receiptAutofillKeys.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  className={clsx(
+                    "rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] transition",
+                    receiptAutofillConfirmed
+                      ? "border-emerald-300/40 bg-emerald-500/10 text-emerald-100"
+                      : "border-amber-300/40 bg-amber-500/10 text-amber-100 hover:border-amber-300/70",
+                  )}
+                  onClick={() => setReceiptAutofillConfirmed(true)}
+                >
+                  {receiptAutofillConfirmed ? "Receipt confirmed" : "Confirm receipt scan"}
+                </button>
+                <button
+                  type="button"
+                  className="text-xs font-semibold text-slate-200 underline-offset-2 hover:underline"
+                  onClick={() => {
+                    setReceiptAutofillKeys([]);
+                    setReceiptAutofillConfirmed(true);
+                  }}
+                >
+                  Clear highlight
+                </button>
+              </>
+            )}
+          </div>
+          {receiptNeedsConfirm && (
+            <p className="mt-2 text-xs text-amber-200">
+              Confirm the scanned totals to enable upload.
+            </p>
+          )}
+          {receiptNeedsPhoto && (
+            <p className="mt-2 text-xs text-amber-200">
+              Scan receipt to attach the sales report photo.
+            </p>
+          )}
         </div>
         <div
           className={clsx(
@@ -636,10 +771,21 @@ export default function EmployeeUploadForm({
               : "sm:grid-cols-2 lg:grid-cols-3",
           )}
         >
-          {[...standardItems, ...customItems].map((field) => (
+          {[...standardItems, ...customItems]
+            .filter((field) => field.key !== "cash")
+            .map((field) => (
             <div key={field.key} className="space-y-1.5">
               <label className="ui-label">{field.label}</label>
-              <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#111a32] px-3 py-2.5 text-sm text-slate-100 focus-within:border-blue-400 sm:px-4 sm:py-3">
+              <div
+                className={clsx(
+                  "flex items-center gap-2 rounded-2xl border bg-[#111a32] px-3 py-2.5 text-sm text-slate-100 focus-within:border-blue-400 sm:px-4 sm:py-3",
+                  receiptAutofillKeySet.has(field.key) && !field.isCustom
+                    ? receiptAutofillConfirmed
+                      ? "border-emerald-300/40 ring-1 ring-emerald-300/20"
+                      : "border-amber-300/40 ring-1 ring-amber-300/20"
+                    : "border-white/10",
+                )}
+              >
                 <span className="text-slate-300">$</span>
                 <input
                   ref={(el) => {
@@ -651,18 +797,7 @@ export default function EmployeeUploadForm({
                       : (reportValues[field.key] ?? "")
                   }
                   onChange={(event) => {
-                    const nextValue = event.target.value;
-                    if (field.isCustom) {
-                      setCustomValues((prev) => ({
-                        ...prev,
-                        [field.key]: nextValue,
-                      }));
-                    } else {
-                      setReportValues((prev) => ({
-                        ...prev,
-                        [field.key]: nextValue,
-                      }));
-                    }
+                    onReportFieldChange(field, event.target.value);
                   }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
@@ -760,77 +895,23 @@ export default function EmployeeUploadForm({
           />
         </div>
 
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-300">
-                Scratcher Count
-              </p>
-              <h3 className="mt-1 text-lg font-semibold text-white">
-                2 photos (rows 1-4 and 5-8)
-              </h3>
-              <p className="mt-1 text-sm text-slate-300">
-                Take two clear photos: first for rows 1-4 (slots 1-16), then rows 5-8 (slots 17-32).
-              </p>
-            </div>
-            <button
-              type="button"
-              className="ui-button"
-              onClick={() => {
-                const done = scratcherCapturedCount === 2;
-                const row = done ? 0 : scratcherFirstMissingRow;
-                openScratcherCapture(row);
-                if (!done) {
-                  // Must be triggered directly from a user gesture on iOS.
-                  triggerScratcherCamera();
-                }
-              }}
-            >
-              {scratcherCapturedCount === 0
-                ? "Start photos"
-                : scratcherCapturedCount === 2
-                  ? "Review photos"
-                  : `Continue (${scratcherCapturedCount}/2)`}
-            </button>
-          </div>
-
-          <div className="mt-4 grid gap-2 sm:grid-cols-2">
-            {Array.from({ length: 2 }).map((_, index) => {
-              const hasPhoto = Boolean(scratcherRowPhotos[index]);
-              return (
-                <button
-                  key={`scratcher-row-chip-${index}`}
-                  type="button"
-                  onClick={() => {
-                    const hasPhoto = Boolean(scratcherRowPhotos[index]);
-                    openScratcherCapture(index);
-                    if (!hasPhoto) {
-                      // If it's missing, jump straight into capture.
-                      triggerScratcherCamera();
-                    }
-                  }}
-                  className={clsx(
-                    "rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition",
-                    hasPhoto
-                      ? "border-emerald-300/40 bg-emerald-500/10 text-emerald-100 hover:border-emerald-300/70"
-                      : "border-white/15 bg-white/5 text-slate-200 hover:border-white/40",
-                  )}
-                >
-                  {index === 0 ? "Rows 1-4" : "Rows 5-8"}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
         <div className="grid gap-4 md:grid-cols-3">
           {requiredFiles.map((file) => (
             <label
               key={file.id}
-              className="flex h-full w-full min-w-0 cursor-pointer flex-col justify-between overflow-hidden rounded-2xl border border-dashed border-white/15 bg-[#121f3e] p-4 text-sm text-slate-200 transition hover:border-blue-400"
+              className="flex h-full w-full min-w-0 cursor-pointer flex-col justify-between overflow-hidden rounded-2xl border border-dashed border-white/15 bg-[#121f3e] p-4 text-sm !text-white transition hover:border-blue-400"
+              style={{ color: "#fff", WebkitTextFillColor: "#fff" } as any}
             >
-              <span className="font-semibold text-white">{file.label}</span>
-              <span className="mt-2 text-xs text-slate-400">
+              <span
+                className="font-semibold !text-white"
+                style={{ color: "#fff", WebkitTextFillColor: "#fff" } as any}
+              >
+                {file.label}
+              </span>
+              <span
+                className="mt-2 text-xs !text-slate-200"
+                style={{ color: "#e2e8f0", WebkitTextFillColor: "#e2e8f0" } as any}
+              >
                 Upload {file.accept.startsWith("video") ? "video" : "photo"}
               </span>
               <input
@@ -838,198 +919,43 @@ export default function EmployeeUploadForm({
                 type="file"
                 accept={file.accept}
                 name={file.id}
-                className="mt-4 w-full min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-slate-300 file:mr-3 file:rounded-full file:border file:border-white/20 file:bg-white/5 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-100"
+                className="mt-4 w-full min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs !text-slate-200 file:mr-3 file:rounded-full file:border file:border-white/20 file:bg-white/5 file:px-3 file:py-1 file:text-xs file:font-semibold file:!text-white"
+                style={{ color: "#e2e8f0", WebkitTextFillColor: "#e2e8f0" } as any}
                 onChange={() => {}}
               />
+              <div className="mt-4 space-y-2">
+                <span className="text-xs uppercase tracking-[0.2em] !text-slate-200/80">
+                  Cash amount
+                </span>
+                <div
+                  className={clsx(
+                    "flex items-center gap-2 rounded-2xl border bg-[#111a32] px-3 py-2.5 text-sm text-slate-100 focus-within:border-blue-400",
+                    cashNeedsEntry
+                      ? "border-amber-300/40 ring-1 ring-amber-300/20"
+                      : "border-white/10",
+                  )}
+                >
+                  <span className="text-slate-300">$</span>
+                  <input
+                    value={reportValues.cash ?? ""}
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+                      setReportValues((prev) => ({ ...prev, cash: nextValue }));
+                    }}
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    className="w-full bg-transparent text-sm text-slate-100 placeholder:text-slate-300 focus:outline-none"
+                  />
+                </div>
+                {cashNeedsEntry && (
+                  <p className="text-xs text-amber-200">
+                    Enter cash to enable upload.
+                  </p>
+                )}
+              </div>
             </label>
           ))}
         </div>
-
-        <input
-          ref={scratcherCaptureInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          // iOS Safari/Capacitor can block programmatic clicks on `display:none` inputs.
-          // Keep it visually hidden but still in the layout tree.
-          className="sr-only"
-          onChange={(event) => {
-            const next = event.target.files?.[0] ?? null;
-            if (!next) return;
-            if (scratcherTempUrlRef.current) {
-              URL.revokeObjectURL(scratcherTempUrlRef.current);
-              scratcherTempUrlRef.current = null;
-            }
-            const url = URL.createObjectURL(next);
-            scratcherTempUrlRef.current = url;
-
-            const row = scratcherCaptureRow;
-            const nextPhotos = [...scratcherRowPhotos];
-            nextPhotos[row] = next;
-            setScratcherRowPhotos(nextPhotos);
-
-            setScratcherRowPreviewUrls((prev) => {
-              const nextUrls = [...prev];
-              if (nextUrls[row]) URL.revokeObjectURL(nextUrls[row] as string);
-              nextUrls[row] = url;
-              return nextUrls;
-            });
-
-            setScratcherTempFile(null);
-            setScratcherPreviewUrl(null);
-            scratcherTempUrlRef.current = null; // ownership moved to scratcherRowPreviewUrls
-
-            const nextMissing = nextPhotos.findIndex(
-              (file, index) => index > row && !file,
-            );
-            const fallback = nextPhotos.findIndex((file) => !file);
-            const done = fallback < 0;
-            if (done) {
-              setScratcherCaptureOpen(false);
-              return;
-            }
-            const nextRow = nextMissing >= 0 ? nextMissing : fallback;
-            setScratcherCaptureRow(nextRow);
-            triggerScratcherCamera();
-
-            event.currentTarget.value = "";
-          }}
-        />
-
-        <IHModal
-          isOpen={scratcherCaptureOpen}
-          onClose={closeScratcherCapture}
-          allowOutsideClose
-          panelClassName="no-transform"
-          labelledBy="scratcher-capture-title"
-        >
-          <div className="space-y-4 p-5">
-            <div>
-              <p
-                id="scratcher-capture-title"
-                className="text-xs uppercase tracking-[0.3em] text-slate-300"
-              >
-                Scratcher photo
-              </p>
-              <p className="mt-2 text-sm text-slate-200">
-                Photo <span className="font-semibold">{scratcherCaptureRow + 1}</span> of{" "}
-                <span className="font-semibold">2</span> ·{" "}
-                <span className="font-semibold">
-                  {scratcherCaptureRow === 0 ? "Rows 1-4" : "Rows 5-8"}
-                </span>{" "}
-                (slots {scratcherCaptureRow === 0 ? "1-16" : "17-32"})
-              </p>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              {Array.from({ length: 2 }).map((_, index) => {
-                const hasPhoto = Boolean(scratcherRowPhotos[index]);
-                const active = index === scratcherCaptureRow;
-                return (
-                  <button
-                    key={`scratcher-row-select-${index}`}
-                    type="button"
-                    onClick={() => {
-                      setScratcherCaptureRow(index);
-                      resetScratcherTemp();
-                    }}
-                    className={clsx(
-                      "rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] transition",
-                      active
-                        ? "border-blue-400/60 bg-blue-500/10 text-blue-100"
-                        : hasPhoto
-                          ? "border-emerald-300/40 bg-emerald-500/10 text-emerald-100 hover:border-emerald-300/70"
-                          : "border-white/15 bg-white/5 text-slate-200 hover:border-white/40",
-                    )}
-                  >
-                    {index === 0 ? "Rows 1-4" : "Rows 5-8"}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-              {scratcherPreviewUrl ? (
-                // Preview freshly captured photo (before confirming)
-                <img
-                  src={scratcherPreviewUrl}
-                  alt={`Scratcher photo ${scratcherCaptureRow + 1}`}
-                  className="w-full rounded-xl object-contain"
-                />
-              ) : scratcherRowPreviewUrls[scratcherCaptureRow] ? (
-                <img
-                  src={scratcherRowPreviewUrls[scratcherCaptureRow] as string}
-                  alt={`Scratcher photo ${scratcherCaptureRow + 1}`}
-                  className="w-full rounded-xl object-contain"
-                />
-              ) : (
-                <div className="flex min-h-[220px] items-center justify-center text-sm text-slate-300">
-                  No photo yet. Tap “Take photo”.
-                </div>
-              )}
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  resetScratcherTemp();
-                  triggerScratcherCamera();
-                }}
-                className="ui-button ui-button-ghost"
-              >
-                {scratcherRowPhotos[scratcherCaptureRow] || scratcherTempFile
-                  ? "Retake"
-                  : "Take photo"}
-              </button>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={!scratcherTempFile}
-                  onClick={() => {
-                    if (!scratcherTempFile || !scratcherPreviewUrl) return;
-                    const row = scratcherCaptureRow;
-                    const tempFile = scratcherTempFile;
-                    const tempUrl = scratcherPreviewUrl;
-
-                    const nextPhotos = [...scratcherRowPhotos];
-                    nextPhotos[row] = tempFile;
-                    setScratcherRowPhotos(nextPhotos);
-
-                    setScratcherRowPreviewUrls((prev) => {
-                      const next = [...prev];
-                      if (next[row]) URL.revokeObjectURL(next[row] as string);
-                      next[row] = tempUrl;
-                      return next;
-                    });
-
-                    setScratcherTempFile(null);
-                    setScratcherPreviewUrl(null);
-                    scratcherTempUrlRef.current = null; // ownership moved to scratcherRowPreviewUrls
-
-                    const nextMissing = nextPhotos.findIndex(
-                      (file, index) => index > row && !file,
-                    );
-                    const fallback = nextPhotos.findIndex((file) => !file);
-                    const done = fallback < 0;
-                    if (done) {
-                      setScratcherCaptureOpen(false);
-                      return;
-                    }
-                    const nextRow = nextMissing >= 0 ? nextMissing : fallback;
-                    setScratcherCaptureRow(nextRow);
-                    // Convenience: once confirmed, immediately open camera for the next row.
-                    triggerScratcherCamera();
-                  }}
-                  className="ui-button ui-button-primary disabled:opacity-60"
-                >
-                  Looks good
-                </button>
-              </div>
-            </div>
-          </div>
-        </IHModal>
 
         {message && (
           <div
@@ -1046,12 +972,44 @@ export default function EmployeeUploadForm({
 
         <button
           type="submit"
-          disabled={status === "sending" || uploadingShift}
-          className="w-full rounded-2xl bg-blue-600 px-6 py-3 text-center text-base font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-70"
+          disabled={
+            status === "sending" ||
+            uploadingShift ||
+            receiptNeedsConfirm ||
+            receiptNeedsPhoto ||
+            cashNeedsEntry
+          }
+          className="w-full rounded-2xl bg-blue-600 px-6 py-3 text-center text-base font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-70 disabled:text-white disabled:[-webkit-text-fill-color:#fff]"
         >
-          {status === "sending" || uploadingShift ? "Uploading..." : "Submit shift package"}
+          {status === "sending" || uploadingShift
+            ? "Uploading..."
+            : receiptNeedsConfirm || receiptNeedsPhoto || cashNeedsEntry
+              ? "Finish required steps to submit"
+              : "Submit shift package"}
         </button>
       </form>
+
+      <ShiftReceiptScanModal
+        isOpen={receiptScanOpen}
+        storeId={user.storeNumber}
+        onClose={() => setReceiptScanOpen(false)}
+        onApply={(result, imageDataUrl) => {
+          setReceiptPhotoDataUrl(imageDataUrl);
+          applyReceiptScan(result);
+        }}
+      />
+
+      <ShiftTerminalReportAutoFillModal
+        isOpen={terminalScanOpen}
+        storeId={user.storeNumber}
+        onClose={() => setTerminalScanOpen(false)}
+        onApply={(parsed, imageDataUrl, meta) => {
+          setReceiptPhotoDataUrl(imageDataUrl);
+          setReceiptParseMeta(meta);
+          setReceiptParsedJson(parsed);
+          applyTerminalReceiptScan(parsed);
+        }}
+      />
 
       {showInvoiceUpload && (
         <InvoiceUploadCard storeId={isOwner ? user.storeNumber : undefined} />

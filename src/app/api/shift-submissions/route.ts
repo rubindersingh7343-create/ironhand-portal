@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
+import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { publicBucket } from "@/lib/supabaseClient";
 import {
   addShiftSubmission,
   createBaselineShiftReport,
@@ -14,6 +16,45 @@ import {
   upsertShiftReport,
 } from "@/lib/dataStore";
 import { getClientStoreIds } from "@/lib/userStore";
+
+const storeReceiptParse = async (payload: {
+  storeId: string;
+  userId: string;
+  shiftReportId: string;
+  shiftSubmissionId: string;
+  imageUrl: string | null;
+  receiptParse: any;
+}) => {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return;
+  const body = payload.receiptParse ?? null;
+  if (!body || typeof body !== "object") return;
+  if (!body.parsed_json || typeof body.parsed_json !== "object") return;
+
+  try {
+    const { error } = await supabase.from("receipt_parses").insert({
+      store_id: payload.storeId,
+      user_id: payload.userId,
+      shift_report_id: payload.shiftReportId,
+      shift_submission_id: payload.shiftSubmissionId,
+      parse_version: String(body.parse_version ?? "unknown"),
+      confidence_score: Number(body.confidence_score ?? 0),
+      raw_text: String(body.raw_text ?? ""),
+      normalized_text: String(body.normalized_text ?? ""),
+      parsed_json: body.parsed_json,
+      image_url: payload.imageUrl,
+      bucket: publicBucket,
+    });
+    if (error && (error as any)?.code !== "PGRST205") {
+      console.error("receipt_parses insert failed", {
+        code: (error as any)?.code,
+        message: (error as any)?.message,
+      });
+    }
+  } catch (error) {
+    console.error("receipt_parses insert exception", error);
+  }
+};
 
 export async function POST(request: Request) {
   try {
@@ -54,21 +95,19 @@ export async function POST(request: Request) {
       const customFields = Array.isArray(body?.customFields)
         ? body.customFields
         : [];
+      const receiptParse = body?.receiptParse ?? null;
       const hoursPayload = body?.hours ?? null;
       const scratcherEndSnapshotPayload = body?.scratcherEndSnapshot ?? null;
       const isEmployee = sessionUser.role === "employee";
 
-      const hasScratcherMedia =
-        (Array.isArray(scratcherPhotos) && scratcherPhotos.length > 0) ||
-        Boolean(scratcherVideo);
-      if (!hasScratcherMedia || !cashPhoto || !salesPhoto) {
+      if (!cashPhoto || !salesPhoto) {
         return NextResponse.json(
-          { error: "All end-of-shift files are required." },
+          { error: "Cash count + sales photos are required." },
           { status: 400 },
         );
       }
 
-      if (Array.isArray(scratcherPhotos) && scratcherPhotos.length !== 2) {
+      if (Array.isArray(scratcherPhotos) && scratcherPhotos.length > 0 && scratcherPhotos.length !== 2) {
         return NextResponse.json(
           { error: "Please upload 2 scratcher photos (rows 1-4 and 5-8)." },
           { status: 400 },
@@ -111,9 +150,13 @@ export async function POST(request: Request) {
 
       const lottoPoAmount = parseAmount(reportFields.lottoPo);
       const atmAmount = parseAmount(reportFields.atm);
-      const computedCashAmount = grossAmount - lottoPoAmount - atmAmount;
-      const cashOverride = parseOptional(reportFields.cash);
-      const cashAmount = cashOverride ?? computedCashAmount;
+      const cashAmount = parseRequired(reportFields.cash);
+      if (Number.isNaN(cashAmount)) {
+        return NextResponse.json(
+          { error: "Cash is required." },
+          { status: 400 },
+        );
+      }
       const storeAmount = grossAmount - (scrAmount + lottoAmount);
 
       const toMinutes = (value: string) => {
@@ -184,6 +227,22 @@ export async function POST(request: Request) {
         lotto: lottoAmount,
         cash: cashAmount,
         store: storeAmount,
+        receipt_parse:
+          receiptParse && typeof receiptParse === "object"
+            ? {
+                parse_version: String(receiptParse.parse_version ?? ""),
+                confidence_score: Number(receiptParse.confidence_score ?? 0),
+                missing_fields: Array.isArray(receiptParse.missing_fields)
+                  ? receiptParse.missing_fields.slice(0, 50)
+                  : [],
+                used_llm_fallback: Boolean(receiptParse.used_llm_fallback),
+                parsed_json: receiptParse.parsed_json ?? null,
+                // Keep OCR text for audit/debug. Avoid logging this; it stays in DB only.
+                raw_text: receiptParse.raw_text ?? null,
+                normalized_text: receiptParse.normalized_text ?? null,
+                image_url: salesPhoto?.path ?? salesPhoto?.id ?? null,
+              }
+            : null,
         customFields: customFields
           .filter((field: any) => field?.label)
           .map((field: any) => ({
@@ -370,11 +429,29 @@ export async function POST(request: Request) {
         storeNumber: storeId,
         shiftNotes,
         reportDetails,
-        scratcherPhotos: Array.isArray(scratcherPhotos) ? scratcherPhotos : undefined,
-        scratcherVideo: scratcherPhotos ? undefined : scratcherVideo,
+        scratcherPhotos:
+          Array.isArray(scratcherPhotos) && scratcherPhotos.length
+            ? scratcherPhotos
+            : undefined,
+        scratcherVideo:
+          !Array.isArray(scratcherPhotos) || scratcherPhotos.length === 0
+            ? scratcherVideo
+            : undefined,
         cashPhoto,
         salesPhoto,
       });
+
+      // Persist receipt parse artifacts (optional; table may not exist yet).
+      if (receiptParse && typeof receiptParse === "object") {
+        void storeReceiptParse({
+          storeId,
+          userId: sessionUser.id,
+          shiftReportId: report.id,
+          shiftSubmissionId: submission.id,
+          imageUrl: salesPhoto?.path ?? null,
+          receiptParse,
+        });
+      }
 
       if (hoursEntry) {
         await createEmployeeHoursEntry({
@@ -412,22 +489,22 @@ export async function POST(request: Request) {
       typeof storeIdRaw === "string" ? storeIdRaw : null,
     );
 
-    if (
-      !(scratcherVideo instanceof File) ||
-      !(cashPhoto instanceof File) ||
-      !(salesPhoto instanceof File)
-    ) {
+    if (!(cashPhoto instanceof File) || !(salesPhoto instanceof File)) {
       return NextResponse.json(
-        { error: "All end-of-shift files are required." },
+        { error: "Cash count + sales photos are required." },
         { status: 400 },
       );
     }
 
-    if (
-      scratcherVideo.size === 0 ||
-      cashPhoto.size === 0 ||
-      salesPhoto.size === 0
-    ) {
+    if (cashPhoto.size === 0 || salesPhoto.size === 0) {
+      return NextResponse.json(
+        { error: "Uploaded files cannot be empty." },
+        { status: 400 },
+      );
+    }
+
+    const scratcherVideoFile = scratcherVideo instanceof File ? scratcherVideo : null;
+    if (scratcherVideoFile && scratcherVideoFile.size === 0) {
       return NextResponse.json(
         { error: "Uploaded files cannot be empty." },
         { status: 400 },
@@ -435,7 +512,7 @@ export async function POST(request: Request) {
     }
 
     const totalSize =
-      scratcherVideo.size + cashPhoto.size + salesPhoto.size;
+      (scratcherVideoFile?.size ?? 0) + cashPhoto.size + salesPhoto.size;
     const MAX_TOTAL_BYTES = 20 * 1024 * 1024; // ~20 MB safety limit for serverless uploads
     if (totalSize > MAX_TOTAL_BYTES) {
       return NextResponse.json(
@@ -451,10 +528,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Store access required." }, { status: 403 });
     }
 
-    const savedScratcherVideo = await saveUploadedFile(scratcherVideo, {
-      folder: "shift",
-      label: "Scratcher Count Video",
-    });
+    const savedScratcherVideo = scratcherVideoFile
+      ? await saveUploadedFile(scratcherVideoFile, {
+          folder: "shift",
+          label: "Scratcher Count Video",
+        })
+      : null;
     const savedCashPhoto = await saveUploadedFile(cashPhoto, {
       folder: "shift",
       label: "Cash Count Photo",
@@ -468,7 +547,7 @@ export async function POST(request: Request) {
       employeeName: sessionUser.name,
       storeNumber: storeId,
       shiftNotes,
-      scratcherVideo: savedScratcherVideo,
+      scratcherVideo: savedScratcherVideo ?? undefined,
       cashPhoto: savedCashPhoto,
       salesPhoto: savedSalesPhoto,
     });

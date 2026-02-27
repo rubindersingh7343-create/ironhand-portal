@@ -1,0 +1,33 @@
+NRS Terminal Reports
+Store: Test Liquor
+Terminal ID: T-09
+Printed At: 02/15/2026 08:02 AM
+02/14/2026 08:00 AM to 02/15/2026 08:00 AM
+
+Sales
+Taxable Product Sales           $5,000.00
+Taxable Other Sales              $100.00
+Total Tax and Fees               $450.00
+Non-Taxable Product Sale         $500.00
+Non-Taxable Other Sales           $25.00
+Gross Sales                  200  $5,625.00
+Cash                          $1,200.00
+Credit/Debit                  $4,425.00
+
+Cash Back From Lottery           $0.00
+Cash Back From Scratch           $0.00
+
+Other Information
+Lottery Redemption             $900.00
+Scratch Off Redemption         $100.00
+
+Net Product Sales
+Beer     10   $150.00
+Liquor   20   $700.00
+CIG      15   $125.00
+
+Net Other Sales
+Lotto         $250.00
+Scratchers    $300.00
+
+Net Sales     $4,950.00
