@@ -134,6 +134,7 @@ export default function ShiftReceiptScanModal({
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const requestAbortRef = useRef<AbortController | null>(null);
+  const runOcrRef = useRef<(imageDataUrl: string) => void>(() => {});
 
   const reset = useCallback(() => {
     requestAbortRef.current?.abort();
@@ -160,6 +161,48 @@ export default function ShiftReceiptScanModal({
     // Must be a direct user gesture on iOS.
     input.click();
   }, []);
+
+  const canDocScan = useMemo(() => {
+    const Cap =
+      (typeof window !== "undefined" && (window as any).Capacitor) || null;
+    if (!Cap?.isNativePlatform?.()) return false;
+    const platform = Cap?.getPlatform?.() ?? Cap?.platform ?? null;
+    if (platform !== "ios") return false;
+    const plugin = Cap?.Plugins?.ReceiptDocScanner;
+    return typeof plugin?.scan === "function";
+  }, [isOpen]);
+
+  const triggerDocScan = useCallback(async () => {
+    const Cap =
+      (typeof window !== "undefined" && (window as any).Capacitor) || null;
+    const plugin = Cap?.Plugins?.ReceiptDocScanner;
+    if (!Cap?.isNativePlatform?.() || typeof plugin?.scan !== "function") {
+      triggerCapture();
+      return;
+    }
+
+    setError(null);
+    setScanState("CAPTURING");
+    try {
+      const res = (await plugin.scan()) as any;
+      const dataUrl = res?.imageDataUrl;
+      if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/")) {
+        throw new Error("No scan returned.");
+      }
+      setCapturedImage(dataUrl);
+      runOcrRef.current(dataUrl);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err ?? "");
+      // User cancelling the scanner isn't an error state; just go back.
+      if (message.toLowerCase().includes("cancel")) {
+        setScanState("PREVIEW");
+        return;
+      }
+      console.error("Receipt doc scan failed", err);
+      setError("Unable to scan the receipt. Try taking a photo instead.");
+      setScanState("ERROR");
+    }
+  }, [triggerCapture]);
 
   const runOcr = useCallback(
     async (imageDataUrl: string) => {
@@ -325,6 +368,12 @@ export default function ShiftReceiptScanModal({
     },
     [storeId],
   );
+
+  useEffect(() => {
+    runOcrRef.current = (imageDataUrl: string) => {
+      void runOcr(imageDataUrl);
+    };
+  }, [runOcr]);
 
   const categoryOptions = useMemo(
     () =>
@@ -598,6 +647,19 @@ export default function ShiftReceiptScanModal({
           </button>
 
           <div className="flex items-center gap-2">
+            {canDocScan && (
+              <button
+                type="button"
+                className="ui-button ui-button-primary"
+                onClick={() => {
+                  reset();
+                  triggerDocScan();
+                }}
+              >
+                {capturedImage ? "Rescan receipt" : "Scan receipt (recommended)"}
+              </button>
+            )}
+
             <button
               type="button"
               className="ui-button ui-button-ghost"

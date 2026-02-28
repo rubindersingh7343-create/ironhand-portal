@@ -1,16 +1,20 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { getSessionUser } from "@/lib/auth";
-import { runReceiptVisionV2 } from "@/lib/ai/receiptVisionV2";
+import { decodeReceiptBase64, runReceiptVisionV2 } from "@/lib/ai/receiptVisionV2";
+import { maybeSaveDebugReceiptImages, receiptDocScanPreprocess } from "@/lib/images/receiptPreprocess";
 
 export const runtime = "nodejs";
 
 const ENABLED = (process.env.RECEIPT_VISION_V2_ENABLED ?? "").toLowerCase() === "true";
+// Safe default: only impacts the V2 endpoint (itself feature-flagged). Can be disabled via env.
+const DOCSCAN = (process.env.RECEIPT_DOCSCAN_ENABLED ?? "true").toLowerCase() === "true";
 const MODEL = process.env.OPENAI_VISION_MODEL ?? "gpt-4o";
 
 const DEBUG =
   process.env.DEBUG_RECEIPT_OCR === "true" ||
   process.env.NODE_ENV !== "production";
+const DEBUG_IMAGES = process.env.DEBUG_RECEIPT_IMAGES === "true" && process.env.NODE_ENV !== "production";
 
 const MAX_IMAGE_BYTES = (() => {
   const parsed = Number(process.env.IH_RECEIPT_V2_MAX_IMAGE_MB ?? "8");
@@ -88,7 +92,32 @@ export async function POST(req: Request) {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   try {
-    const result = await runReceiptVisionV2({
+    const originalBuffer = decodeReceiptBase64(imageBase64);
+
+    const score = (r: any) => {
+      const fields = (Array.isArray(r?.extraction?.fields) ? r.extraction.fields : []) as any[];
+      const anomalies = r?.extraction?.anomalies?.length ?? 0;
+      const needs = r?.extraction?.needs_confirmation?.length ?? 0;
+      const byKey = new Map<string, any>(fields.map((f: any) => [String(f?.key ?? ""), f]));
+      const critical = ["gross", "beer", "liquor", "cigarettes"];
+      const criticalScore = critical.reduce((acc, k) => {
+        const f: any = byKey.get(k);
+        if (!f || typeof f?.amount !== "number") return acc;
+        return acc + Math.max(0, Math.min(1, Number(f.confidence ?? 0)));
+      }, 0);
+      const found = fields.filter((f: any) => typeof f?.amount === "number").length;
+      const avgConf =
+        found > 0
+          ? fields
+              .filter((f: any) => typeof f?.amount === "number")
+              .reduce((acc: number, f: any) => acc + Math.max(0, Math.min(1, Number(f.confidence ?? 0))), 0) /
+            found
+          : 0;
+      return criticalScore * 2 + avgConf * 1.5 - anomalies * 0.25 - needs * 0.15;
+    };
+
+    let chosen = "base";
+    let result = await runReceiptVisionV2({
       client,
       model: MODEL,
       imageBase64,
@@ -96,6 +125,80 @@ export async function POST(req: Request) {
       maxBytes: MAX_IMAGE_BYTES,
       debug: DEBUG,
     });
+
+    if (DOCSCAN) {
+      const docscan = await receiptDocScanPreprocess({
+        imageBase64,
+        maxBytes: MAX_IMAGE_BYTES,
+        minWidth: 1600,
+        maxWidth: 2200,
+        thresholdValues: [170, 180],
+      });
+
+      const docscanPrepared = {
+        dataUrl: docscan.best.dataUrl,
+        buffer: docscan.best.buffer,
+        meta: {
+          input_bytes: docscan.best.meta.input_bytes,
+          output_bytes: docscan.best.meta.output_bytes,
+          width: docscan.best.meta.width,
+          height: docscan.best.meta.height,
+          format: docscan.best.meta.format,
+          orientation: docscan.best.meta.orientation,
+        },
+      };
+
+      // In prod: only pay for a second parse when the base result looks weak.
+      const baseLooksWeak =
+        (result.extraction.needs_confirmation ?? []).some((k) =>
+          ["gross", "beer", "liquor", "cigarettes"].includes(String(k)),
+        ) || (result.extraction.anomalies ?? []).some((a) => a.type === "WEIRD_NUMBER");
+
+      const runDocscan = DEBUG || baseLooksWeak;
+
+      let docscanResult: any | null = null;
+      if (runDocscan) {
+        docscanResult = await runReceiptVisionV2({
+          client,
+          model: MODEL,
+          imageBase64,
+          allowedKeys,
+          maxBytes: MAX_IMAGE_BYTES,
+          debug: DEBUG,
+          prepared: docscanPrepared,
+        });
+      }
+
+      if (docscanResult) {
+        const baseScore = score(result);
+        const docScore = score(docscanResult);
+        const better = docScore >= baseScore + 0.15 ? "docscan" : baseScore > docScore + 0.35 ? "base" : "docscan";
+        if (better === "docscan") {
+          chosen = "docscan";
+          result = docscanResult;
+        }
+
+        if (DEBUG) {
+          console.log("[receipt-v2:ab]", {
+            user_id: user.id,
+            request_id: result.meta.request_id,
+            model: MODEL,
+            chosen,
+            baseScore,
+            docScore,
+            docscan_meta: docscan.best.meta,
+          });
+        }
+
+        await maybeSaveDebugReceiptImages({
+          enabled: DEBUG_IMAGES,
+          requestId: result.meta.request_id,
+          original: originalBuffer,
+          preprocessed: docscan.best.buffer,
+          meta: { chosen, baseScore, docScore, docscan_meta: docscan.best.meta },
+        });
+      }
+    }
 
     console.log("[receipt-v2]", {
       user_id: user.id,
@@ -107,6 +210,7 @@ export async function POST(req: Request) {
       confirm: result.extraction.needs_confirmation.length,
       anomalies: result.extraction.anomalies.length,
       image_out_bytes: result.meta.image.output_bytes,
+      chosen,
     });
 
     return NextResponse.json(result);
@@ -125,4 +229,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Receipt scan failed." }, { status: 502 });
   }
 }
-

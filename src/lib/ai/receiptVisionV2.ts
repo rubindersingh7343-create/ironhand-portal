@@ -158,7 +158,7 @@ export type ReceiptVisionV2PreprocessResult = {
   };
 };
 
-const decodeBase64 = (imageBase64: string) => {
+export const decodeReceiptBase64 = (imageBase64: string) => {
   if (imageBase64.startsWith("data:")) {
     const match = imageBase64.match(/^data:(.+?);base64,(.*)$/);
     const base64 = match?.[2] ?? "";
@@ -173,7 +173,7 @@ export async function preprocessReceiptImageV2(args: {
   minWidth: number;
   jpegQuality: number;
 }): Promise<ReceiptVisionV2PreprocessResult> {
-  const inputBuffer = decodeBase64(args.imageBase64);
+  const inputBuffer = decodeReceiptBase64(args.imageBase64);
   const input_bytes = inputBuffer.byteLength;
 
   let image = sharp(inputBuffer, { failOnError: false });
@@ -499,17 +499,20 @@ export async function runReceiptVisionV2(args: {
   allowedKeys?: string[];
   maxBytes: number;
   debug?: boolean;
+  prepared?: ReceiptVisionV2PreprocessResult;
 }) : Promise<ReceiptVisionV2Result> {
   const request_id = crypto.randomUUID();
   const startedAt = Date.now();
   const allowedKeys = (args.allowedKeys?.length ? args.allowedKeys : Array.from(DEFAULT_KEYS)).map(String);
 
-  const preprocess = await preprocessReceiptImageV2({
-    imageBase64: args.imageBase64,
-    maxBytes: args.maxBytes,
-    minWidth: 1600,
-    jpegQuality: 85,
-  });
+  const preprocess =
+    args.prepared ??
+    (await preprocessReceiptImageV2({
+      imageBase64: args.imageBase64,
+      maxBytes: args.maxBytes,
+      minWidth: 1600,
+      jpegQuality: 85,
+    }));
 
   const categoriesText = allowedKeys
     .map((k) => `- ${k}`)
@@ -593,4 +596,3 @@ export async function runReceiptVisionV2(args: {
     },
   };
 }
-
