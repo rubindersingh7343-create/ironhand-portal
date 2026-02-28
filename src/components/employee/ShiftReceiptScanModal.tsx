@@ -66,6 +66,31 @@ type ReasoningReceiptResponse = {
   };
 };
 
+type ReceiptVisionV2Response = {
+  extraction: {
+    vendor: string | null;
+    date: string | null;
+    fields: Array<{
+      key: string;
+      label: string | null;
+      amount: number | null;
+      units: number | null;
+      confidence: number;
+      evidence: { note: string | null };
+    }>;
+    anomalies: Array<{ type: string; message: string; related_key: string | null }>;
+    needs_confirmation: string[];
+    reasoning_summary: string;
+  };
+  meta: {
+    request_id: string;
+    model: string;
+    passes: number;
+    used_multipass: boolean;
+    total_latency_ms: number;
+  };
+};
+
 export type ShiftReceiptSalesFields = {
   gross: number | null;
   scr: number | null;
@@ -148,11 +173,67 @@ export default function ShiftReceiptScanModal({
       setScanState("PROCESSING");
 
       try {
-        // Prefer the new reasoning endpoint when enabled; fall back to legacy parse on any failure.
+        // Prefer Receipt Vision V2 when enabled; then reasoning; then legacy parse.
         let parsed: ReceiptParseResult | null = null;
         let needsConfirm = new Set<string>();
 
         const expectedFields = categoryOptions.map((c) => c.key);
+
+        const v2Response = await fetch("/api/ai/receipt-vision-v2", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            image_base64: imageDataUrl,
+            expected_fields: expectedFields,
+          }),
+          signal: abort.signal,
+        }).catch(() => null);
+
+        if (v2Response && v2Response.ok) {
+          const payload = (await v2Response.json().catch(() => null)) as ReceiptVisionV2Response | null;
+          const extraction = payload?.extraction;
+          if (extraction && Array.isArray(extraction.fields)) {
+            const byKey = new Map<string, any>();
+            extraction.fields.forEach((f) => {
+              if (!f?.key) return;
+              byKey.set(String(f.key), f);
+            });
+            needsConfirm = new Set(
+              Array.isArray(extraction.needs_confirmation)
+                ? extraction.needs_confirmation.map(String)
+                : [],
+            );
+
+            const categories: ReceiptParseCategory[] = categoryOptions.map((c) => {
+              const field = byKey.get(c.key);
+              return {
+                key: c.key,
+                label: c.label,
+                amount:
+                  typeof field?.amount === "number" && Number.isFinite(field.amount)
+                    ? field.amount
+                    : null,
+                confidence:
+                  typeof field?.confidence === "number" && Number.isFinite(field.confidence)
+                    ? field.confidence
+                    : 0,
+                evidence_text:
+                  typeof field?.evidence?.note === "string" ? field.evidence.note : "",
+              };
+            });
+
+            parsed = {
+              vendor: extraction.vendor,
+              date: extraction.date,
+              categories,
+              unknown_lines: [],
+              notes: [
+                extraction.reasoning_summary || "Receipt parsed (Vision V2).",
+                ...(extraction.anomalies ?? []).map((a) => String(a?.message ?? "")).filter(Boolean),
+              ].filter(Boolean),
+            };
+          }
+        }
 
         const reasoningResponse = await fetch("/api/ai/receipt-reason", {
           method: "POST",
@@ -165,7 +246,7 @@ export default function ShiftReceiptScanModal({
           signal: abort.signal,
         }).catch(() => null);
 
-        if (reasoningResponse && reasoningResponse.ok) {
+        if (!parsed && reasoningResponse && reasoningResponse.ok) {
           const payload = (await reasoningResponse.json().catch(() => null)) as
             | ReasoningReceiptResponse
             | null;
