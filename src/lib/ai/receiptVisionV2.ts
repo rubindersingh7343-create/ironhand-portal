@@ -303,6 +303,14 @@ export function validateReceiptExtractionV2(extraction: ReceiptVisionV2Extractio
     }
   }
 
+  // Merges can surface conflicts; ensure we treat them as confirmation-worthy.
+  for (const anomaly of anomalies) {
+    if (!anomaly?.related_key) continue;
+    if (anomaly.type === "DUPLICATE_FIELD") {
+      needs.add(anomaly.related_key);
+    }
+  }
+
   // Missing critical fields are a confirmation need.
   for (const key of CRITICAL_KEYS) {
     const amt = byKey.get(key)?.amount;

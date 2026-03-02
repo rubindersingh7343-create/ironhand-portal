@@ -61,20 +61,38 @@ public class ReceiptDocScannerPlugin: CAPPlugin, VNDocumentCameraViewControllerD
             }
         }
 
-        let image = scan.imageOfPage(at: bestIndex)
-        let processed = resizeIfNeeded(image: image, maxWidth: 2200)
-        guard let jpeg = encodeJpegUnder8mb(image: processed) else {
+        // Encode up to 6 pages so the web layer can do a "multi-section" parse if desired.
+        let maxPages = min(6, pageCount)
+        var pages: [[String: Any]] = []
+        pages.reserveCapacity(maxPages)
+
+        for i in 0..<maxPages {
+            let img = scan.imageOfPage(at: i)
+            let processed = resizeIfNeeded(image: img, maxWidth: 2200)
+            guard let jpeg = encodeJpegUnder8mb(image: processed) else {
+                continue
+            }
+            let base64 = jpeg.base64EncodedString()
+            pages.append([
+                "imageDataUrl": "data:image/jpeg;base64,\(base64)",
+                "pageIndex": i,
+                "width": Int(processed.size.width),
+                "height": Int(processed.size.height)
+            ])
+        }
+
+        // Backwards compatible single-image payload for existing flows.
+        let bestPage = pages.first(where: { ($0["pageIndex"] as? Int) == bestIndex }) ?? pages.first
+        if bestPage == nil {
             call.reject("Unable to encode scan.")
             return
         }
 
-        let base64 = jpeg.base64EncodedString()
         call.resolve([
-            "imageDataUrl": "data:image/jpeg;base64,\(base64)",
-            "pages": pageCount,
-            "pageIndex": bestIndex,
-            "width": Int(processed.size.width),
-            "height": Int(processed.size.height)
+            "imageDataUrl": bestPage?["imageDataUrl"] as? String ?? "",
+            "pages": pages,
+            "pageCount": pageCount,
+            "bestIndex": bestIndex
         ])
     }
 
@@ -104,4 +122,3 @@ public class ReceiptDocScannerPlugin: CAPPlugin, VNDocumentCameraViewControllerD
         return data
     }
 }
-

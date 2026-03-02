@@ -16,10 +16,12 @@ import InvoiceUploadCard from "@/components/invoices/InvoiceUploadCard";
 import ShiftReceiptScanModal, {
   type ShiftReceiptSalesFields,
 } from "@/components/employee/ShiftReceiptScanModal";
+import ShiftReceiptMultiPageScanModal from "@/components/employee/ShiftReceiptMultiPageScanModal";
 import ShiftTerminalReportAutoFillModal, {
   type ReceiptParseMeta,
 } from "@/components/employee/ShiftTerminalReportAutoFillModal";
 import type { NrsTerminalReportJson } from "@/lib/receiptParsing/nrsTerminalReport";
+import { receiptMultiPhotoEnabled } from "@/lib/featureFlags";
 
 interface EmployeeUploadFormProps {
   user: SessionUser;
@@ -64,6 +66,7 @@ export default function EmployeeUploadForm({
   const [customValues, setCustomValues] = useState<Record<string, string>>({});
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [receiptScanOpen, setReceiptScanOpen] = useState(false);
+  const [receiptMultiScanOpen, setReceiptMultiScanOpen] = useState(false);
   const [terminalScanOpen, setTerminalScanOpen] = useState(false);
   const [receiptAutofillKeys, setReceiptAutofillKeys] = useState<string[]>([]);
   const [receiptAutofillConfirmed, setReceiptAutofillConfirmed] = useState(true);
@@ -711,6 +714,15 @@ export default function EmployeeUploadForm({
             Enter the totals from your receipt and end-of-shift counts.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
+            {receiptMultiPhotoEnabled && (
+              <button
+                type="button"
+                className="ui-button ui-button-primary"
+                onClick={() => setReceiptMultiScanOpen(true)}
+              >
+                Scan Receipt (Recommended)
+              </button>
+            )}
             <button
               type="button"
               className="ui-button ui-button-ghost"
@@ -995,6 +1007,20 @@ export default function EmployeeUploadForm({
         onClose={() => setReceiptScanOpen(false)}
         onApply={(result, imageDataUrl) => {
           setReceiptPhotoDataUrl(imageDataUrl);
+          applyReceiptScan(result);
+        }}
+      />
+
+      <ShiftReceiptMultiPageScanModal
+        isOpen={receiptMultiScanOpen}
+        storeId={user.storeNumber}
+        onClose={() => setReceiptMultiScanOpen(false)}
+        onFallbackSingle={() => {
+          setReceiptMultiScanOpen(false);
+          setReceiptScanOpen(true);
+        }}
+        onApply={(result, stitchedImageDataUrl) => {
+          setReceiptPhotoDataUrl(stitchedImageDataUrl);
           applyReceiptScan(result);
         }}
       />
