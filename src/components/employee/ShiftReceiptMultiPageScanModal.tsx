@@ -327,17 +327,17 @@ export default function ShiftReceiptMultiPageScanModal({
     });
 
     if (autoCapture && tone === "green" && stableLongEnough) {
-      void capturePage();
+      void capturePage(false);
     }
   }, [autoCapture, computeRoi]);
 
-  const capturePage = useCallback(async () => {
+  const capturePage = useCallback(async (force = false) => {
     if (captureInFlightRef.current) return;
     const video = videoRef.current;
     if (!video || video.readyState < 2) return;
     if (pages.length >= 6) return;
 
-    if (receiptDistanceGuideEnabled && guide.tone !== "green") return;
+    if (receiptDistanceGuideEnabled && guide.tone !== "green" && !force) return;
 
     captureInFlightRef.current = true;
     try {
@@ -627,10 +627,20 @@ export default function ShiftReceiptMultiPageScanModal({
                     pages.length >= 6 ||
                     (receiptDistanceGuideEnabled && guide.tone !== "green")
                   }
-                  onClick={() => void capturePage()}
+                  onClick={() => void capturePage(false)}
                 >
                   Add page
                 </button>
+                {receiptDistanceGuideEnabled && guide.tone !== "green" && (
+                  <button
+                    type="button"
+                    className="ui-button ui-button-ghost"
+                    disabled={captureInFlightRef.current || pages.length >= 6}
+                    onClick={() => void capturePage(true)}
+                  >
+                    Add anyway
+                  </button>
+                )}
                 <button
                   type="button"
                   className="ui-button ui-button-ghost"
