@@ -82,6 +82,30 @@ const safeJson = (value: unknown) => {
   }
 };
 
+const parseJsonFromText = (text: string) => {
+  const trimmed = text.trim();
+  const direct = safeJson(trimmed);
+  if (direct) return direct;
+
+  // Strip common ```json fences.
+  const unfenced = trimmed
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  const fenced = safeJson(unfenced);
+  if (fenced) return fenced;
+
+  // Last resort: attempt to extract the first {...} block.
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start !== -1 && end !== -1 && end > start) {
+    const sliced = safeJson(trimmed.slice(start, end + 1));
+    if (sliced) return sliced;
+  }
+
+  return null;
+};
+
 const extractOutputText = (response: any) => {
   if (response?.output_text) return response.output_text as string;
   const output = response?.output ?? [];
@@ -454,50 +478,66 @@ export async function callOpenAIReceiptVisionV2(args: {
   passHint: string;
 }) {
   const schema = schemaFor(args.allowedKeys);
-  const response = await args.client.responses.create({
-    model: args.model,
-    input: [
-      {
-        role: "system",
-        content: [
-          {
-            type: "input_text",
-            text:
-              "You extract receipt category totals and units.\n" +
-              "Do not guess. If unsure, set amount null and confidence low.\n" +
-              "Ignore random integers not paired with money patterns; treat them as anomalies.\n" +
-              "Output must match the JSON schema exactly.\n",
-          },
-        ],
-      },
-      {
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text:
-              `Categories to extract:\n${args.categoriesText}\n\n` +
-              `Pass: ${args.passHint}\n` +
-              "Return amounts in dollars. If you cannot support a value from visible text, leave it null.",
-          },
-          { type: "input_image", image_url: args.dataUrl, detail: "high" },
-        ],
-      },
-    ],
-    text: {
-      format: {
-        type: "json_schema",
-        name: "receipt_extraction_v2",
-        strict: true,
-        schema,
-      },
-    },
-  });
+  const systemText =
+    "You extract receipt category totals and units.\n" +
+    "Do not guess. If unsure, set amount null and confidence low.\n" +
+    "Ignore random integers not paired with money patterns; treat them as anomalies.\n" +
+    "Output must match the JSON schema exactly.\n";
 
-  const outputText = extractOutputText(response).trim();
-  const parsed = safeJson(outputText) as any;
-  if (!parsed) throw new Error("ReceiptVisionV2: invalid JSON output.");
-  return { parsed, usage: (response as any)?.usage ?? null };
+  const userText =
+    `Categories to extract:\n${args.categoriesText}\n\n` +
+    `Pass: ${args.passHint}\n` +
+    "Return amounts in dollars. If you cannot support a value from visible text, leave it null.";
+
+  const makeRequest = async (mode: "json_schema" | "json_object") => {
+    return args.client.responses.create({
+      model: args.model,
+      input: [
+        {
+          role: "system",
+          content: [{ type: "input_text", text: systemText }],
+        },
+        {
+          role: "user",
+          content: [
+            { type: "input_text", text: userText },
+            { type: "input_image", image_url: args.dataUrl, detail: "high" },
+          ],
+        },
+      ],
+      text:
+        mode === "json_schema"
+          ? {
+              format: {
+                type: "json_schema",
+                name: "receipt_extraction_v2",
+                strict: true,
+                schema,
+              },
+            }
+          : {
+              // Fallback: older JSON mode (valid JSON, not schema-adherent). We validate after parsing.
+              format: { type: "json_object" },
+            },
+    });
+  };
+
+  const maskDigits = (s: string) => s.replace(/[0-9]/g, "#");
+
+  // Pass 1: Structured Outputs (strict JSON schema).
+  const response1 = await makeRequest("json_schema");
+  const outputText1 = extractOutputText(response1).trim();
+  const parsed1 = parseJsonFromText(outputText1) as any;
+  if (parsed1) return { parsed: parsed1, usage: (response1 as any)?.usage ?? null };
+
+  // Pass 2: JSON mode fallback (some model aliases/snapshots won't reliably honor json_schema strict).
+  const response2 = await makeRequest("json_object");
+  const outputText2 = extractOutputText(response2).trim();
+  const parsed2 = parseJsonFromText(outputText2) as any;
+  if (parsed2) return { parsed: parsed2, usage: (response2 as any)?.usage ?? null };
+
+  const preview = maskDigits((outputText1 || outputText2 || "").slice(0, 160));
+  throw new Error(`ReceiptVisionV2: invalid JSON output. preview="${preview}"`);
 }
 
 export async function runReceiptVisionV2(args: {

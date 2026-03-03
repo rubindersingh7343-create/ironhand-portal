@@ -12,7 +12,9 @@ const ENABLED =
   (process.env.RECEIPT_MULTIPHOTO_ENABLED ?? "").toLowerCase() === "true" &&
   (process.env.RECEIPT_VISION_V2_ENABLED ?? "").toLowerCase() === "true";
 
-const MODEL = process.env.OPENAI_VISION_MODEL ?? "gpt-4o";
+// NOTE: Strict Structured Outputs (json_schema strict:true) is only guaranteed on supported model snapshots.
+// Keep this configurable, but default to a snapshot known to support Structured Outputs well.
+const MODEL = process.env.OPENAI_VISION_MODEL ?? "gpt-4o-2024-08-06";
 const DOCSCAN = (process.env.RECEIPT_DOCSCAN_ENABLED ?? "true").toLowerCase() === "true";
 
 const MAX_IMAGE_BYTES = (() => {
@@ -179,4 +181,3 @@ export async function POST(req: Request) {
     );
   }
 }
-
