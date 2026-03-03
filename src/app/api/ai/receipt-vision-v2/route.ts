@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import { getSessionUser } from "@/lib/auth";
 import { decodeReceiptBase64, runReceiptVisionV2 } from "@/lib/ai/receiptVisionV2";
 import { maybeSaveDebugReceiptImages, receiptDocScanPreprocess } from "@/lib/images/receiptPreprocess";
+import { getReceiptLabelTargetsForStore } from "@/lib/ai/receiptLabelTargets";
 
 export const runtime = "nodejs";
 
@@ -52,6 +53,13 @@ const estimateBytes = (dataUrlOrBase64: string) => {
   return Math.floor((raw.length * 3) / 4);
 };
 
+function assertStoreAccess(user: Awaited<ReturnType<typeof getSessionUser>>, storeId: string) {
+  if (!user) return false;
+  if (user.role === "client") return (user.storeIds ?? []).includes(storeId);
+  if (user.role === "employee") return user.storeNumber === storeId;
+  return false;
+}
+
 export async function POST(req: Request) {
   if (!ENABLED) return NextResponse.json({ error: "Not found." }, { status: 404 });
 
@@ -78,6 +86,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Missing image_base64." }, { status: 400 });
   }
 
+  const requestedStoreId = typeof body?.store_id === "string" ? body.store_id : user.storeNumber;
+  const storeId = typeof requestedStoreId === "string" ? requestedStoreId : null;
+  if (storeId && !assertStoreAccess(user, storeId)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const approxBytes = estimateBytes(imageBase64);
   if (approxBytes > MAX_IMAGE_BYTES * 1.6) {
     // Preprocess will recompress, but a huge upload is a cost + memory risk.
@@ -87,9 +101,15 @@ export async function POST(req: Request) {
     );
   }
 
-  const allowedKeys = Array.isArray(body?.expected_fields)
-    ? (body.expected_fields as any[]).map((k) => String(k)).filter(Boolean)
-    : undefined;
+  // STRICT LABEL MATCHING: only allow fields explicitly enabled in owner report settings.
+  const targets = storeId ? await getReceiptLabelTargetsForStore(storeId) : null;
+  const allowedKeys = targets?.allowedKeys?.length
+    ? targets.allowedKeys
+    : Array.isArray(body?.expected_fields)
+      ? (body.expected_fields as any[]).map((k) => String(k)).filter(Boolean)
+      : undefined;
+  const labelByKey = targets?.labelByKey ?? undefined;
+  const matchMode = targets?.matchMode ?? undefined;
 
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -124,6 +144,8 @@ export async function POST(req: Request) {
       model: MODEL,
       imageBase64,
       allowedKeys,
+      labelByKey,
+      matchMode,
       maxBytes: MAX_IMAGE_BYTES,
       debug: DEBUG,
     });
@@ -165,6 +187,8 @@ export async function POST(req: Request) {
           model: MODEL,
           imageBase64,
           allowedKeys,
+          labelByKey,
+          matchMode,
           maxBytes: MAX_IMAGE_BYTES,
           debug: DEBUG,
           prepared: docscanPrepared,
@@ -189,6 +213,8 @@ export async function POST(req: Request) {
             baseScore,
             docScore,
             docscan_meta: docscan.best.meta,
+            allowed_labels: Object.values(labelByKey ?? {}).slice(0, 24),
+            label_match_mode: matchMode ?? null,
           });
         }
 

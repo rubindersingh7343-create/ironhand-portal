@@ -5,6 +5,7 @@ import { getSessionUser } from "@/lib/auth";
 import { receiptDocScanPreprocess } from "@/lib/images/receiptPreprocess";
 import { runReceiptVisionV2 } from "@/lib/ai/receiptVisionV2";
 import { mergeReceiptVisionV2Pages } from "@/lib/ai/receiptMultipage";
+import { getReceiptLabelTargetsForStore } from "@/lib/ai/receiptLabelTargets";
 
 export const runtime = "nodejs";
 
@@ -51,6 +52,13 @@ const estimateBytes = (dataUrlOrBase64: string) => {
   return Math.floor((raw.length * 3) / 4);
 };
 
+function assertStoreAccess(user: Awaited<ReturnType<typeof getSessionUser>>, storeId: string) {
+  if (!user) return false;
+  if (user.role === "client") return (user.storeIds ?? []).includes(storeId);
+  if (user.role === "employee") return user.storeNumber === storeId;
+  return false;
+}
+
 export async function POST(req: Request) {
   if (!ENABLED) return NextResponse.json({ error: "Not found." }, { status: 404 });
 
@@ -73,9 +81,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Too many pages (max 6)." }, { status: 400 });
   }
 
-  const allowedKeys = Array.isArray(body?.expected_fields)
-    ? (body.expected_fields as any[]).map((k) => String(k)).filter(Boolean)
-    : undefined;
+  const requestedStoreId =
+    typeof body?.store_id === "string" ? body.store_id : user.storeNumber;
+  const storeId = typeof requestedStoreId === "string" ? requestedStoreId : null;
+  if (storeId && !assertStoreAccess(user, storeId)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // STRICT LABEL MATCHING: only allow fields explicitly enabled in owner report settings.
+  const targets = storeId ? await getReceiptLabelTargetsForStore(storeId) : null;
+  const allowedKeys = targets?.allowedKeys?.length
+    ? targets.allowedKeys
+    : Array.isArray(body?.expected_fields)
+      ? (body.expected_fields as any[]).map((k) => String(k)).filter(Boolean)
+      : undefined;
+  const labelByKey = targets?.labelByKey ?? undefined;
+  const matchMode = targets?.matchMode ?? undefined;
 
   const totalApprox = pages.reduce((acc: number, p: any) => acc + (typeof p === "string" ? estimateBytes(p) : 0), 0);
   // Keep request size bounded (Vercel body limits). Prefer close-up captures.
@@ -129,6 +150,8 @@ export async function POST(req: Request) {
           model: MODEL,
           imageBase64: page,
           allowedKeys,
+          labelByKey,
+          matchMode,
           maxBytes: MAX_IMAGE_BYTES,
           debug: false,
           prepared,
@@ -152,6 +175,8 @@ export async function POST(req: Request) {
       model: MODEL,
       confirm: merged.extraction.needs_confirmation.length,
       anomalies: merged.extraction.anomalies.length,
+      allowed_labels: Object.values(labelByKey ?? {}).slice(0, 24),
+      label_match_mode: matchMode ?? null,
     });
 
     return NextResponse.json({

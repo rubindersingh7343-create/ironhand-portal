@@ -228,6 +228,7 @@ export default function ShiftReceiptScanModal({
           body: JSON.stringify({
             image_base64: imageDataUrl,
             expected_fields: expectedFields,
+            store_id: storeId,
           }),
           signal: abort.signal,
         }).catch(() => null);

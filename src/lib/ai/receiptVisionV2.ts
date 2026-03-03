@@ -106,6 +106,8 @@ const parseJsonFromText = (text: string) => {
   return null;
 };
 
+type LabelMatchMode = "exact" | "normalized";
+
 const extractOutputText = (response: any) => {
   if (response?.output_text) return response.output_text as string;
   const output = response?.output ?? [];
@@ -118,7 +120,7 @@ const extractOutputText = (response: any) => {
   return "";
 };
 
-const schemaFor = (allowedKeys: string[]) => ({
+const schemaFor = (allowedKeys: string[], allowedLabels?: string[]) => ({
   type: "object",
   additionalProperties: false,
   properties: {
@@ -131,7 +133,11 @@ const schemaFor = (allowedKeys: string[]) => ({
         additionalProperties: false,
         properties: {
           key: { type: "string", enum: allowedKeys },
-          label: { anyOf: [{ type: "string" }, { type: "null" }] },
+          // Strict label matching: label must be one of the allowed labels from owner settings.
+          // If no labels were provided (legacy mode), label can be any string/null.
+          label: allowedLabels?.length
+            ? { anyOf: [{ type: "string", enum: allowedLabels }, { type: "null" }] }
+            : { anyOf: [{ type: "string" }, { type: "null" }] },
           amount: { anyOf: [{ type: "number" }, { type: "null" }] },
           units: { anyOf: [{ type: "number" }, { type: "null" }] },
           confidence: { type: "number" },
@@ -278,7 +284,146 @@ export async function sliceHorizontalStrips(args: {
   return dataUrls;
 }
 
-export function validateReceiptExtractionV2(extraction: ReceiptVisionV2Extraction): ReceiptVisionV2Extraction {
+const normalizeLabel = (value: string) =>
+  value
+    .toLowerCase()
+    .trim()
+    .replace(/[$€£]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const labelMatches = (a: string, b: string, mode: LabelMatchMode) => {
+  if (mode === "exact") return a.trim() === b.trim();
+  return normalizeLabel(a) === normalizeLabel(b);
+};
+
+const labelContainedIn = (haystack: string, needle: string, mode: LabelMatchMode) => {
+  if (!haystack || !needle) return false;
+  if (mode === "exact") return haystack.includes(needle);
+  const h = normalizeLabel(haystack);
+  const n = normalizeLabel(needle);
+  return h.includes(n);
+};
+
+const coerceExtractionV2 = (raw: any, args: {
+  allowedKeys: string[];
+  allowedLabels?: string[];
+  labelByKey?: Record<string, string>;
+  matchMode?: LabelMatchMode;
+}): ReceiptVisionV2Extraction => {
+  const allowedKeySet = new Set(args.allowedKeys);
+  const allowedLabelSet = new Set((args.allowedLabels ?? []).map((l) => l.trim()).filter(Boolean));
+  const matchMode: LabelMatchMode = args.matchMode ?? "normalized";
+
+  const byKey = new Map<string, ReceiptVisionV2Field>();
+  const anomalies: ReceiptVisionV2Anomaly[] = [];
+
+  const fields: any[] = Array.isArray(raw?.fields) ? raw.fields : [];
+  for (const f of fields) {
+    const key = String(f?.key ?? "").trim();
+    if (!key || !allowedKeySet.has(key)) continue;
+
+    const labelRaw = typeof f?.label === "string" ? f.label : null;
+    const expectedLabel = args.labelByKey?.[key] ?? null;
+    const label =
+      expectedLabel ??
+      (labelRaw && (!allowedLabelSet.size || allowedLabelSet.has(labelRaw.trim()))
+        ? labelRaw.trim()
+        : null);
+
+    const amount = typeof f?.amount === "number" && Number.isFinite(f.amount) ? f.amount : null;
+    const units = typeof f?.units === "number" && Number.isFinite(f.units) ? f.units : null;
+    const confidence =
+      typeof f?.confidence === "number" && Number.isFinite(f.confidence) ? clamp01(f.confidence) : 0;
+    const evidenceNote = typeof f?.evidence?.note === "string" ? f.evidence.note.trim() : null;
+
+    // Strict label matching: if model tried to use a different allowed label for this key, discard value.
+    if (expectedLabel && labelRaw && !labelMatches(labelRaw, expectedLabel, matchMode)) {
+      anomalies.push({
+        type: "LOW_CONFIDENCE",
+        message: `Label mismatch for ${key}.`,
+        related_key: key,
+      });
+      byKey.set(key, {
+        key,
+        label: expectedLabel,
+        amount: null,
+        units: null,
+        confidence: 0,
+        evidence: { note: evidenceNote },
+      });
+      continue;
+    }
+
+    const existing = byKey.get(key);
+    if (existing) {
+      anomalies.push({
+        type: "DUPLICATE_FIELD",
+        message: `Duplicate field for ${key}; using higher confidence value.`,
+        related_key: key,
+      });
+      if (confidence > (existing.confidence ?? 0)) {
+        byKey.set(key, {
+          key,
+          label,
+          amount,
+          units,
+          confidence,
+          evidence: { note: evidenceNote },
+        });
+      }
+      continue;
+    }
+
+    byKey.set(key, {
+      key,
+      label,
+      amount,
+      units,
+      confidence,
+      evidence: { note: evidenceNote },
+    });
+  }
+
+  // Return a normalized field set (all allowed keys present).
+  const normalizedFields = args.allowedKeys.map((key) => {
+    const expectedLabel = args.labelByKey?.[key] ?? null;
+    const existing = byKey.get(key);
+    if (existing) {
+      // Force label to match owner settings for consistency.
+      if (expectedLabel) return { ...existing, label: expectedLabel };
+      return existing;
+    }
+    return {
+      key,
+      label: expectedLabel,
+      amount: null,
+      units: null,
+      confidence: 0,
+      evidence: { note: null },
+    } satisfies ReceiptVisionV2Field;
+  });
+
+  return {
+    vendor: typeof raw?.vendor === "string" ? raw.vendor : null,
+    date: typeof raw?.date === "string" ? raw.date : null,
+    fields: normalizedFields,
+    anomalies: [
+      ...anomalies,
+      ...(Array.isArray(raw?.anomalies) ? raw.anomalies : []),
+    ],
+    needs_confirmation: Array.isArray(raw?.needs_confirmation)
+      ? raw.needs_confirmation.map(String).filter((k: string) => allowedKeySet.has(k))
+      : [],
+    reasoning_summary: typeof raw?.reasoning_summary === "string" ? raw.reasoning_summary : "",
+  };
+};
+
+export function validateReceiptExtractionV2(
+  extraction: ReceiptVisionV2Extraction,
+  opts?: { labelByKey?: Record<string, string>; matchMode?: LabelMatchMode },
+): ReceiptVisionV2Extraction {
   const anomalies: ReceiptVisionV2Anomaly[] = [...(extraction.anomalies ?? [])];
   const needs = new Set<string>(extraction.needs_confirmation ?? []);
 
@@ -286,6 +431,27 @@ export function validateReceiptExtractionV2(extraction: ReceiptVisionV2Extractio
   for (const field of extraction.fields ?? []) {
     byKey.set(field.key, field);
     if (typeof field.amount !== "number") continue;
+
+    const expectedLabel = opts?.labelByKey?.[field.key] ?? null;
+    const matchMode: LabelMatchMode = opts?.matchMode ?? "normalized";
+    if (expectedLabel) {
+      // Require evidence to include the target label; otherwise treat as hallucinated.
+      const note = typeof field.evidence?.note === "string" ? field.evidence.note : "";
+      if (!note || !labelContainedIn(note, expectedLabel, matchMode)) {
+        anomalies.push({
+          type: "LOW_CONFIDENCE",
+          message: `No evidence for ${field.key} label on this page; leaving blank.`,
+          related_key: field.key,
+        });
+        needs.add(field.key);
+        field.amount = null;
+        field.confidence = Math.min(field.confidence ?? 0, 0.2);
+        // Don't run numeric validations on this field anymore.
+        continue;
+      }
+      // Force label to the owner-configured string.
+      field.label = expectedLabel;
+    }
 
     if (!moneyLike(field.amount)) {
       anomalies.push({
@@ -474,20 +640,27 @@ export async function callOpenAIReceiptVisionV2(args: {
   model: string;
   dataUrl: string;
   allowedKeys: string[];
+  allowedLabels?: string[];
+  labelByKey?: Record<string, string>;
   categoriesText: string;
   passHint: string;
 }) {
-  const schema = schemaFor(args.allowedKeys);
+  const schema = schemaFor(args.allowedKeys, args.allowedLabels);
   const systemText =
     "You extract receipt category totals and units.\n" +
-    "Do not guess. If unsure, set amount null and confidence low.\n" +
+    "You are ONLY allowed to extract values for the provided labels.\n" +
+    "Do not infer related categories. Do not guess.\n" +
+    "If a label is not visible in the provided image, set amount=null and confidence<=0.2.\n" +
     "Ignore random integers not paired with money patterns; treat them as anomalies.\n" +
     "Output must match the JSON schema exactly.\n";
 
+  const allowedLabelsForPrompt = (args.allowedLabels?.length ? args.allowedLabels : args.allowedKeys).map(String);
+
   const userText =
-    `Categories to extract:\n${args.categoriesText}\n\n` +
+    `Allowed labels (exact):\n${allowedLabelsForPrompt.map((l) => `- "${l}"`).join("\n")}\n\n` +
+    `Targets:\n${args.categoriesText}\n\n` +
     `Pass: ${args.passHint}\n` +
-    "Return amounts in dollars. If you cannot support a value from visible text, leave it null.";
+    "Return amounts in dollars. Label must match exactly one of the Allowed labels. If not visible, leave null.";
 
   const makeRequest = async (mode: "json_schema" | "json_object") => {
     return args.client.responses.create({
@@ -545,6 +718,8 @@ export async function runReceiptVisionV2(args: {
   model: string;
   imageBase64: string;
   allowedKeys?: string[];
+  labelByKey?: Record<string, string>;
+  matchMode?: LabelMatchMode;
   maxBytes: number;
   debug?: boolean;
   prepared?: ReceiptVisionV2PreprocessResult;
@@ -552,6 +727,8 @@ export async function runReceiptVisionV2(args: {
   const request_id = crypto.randomUUID();
   const startedAt = Date.now();
   const allowedKeys = (args.allowedKeys?.length ? args.allowedKeys : Array.from(DEFAULT_KEYS)).map(String);
+  const allowedLabels = args.labelByKey ? Array.from(new Set(Object.values(args.labelByKey).map((l) => l.trim()).filter(Boolean))) : undefined;
+  const matchMode: LabelMatchMode = args.matchMode ?? "normalized";
 
   const preprocess =
     args.prepared ??
@@ -563,7 +740,10 @@ export async function runReceiptVisionV2(args: {
     }));
 
   const categoriesText = allowedKeys
-    .map((k) => `- ${k}`)
+    .map((k) => {
+      const label = args.labelByKey?.[k];
+      return label ? `- ${label} (key: ${k})` : `- ${k}`;
+    })
     .join("\n");
 
   if (args.debug) {
@@ -579,19 +759,35 @@ export async function runReceiptVisionV2(args: {
     model: args.model,
     dataUrl: preprocess.dataUrl,
     allowedKeys,
+    allowedLabels,
+    labelByKey: args.labelByKey,
     categoriesText,
     passHint: "Whole image",
   });
 
-  const base: ReceiptVisionV2Extraction = {
-    vendor: typeof pass1Raw.parsed?.vendor === "string" ? pass1Raw.parsed.vendor : null,
-    date: typeof pass1Raw.parsed?.date === "string" ? pass1Raw.parsed.date : null,
-    fields: Array.isArray(pass1Raw.parsed?.fields) ? pass1Raw.parsed.fields : [],
-    anomalies: Array.isArray(pass1Raw.parsed?.anomalies) ? pass1Raw.parsed.anomalies : [],
-    needs_confirmation: Array.isArray(pass1Raw.parsed?.needs_confirmation) ? pass1Raw.parsed.needs_confirmation : [],
-    reasoning_summary: typeof pass1Raw.parsed?.reasoning_summary === "string" ? pass1Raw.parsed.reasoning_summary : "",
-  };
-  const pass1 = validateReceiptExtractionV2(base);
+  const baseCoerced = coerceExtractionV2(pass1Raw.parsed, {
+    allowedKeys,
+    allowedLabels,
+    labelByKey: args.labelByKey,
+    matchMode,
+  });
+  const pass1 = validateReceiptExtractionV2(baseCoerced, { labelByKey: args.labelByKey, matchMode });
+  if (args.debug && args.labelByKey) {
+    console.log("[receipt-v2:strict-labels]", {
+      request_id,
+      model: args.model,
+      allowed_labels: Object.values(args.labelByKey).slice(0, 24),
+      extracted: pass1.fields
+        .filter((f) => typeof f.amount === "number")
+        .map((f) => ({
+          key: f.key,
+          label: f.label,
+          amount: f.amount,
+          confidence: Number((f.confidence ?? 0).toFixed(2)),
+        }))
+        .slice(0, 24),
+    });
+  }
 
   let final = pass1;
   let used_multipass = false;
@@ -609,20 +805,20 @@ export async function runReceiptVisionV2(args: {
         model: args.model,
         dataUrl: tile,
         allowedKeys,
+        allowedLabels,
+        labelByKey: args.labelByKey,
         categoriesText,
         passHint: `Strip ${idx + 1} (overlap)`,
       });
       passes += 1;
       if (res.usage) usage.push(res.usage);
-      const ex: ReceiptVisionV2Extraction = {
-        vendor: typeof res.parsed?.vendor === "string" ? res.parsed.vendor : null,
-        date: typeof res.parsed?.date === "string" ? res.parsed.date : null,
-        fields: Array.isArray(res.parsed?.fields) ? res.parsed.fields : [],
-        anomalies: Array.isArray(res.parsed?.anomalies) ? res.parsed.anomalies : [],
-        needs_confirmation: Array.isArray(res.parsed?.needs_confirmation) ? res.parsed.needs_confirmation : [],
-        reasoning_summary: typeof res.parsed?.reasoning_summary === "string" ? res.parsed.reasoning_summary : "",
-      };
-      return validateReceiptExtractionV2(ex);
+      const exCoerced = coerceExtractionV2(res.parsed, {
+        allowedKeys,
+        allowedLabels,
+        labelByKey: args.labelByKey,
+        matchMode,
+      });
+      return validateReceiptExtractionV2(exCoerced, { labelByKey: args.labelByKey, matchMode });
     });
 
     final = mergeExtractionsV2(pass1, tileExtractions);
