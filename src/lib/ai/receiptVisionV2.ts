@@ -306,6 +306,12 @@ const labelContainedIn = (haystack: string, needle: string, mode: LabelMatchMode
   return h.includes(n);
 };
 
+const looksLikeMoneyText = (text: string) => {
+  if (!text) return false;
+  // Very lenient: "123", "1,234.56", "$12.34"
+  return /[$]?\s*\d[\d,]*([.]\d{1,2})?/.test(text);
+};
+
 const coerceExtractionV2 = (raw: any, args: {
   allowedKeys: string[];
   allowedLabels?: string[];
@@ -437,7 +443,7 @@ export function validateReceiptExtractionV2(
     if (expectedLabel) {
       // Require evidence to include the target label; otherwise treat as hallucinated.
       const note = typeof field.evidence?.note === "string" ? field.evidence.note : "";
-      if (!note || !labelContainedIn(note, expectedLabel, matchMode)) {
+      if (!note || !labelContainedIn(note, expectedLabel, matchMode) || !looksLikeMoneyText(note)) {
         anomalies.push({
           type: "LOW_CONFIDENCE",
           message: `No evidence for ${field.key} label on this page; leaving blank.`,
@@ -651,6 +657,8 @@ export async function callOpenAIReceiptVisionV2(args: {
     "You are ONLY allowed to extract values for the provided labels.\n" +
     "Do not infer related categories. Do not guess.\n" +
     "If a label is not visible in the provided image, set amount=null and confidence<=0.2.\n" +
+    "For any amount you provide, evidence.note MUST quote the exact receipt text that contains BOTH the label and the amount.\n" +
+    "If you cannot quote that exact text, set amount=null.\n" +
     "Ignore random integers not paired with money patterns; treat them as anomalies.\n" +
     "Output must match the JSON schema exactly.\n";
 
@@ -660,7 +668,8 @@ export async function callOpenAIReceiptVisionV2(args: {
     `Allowed labels (exact):\n${allowedLabelsForPrompt.map((l) => `- "${l}"`).join("\n")}\n\n` +
     `Targets:\n${args.categoriesText}\n\n` +
     `Pass: ${args.passHint}\n` +
-    "Return amounts in dollars. Label must match exactly one of the Allowed labels. If not visible, leave null.";
+    "Return amounts in dollars. Label must match exactly one of the Allowed labels. If not visible, leave null.\n" +
+    "Set evidence.note to the exact quoted fragment (label + amount).";
 
   const makeRequest = async (mode: "json_schema" | "json_object") => {
     return args.client.responses.create({
