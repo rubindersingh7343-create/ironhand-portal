@@ -5,8 +5,10 @@ import clsx from "clsx";
 import IHModal from "@/components/ui/IHModal";
 import type { ShiftReceiptSalesFields } from "@/components/employee/ShiftReceiptScanModal";
 import { receiptDistanceGuideEnabled } from "@/lib/featureFlags";
+import { Camera, CameraDirection, CameraResultType, CameraSource } from "@capacitor/camera";
 
 type CaptureStage = "CAPTURE" | "PROCESSING" | "REVIEW" | "ERROR";
+type CaptureMode = "live" | "native";
 
 type GuideState = {
   tone: "gray" | "yellow" | "green";
@@ -88,6 +90,36 @@ const canUseNativeDocScan = () => {
   return typeof plugin?.scan === "function";
 };
 
+const canUseNativeCamera = () => {
+  const Cap = (typeof window !== "undefined" && (window as any).Capacitor) || null;
+  return Boolean(Cap?.isNativePlatform?.());
+};
+
+const downscaleDataUrl = async (dataUrl: string, opts: { maxWidth: number; quality: number }) => {
+  const loadImg = async (url: string) =>
+    new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("image load failed"));
+      img.src = url;
+    });
+  const img = await loadImg(dataUrl);
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  if (!w || !h) return dataUrl;
+  const scale = w > opts.maxWidth ? opts.maxWidth / w : 1;
+  const outW = Math.max(1, Math.round(w * scale));
+  const outH = Math.max(1, Math.round(h * scale));
+  if (outW === w && outH === h) return dataUrl;
+  const canvas = document.createElement("canvas");
+  canvas.width = outW;
+  canvas.height = outH;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return dataUrl;
+  ctx.drawImage(img, 0, 0, outW, outH);
+  return canvas.toDataURL("image/jpeg", opts.quality);
+};
+
 export default function ShiftReceiptMultiPageScanModal({
   isOpen,
   storeId,
@@ -113,6 +145,7 @@ export default function ShiftReceiptMultiPageScanModal({
   const [vendorChip, setVendorChip] = useState<string | null>(null);
   const [dateChip, setDateChip] = useState<string | null>(null);
   const [autoCapture, setAutoCapture] = useState(false);
+  const [captureMode, setCaptureMode] = useState<CaptureMode>(() => (canUseNativeCamera() ? "native" : "live"));
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -157,6 +190,7 @@ export default function ShiftReceiptMultiPageScanModal({
     setVendorChip(null);
     setDateChip(null);
     setAutoCapture(false);
+    setCaptureMode(canUseNativeCamera() ? "native" : "live");
     lastGrayRef.current = null;
     stableSinceRef.current = null;
   }, []);
@@ -184,6 +218,7 @@ export default function ShiftReceiptMultiPageScanModal({
   }, []);
 
   const startCamera = useCallback(async () => {
+    if (captureMode !== "live") return;
     stopCamera();
     setError(null);
     try {
@@ -207,7 +242,7 @@ export default function ShiftReceiptMultiPageScanModal({
       console.error("receipt camera start failed", err);
       setError("Camera access failed. You can use the classic receipt scan instead.");
     }
-  }, [stopCamera]);
+  }, [captureMode, stopCamera]);
 
   const computeRoi = useCallback(() => {
     const video = videoRef.current;
@@ -335,9 +370,42 @@ export default function ShiftReceiptMultiPageScanModal({
 
   const capturePage = useCallback(async (force = false) => {
     if (captureInFlightRef.current) return;
+    if (pages.length >= 6) return;
+
+    if (captureMode === "native") {
+      captureInFlightRef.current = true;
+      try {
+        setError(null);
+        const photo = await Camera.getPhoto({
+          quality: 92,
+          resultType: CameraResultType.DataUrl,
+          source: CameraSource.Camera,
+          direction: CameraDirection.Rear,
+          allowEditing: true,
+          saveToGallery: false,
+        });
+        const dataUrl = typeof photo?.dataUrl === "string" ? photo.dataUrl : null;
+        if (!dataUrl || !dataUrl.startsWith("data:image/")) return;
+        const compressed = await downscaleDataUrl(dataUrl, { maxWidth: 2200, quality: 0.88 });
+        const bytes = approxBytesFromDataUrl(compressed);
+        if (bytes > 2_200_000) {
+          setError("That capture is too large. Move closer and capture smaller sections.");
+          return;
+        }
+        setPages((prev) => [...prev, compressed]);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err ?? "");
+        if (message.toLowerCase().includes("cancel")) return;
+        console.error("native camera capture failed", err);
+        setError("Unable to capture. Try again or use Live preview.");
+      } finally {
+        captureInFlightRef.current = false;
+      }
+      return;
+    }
+
     const video = videoRef.current;
     if (!video || video.readyState < 2) return;
-    if (pages.length >= 6) return;
 
     if (receiptDistanceGuideEnabled && guide.tone !== "green" && !force) return;
 
@@ -374,7 +442,7 @@ export default function ShiftReceiptMultiPageScanModal({
     } finally {
       captureInFlightRef.current = false;
     }
-  }, [computeRoi, guide.tone, pages.length]);
+  }, [captureMode, computeRoi, guide.tone, pages.length]);
 
   const stitchPages = useCallback(async (items: string[]) => {
     if (items.length === 0) return null;
@@ -522,6 +590,7 @@ export default function ShiftReceiptMultiPageScanModal({
 
   useEffect(() => {
     if (!isOpen) return;
+    if (captureMode !== "live") return;
     if (!receiptDistanceGuideEnabled) return;
     if (analysisTimerRef.current) window.clearInterval(analysisTimerRef.current);
     analysisTimerRef.current = window.setInterval(() => analyzeFrame(), 110);
@@ -531,7 +600,7 @@ export default function ShiftReceiptMultiPageScanModal({
         analysisTimerRef.current = null;
       }
     };
-  }, [analyzeFrame, isOpen]);
+  }, [analyzeFrame, captureMode, isOpen]);
 
   const frameCls =
     guide.tone === "green"
@@ -574,7 +643,11 @@ export default function ShiftReceiptMultiPageScanModal({
           </div>
 
           <div className={clsx("rounded-full border px-3 py-1 text-xs font-semibold", chipCls)}>
-            {receiptDistanceGuideEnabled ? guide.message : "Capture sections"}
+            {captureMode === "native"
+              ? "Native capture"
+              : receiptDistanceGuideEnabled
+                ? guide.message
+                : "Capture sections"}
           </div>
         </div>
 
@@ -593,13 +666,64 @@ export default function ShiftReceiptMultiPageScanModal({
 
         {stage === "CAPTURE" && (
           <>
+            <div className="flex flex-wrap items-center gap-2">
+              {canUseNativeCamera() && (
+                <button
+                  type="button"
+                  className={clsx(
+                    "rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] transition",
+                    captureMode === "native"
+                      ? "border-emerald-300/40 bg-emerald-500/10 text-emerald-100"
+                      : "border-white/10 bg-white/5 text-slate-100 hover:bg-white/10",
+                  )}
+                  onClick={() => {
+                    setCaptureMode("native");
+                    stopCamera();
+                  }}
+                >
+                  Native camera
+                </button>
+              )}
+              <button
+                type="button"
+                className={clsx(
+                  "rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] transition",
+                  captureMode === "live"
+                    ? "border-emerald-300/40 bg-emerald-500/10 text-emerald-100"
+                    : "border-white/10 bg-white/5 text-slate-100 hover:bg-white/10",
+                )}
+                onClick={() => {
+                  setCaptureMode("live");
+                  void startCamera();
+                }}
+              >
+                Live preview
+              </button>
+              {canUseNativeDocScan() && (
+                <button type="button" className="ui-button ui-button-ghost" onClick={() => void openNativeScan()}>
+                  iOS scanner
+                </button>
+              )}
+            </div>
+
             <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/40">
-              <video
-                ref={videoRef}
-                playsInline
-                muted
-                className="h-[56vh] w-full object-cover"
-              />
+              {captureMode === "live" ? (
+                <video
+                  ref={videoRef}
+                  playsInline
+                  muted
+                  className="h-[56vh] w-full object-cover"
+                />
+              ) : (
+                <div className="grid h-[56vh] w-full place-items-center bg-black/30 text-center">
+                  <div className="max-w-sm space-y-2 px-6">
+                    <p className="text-sm font-semibold text-slate-100">Tap “Add page” to open the camera</p>
+                    <p className="text-xs text-slate-300">
+                      Capture close-up sections (top/middle/bottom) with a small overlap.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="pointer-events-none absolute inset-0">
                 <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/35" />
@@ -612,7 +736,11 @@ export default function ShiftReceiptMultiPageScanModal({
                 <div className="absolute left-1/2 top-1/2 w-[84%] -translate-x-1/2 -translate-y-1/2 rounded-3xl">
                   <div className="absolute -top-9 left-0 right-0 flex justify-center">
                     <span className={clsx("rounded-full border px-3 py-1 text-[11px] font-semibold", chipCls)}>
-                      {receiptDistanceGuideEnabled ? guide.message : "Line up receipt inside the frame"}
+                      {captureMode === "native"
+                        ? "Capture close-up sections"
+                        : receiptDistanceGuideEnabled
+                          ? guide.message
+                          : "Line up receipt inside the frame"}
                     </span>
                   </div>
                 </div>
@@ -627,13 +755,13 @@ export default function ShiftReceiptMultiPageScanModal({
                   disabled={
                     captureInFlightRef.current ||
                     pages.length >= 6 ||
-                    (receiptDistanceGuideEnabled && guide.tone !== "green")
+                    (captureMode === "live" && receiptDistanceGuideEnabled && guide.tone !== "green")
                   }
                   onClick={() => void capturePage(false)}
                 >
                   Add page
                 </button>
-                {receiptDistanceGuideEnabled && guide.tone !== "green" && (
+                {captureMode === "live" && receiptDistanceGuideEnabled && guide.tone !== "green" && (
                   <button
                     type="button"
                     className="ui-button ui-button-ghost"
@@ -643,21 +771,18 @@ export default function ShiftReceiptMultiPageScanModal({
                     Add anyway
                   </button>
                 )}
-                <button
-                  type="button"
-                  className="ui-button ui-button-ghost"
-                  onClick={() => setAutoCapture((prev) => !prev)}
-                >
-                  Auto-capture: {autoCapture ? "On" : "Off"}
-                </button>
+                {captureMode === "live" && (
+                  <button
+                    type="button"
+                    className="ui-button ui-button-ghost"
+                    onClick={() => setAutoCapture((prev) => !prev)}
+                  >
+                    Auto-capture: {autoCapture ? "On" : "Off"}
+                  </button>
+                )}
               </div>
 
               <div className="flex items-center gap-2">
-                {canUseNativeDocScan() && (
-                  <button type="button" className="ui-button ui-button-ghost" onClick={() => void openNativeScan()}>
-                    iOS scanner
-                  </button>
-                )}
                 <button
                   type="button"
                   className="ui-button ui-button-ghost"
