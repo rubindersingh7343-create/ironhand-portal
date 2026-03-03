@@ -312,6 +312,26 @@ const looksLikeMoneyText = (text: string) => {
   return /[$]?\s*\d[\d,]*([.]\d{1,2})?/.test(text);
 };
 
+const extractMoneyFromText = (text: string): number | null => {
+  if (!text) return null;
+  // Prefer decimals if present.
+  const m =
+    text.match(/[$]?\s*(\d[\d,]*\.\d{2})/) ??
+    text.match(/[$]?\s*(\d[\d,]*)/);
+  const raw = m?.[1];
+  if (!raw) return null;
+  const cleaned = raw.replace(/,/g, "");
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+};
+
+const amountsClose = (a: number, b: number) => {
+  const diff = Math.abs(a - b);
+  if (diff <= 0.02) return true;
+  const denom = Math.max(1, Math.abs(b));
+  return diff / denom <= 0.005;
+};
+
 const coerceExtractionV2 = (raw: any, args: {
   allowedKeys: string[];
   allowedLabels?: string[];
@@ -453,6 +473,20 @@ export function validateReceiptExtractionV2(
         field.amount = null;
         field.confidence = Math.min(field.confidence ?? 0, 0.2);
         // Don't run numeric validations on this field anymore.
+        continue;
+      }
+
+      // Evidence must include an amount that matches the returned amount.
+      const evMoney = extractMoneyFromText(note);
+      if (typeof field.amount === "number" && evMoney !== null && !amountsClose(field.amount, evMoney)) {
+        anomalies.push({
+          type: "LOW_CONFIDENCE",
+          message: `Evidence amount mismatch for ${field.key}; leaving blank.`,
+          related_key: field.key,
+        });
+        needs.add(field.key);
+        field.amount = null;
+        field.confidence = Math.min(field.confidence ?? 0, 0.2);
         continue;
       }
       // Force label to the owner-configured string.

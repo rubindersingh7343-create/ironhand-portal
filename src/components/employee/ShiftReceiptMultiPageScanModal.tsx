@@ -190,8 +190,10 @@ export default function ShiftReceiptMultiPageScanModal({
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          // Higher-res preview materially improves OCR on iOS/Android webviews.
+          // iOS may not honor exact values, but "ideal" helps.
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
         } as any,
         audio: false,
       });
