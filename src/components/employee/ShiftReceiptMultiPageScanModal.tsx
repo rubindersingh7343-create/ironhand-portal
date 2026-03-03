@@ -6,6 +6,7 @@ import IHModal from "@/components/ui/IHModal";
 import type { ShiftReceiptSalesFields } from "@/components/employee/ShiftReceiptScanModal";
 import { receiptDistanceGuideEnabled } from "@/lib/featureFlags";
 import { Camera, CameraDirection, CameraResultType, CameraSource } from "@capacitor/camera";
+import { Capacitor } from "@capacitor/core";
 
 type CaptureStage = "CAPTURE" | "PROCESSING" | "REVIEW" | "ERROR";
 type CaptureMode = "live" | "native";
@@ -91,8 +92,13 @@ const canUseNativeDocScan = () => {
 };
 
 const canUseNativeCamera = () => {
-  const Cap = (typeof window !== "undefined" && (window as any).Capacitor) || null;
-  return Boolean(Cap?.isNativePlatform?.());
+  // "Native camera" requires a Capacitor native shell AND the Camera plugin installed.
+  // On web/PWA, @capacitor/camera will exist but throw "not implemented".
+  try {
+    return Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("Camera");
+  } catch {
+    return false;
+  }
 };
 
 const downscaleDataUrl = async (dataUrl: string, opts: { maxWidth: number; quality: number }) => {
@@ -154,6 +160,8 @@ export default function ShiftReceiptMultiPageScanModal({
   const stableSinceRef = useRef<number | null>(null);
   const analysisTimerRef = useRef<number | null>(null);
   const captureInFlightRef = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const fileCaptureTimeoutRef = useRef<number | null>(null);
 
   const categoryOptions = useMemo(
     () =>
@@ -200,6 +208,10 @@ export default function ShiftReceiptMultiPageScanModal({
       window.clearInterval(analysisTimerRef.current);
       analysisTimerRef.current = null;
     }
+    if (fileCaptureTimeoutRef.current) {
+      window.clearTimeout(fileCaptureTimeoutRef.current);
+      fileCaptureTimeoutRef.current = null;
+    }
     stableSinceRef.current = null;
     lastGrayRef.current = null;
     const stream = streamRef.current;
@@ -215,6 +227,27 @@ export default function ShiftReceiptMultiPageScanModal({
         // ignore
       }
     }
+  }, []);
+
+  const openFileCapture = useCallback(() => {
+    // Mobile Safari/Chrome: file input with capture opens the native camera UI.
+    // Desktop: opens file picker (still usable).
+    const input = fileInputRef.current;
+    if (!input) return false;
+    try {
+      // Reset so selecting the same photo twice still triggers onChange.
+      input.value = "";
+    } catch {
+      // ignore
+    }
+    input.click();
+    // If user cancels, we may never get onChange; reset in-flight after a short window.
+    if (fileCaptureTimeoutRef.current) window.clearTimeout(fileCaptureTimeoutRef.current);
+    fileCaptureTimeoutRef.current = window.setTimeout(() => {
+      captureInFlightRef.current = false;
+      fileCaptureTimeoutRef.current = null;
+    }, 12_000);
+    return true;
   }, []);
 
   const startCamera = useCallback(async () => {
@@ -373,19 +406,55 @@ export default function ShiftReceiptMultiPageScanModal({
     if (pages.length >= 6) return;
 
     if (captureMode === "native") {
+      // If the Capacitor Camera plugin isn't available (PWA/web), fall back to file capture.
+      if (!canUseNativeCamera()) {
+        captureInFlightRef.current = true;
+        setError(null);
+        if (!openFileCapture()) {
+          captureInFlightRef.current = false;
+          setError("Unable to open the camera here. Use Live preview or classic scan.");
+        }
+        return;
+      }
+
       captureInFlightRef.current = true;
       try {
         setError(null);
+        // Permissions (iOS/Android). If denied, fail fast with a helpful message.
+        try {
+          const perms = await Camera.checkPermissions();
+          const camState = (perms as any)?.camera ?? "prompt";
+          if (camState !== "granted") {
+            const requested = await Camera.requestPermissions({ permissions: ["camera"] as any });
+            const nextState = (requested as any)?.camera ?? camState;
+            if (nextState !== "granted") {
+              setError("Camera permission is off. Enable it in Settings, or use Live preview.");
+              return;
+            }
+          }
+        } catch {
+          // Some environments throw here; let getPhoto attempt and we’ll handle "not implemented".
+        }
         const photo = await Camera.getPhoto({
-          quality: 92,
-          resultType: CameraResultType.DataUrl,
+          quality: 90,
+          // Base64 is more reliable than DataUrl across Capacitor shells.
+          resultType: CameraResultType.Base64,
           source: CameraSource.Camera,
           direction: CameraDirection.Rear,
-          allowEditing: true,
+          allowEditing: false,
           saveToGallery: false,
         });
-        const dataUrl = typeof photo?.dataUrl === "string" ? photo.dataUrl : null;
-        if (!dataUrl || !dataUrl.startsWith("data:image/")) return;
+        const base64 = (photo as any)?.base64String as string | undefined;
+        const dataUrl =
+          typeof base64 === "string" && base64.length > 0
+            ? `data:image/jpeg;base64,${base64}`
+            : typeof (photo as any)?.dataUrl === "string"
+              ? (photo as any).dataUrl
+              : null;
+        if (!dataUrl || !dataUrl.startsWith("data:image/")) {
+          setError("Unable to capture. Try again or use Live preview.");
+          return;
+        }
         const compressed = await downscaleDataUrl(dataUrl, { maxWidth: 2200, quality: 0.88 });
         const bytes = approxBytesFromDataUrl(compressed);
         if (bytes > 2_200_000) {
@@ -395,9 +464,27 @@ export default function ShiftReceiptMultiPageScanModal({
         setPages((prev) => [...prev, compressed]);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err ?? "");
-        if (message.toLowerCase().includes("cancel")) return;
+        const lower = message.toLowerCase();
+        if (lower.includes("cancel")) return;
         console.error("native camera capture failed", err);
-        setError("Unable to capture. Try again or use Live preview.");
+        // If the native plugin is missing/unavailable, immediately fall back to live preview.
+        if (lower.includes("not implemented") || lower.includes("unimplemented") || lower.includes("plugin")) {
+          setError(null);
+          setCaptureMode("live");
+          void startCamera();
+          return;
+        }
+        if (lower.includes("denied") || lower.includes("permission")) {
+          // Try file capture (often still prompts permission properly); if that fails, show guidance.
+          setError(null);
+          if (!openFileCapture()) {
+            setError("Camera permission is off. Enable it in Settings, or use Live preview.");
+          }
+          return;
+        }
+        // Last resort: try file capture, then show error only if we couldn't open it.
+        setError(null);
+        if (!openFileCapture()) setError("Unable to capture. Try again or use Live preview.");
       } finally {
         captureInFlightRef.current = false;
       }
@@ -442,7 +529,42 @@ export default function ShiftReceiptMultiPageScanModal({
     } finally {
       captureInFlightRef.current = false;
     }
-  }, [captureMode, computeRoi, guide.tone, pages.length]);
+  }, [captureMode, computeRoi, guide.tone, openFileCapture, pages.length, startCamera]);
+
+  const onFileSelected = useCallback(
+    async (file: File | null) => {
+      if (fileCaptureTimeoutRef.current) {
+        window.clearTimeout(fileCaptureTimeoutRef.current);
+        fileCaptureTimeoutRef.current = null;
+      }
+      captureInFlightRef.current = false;
+      if (!file) return;
+      try {
+        setError(null);
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result ?? ""));
+          reader.onerror = () => reject(new Error("file read failed"));
+          reader.readAsDataURL(file);
+        });
+        if (!dataUrl.startsWith("data:image/")) {
+          setError("That file isn’t an image. Try again.");
+          return;
+        }
+        const compressed = await downscaleDataUrl(dataUrl, { maxWidth: 2200, quality: 0.88 });
+        const bytes = approxBytesFromDataUrl(compressed);
+        if (bytes > 2_200_000) {
+          setError("That capture is too large. Move closer and capture smaller sections.");
+          return;
+        }
+        setPages((prev) => [...prev, compressed].slice(0, 6));
+      } catch (err) {
+        console.error("file capture failed", err);
+        setError("Unable to use that photo. Try again or use Live preview.");
+      }
+    },
+    [setPages],
+  );
 
   const stitchPages = useCallback(async (items: string[]) => {
     if (items.length === 0) return null;
@@ -629,6 +751,14 @@ export default function ShiftReceiptMultiPageScanModal({
       panelClassName="no-transform"
     >
       <div className="space-y-4 p-5 text-white">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => void onFileSelected(e.target.files?.[0] ?? null)}
+        />
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
             <p
