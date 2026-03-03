@@ -17,6 +17,15 @@ const ENABLED =
 // Keep this configurable, but default to a snapshot known to support Structured Outputs well.
 const MODEL = process.env.OPENAI_VISION_MODEL ?? "gpt-4o-2024-08-06";
 const DOCSCAN = (process.env.RECEIPT_DOCSCAN_ENABLED ?? "true").toLowerCase() === "true";
+// Multi-page is already close-up sections; per-page multi-pass strips is very expensive and usually unnecessary.
+// Keep it off by default to avoid multi-minute scans.
+const PAGE_MULTIPASS = (process.env.IH_RECEIPT_MP_MULTIPASS ?? "false").toLowerCase() === "true";
+
+const PAGE_CONCURRENCY = (() => {
+  const parsed = Number(process.env.IH_RECEIPT_MP_CONCURRENCY ?? "3");
+  if (!Number.isFinite(parsed) || parsed <= 0) return 3;
+  return Math.round(Math.min(4, Math.max(1, parsed)));
+})();
 
 const MAX_IMAGE_BYTES = (() => {
   const parsed = Number(process.env.IH_RECEIPT_V2_MAX_IMAGE_MB ?? "8");
@@ -112,9 +121,9 @@ export async function POST(req: Request) {
 
   try {
     const results: any[] = [];
-    // Concurrency limit 2 to avoid spiky OpenAI usage.
+    // Concurrency limit to avoid spiky OpenAI usage.
     let next = 0;
-    const workerCount = Math.min(2, pages.length);
+    const workerCount = Math.min(PAGE_CONCURRENCY, pages.length);
     const workers = new Array(workerCount).fill(null).map(async () => {
       while (true) {
         const idx = next++;
@@ -152,6 +161,10 @@ export async function POST(req: Request) {
           allowedKeys,
           labelByKey,
           matchMode,
+          enableMultipass: PAGE_MULTIPASS,
+          // If enabled explicitly, keep it light.
+          multipassStrips: 4,
+          multipassOverlapPct: 0.12,
           maxBytes: MAX_IMAGE_BYTES,
           debug: false,
           prepared,

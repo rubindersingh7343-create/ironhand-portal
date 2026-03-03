@@ -729,6 +729,9 @@ export async function runReceiptVisionV2(args: {
   allowedKeys?: string[];
   labelByKey?: Record<string, string>;
   matchMode?: LabelMatchMode;
+  enableMultipass?: boolean;
+  multipassStrips?: number; // default 5 (min 3, max 6)
+  multipassOverlapPct?: number; // default 0.12
   maxBytes: number;
   debug?: boolean;
   prepared?: ReceiptVisionV2PreprocessResult;
@@ -803,9 +806,12 @@ export async function runReceiptVisionV2(args: {
   let passes = 1;
   const usage = pass1Raw.usage ? [pass1Raw.usage] : [];
 
-  if (shouldUseMultiPass(pass1)) {
+  const multipassEnabled = args.enableMultipass !== false;
+  if (multipassEnabled && shouldUseMultiPass(pass1)) {
     used_multipass = true;
-    const strips = await sliceHorizontalStrips({ buffer: preprocess.buffer, strips: 5, overlapPct: 0.12 });
+    const stripsCount = Math.max(3, Math.min(6, Math.round(args.multipassStrips ?? 5)));
+    const overlapPct = typeof args.multipassOverlapPct === "number" ? args.multipassOverlapPct : 0.12;
+    const strips = await sliceHorizontalStrips({ buffer: preprocess.buffer, strips: stripsCount, overlapPct });
     const limited = strips.slice(0, 6);
 
     const tileExtractions = await mapLimit(limited, 2, async (tile, idx) => {
