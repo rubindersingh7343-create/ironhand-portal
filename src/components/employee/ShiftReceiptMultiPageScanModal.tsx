@@ -452,7 +452,10 @@ export default function ShiftReceiptMultiPageScanModal({
               ? (photo as any).dataUrl
               : null;
         if (!dataUrl || !dataUrl.startsWith("data:image/")) {
-          setError("Unable to capture. Try again or use Live preview.");
+          // Some shells return an empty payload without throwing. Treat that like a failure and
+          // immediately fall back to file capture so the user still gets a camera prompt.
+          setError(null);
+          if (!openFileCapture()) setError("Unable to capture. Try again or use Live preview.");
           return;
         }
         const compressed = await downscaleDataUrl(dataUrl, { maxWidth: 2200, quality: 0.88 });
