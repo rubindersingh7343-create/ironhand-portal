@@ -45,6 +45,30 @@ const dataUrlToBase64 = (dataUrl: string) => {
   return idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl;
 };
 
+async function detectBarcodeWithZxing(dataUrl: string): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  try {
+    // Lazy-load to avoid impacting startup time.
+    const mod: any = await import("@zxing/browser");
+    const ReaderCtor = mod?.BrowserMultiFormatReader;
+    if (typeof ReaderCtor !== "function") return null;
+    const reader = new ReaderCtor();
+
+    const img = new Image();
+    img.src = dataUrl;
+    // decode() is supported on modern Safari/iOS; if it fails, bail out.
+    // @ts-ignore
+    await img.decode?.();
+
+    // decodeFromImageElement resolves to Result (has getText()).
+    const result = (await withTimeout(reader.decodeFromImageElement(img), 2000)) as any;
+    const text = String(result?.getText?.() ?? "").trim();
+    return text || null;
+  } catch {
+    return null;
+  }
+}
+
 async function detectBarcodeFromDataUrl(dataUrl: string): Promise<string | null> {
   if (typeof window === "undefined") return null;
   const ctor = (window as any).BarcodeDetector as
@@ -78,6 +102,10 @@ async function detectBarcodeFromDataUrl(dataUrl: string): Promise<string | null>
       if (raw) return raw;
     }
 
+    // 1b) Web fallback when BarcodeDetector isn't available / unreliable (iOS Safari).
+    const zxing = await detectBarcodeWithZxing(dataUrl);
+    if (zxing) return zxing;
+
     // 2) Native fallback: ML Kit text recognition (Capacitor) for iOS/Android shells.
     const Cap = (window as any).Capacitor;
     if (!Cap?.isNativePlatform?.()) return null;
@@ -85,11 +113,12 @@ async function detectBarcodeFromDataUrl(dataUrl: string): Promise<string | null>
     if (!plugin || typeof plugin.detectText !== "function") return null;
 
     const base64Image = dataUrlToBase64(dataUrl);
+    type MlKitTextResult = { text?: unknown };
     const result = (await withTimeout(
       plugin.detectText({ base64Image, rotation: 0 }),
       2200,
-    )) as any;
-    const text = String(result?.text ?? "").trim();
+    )) as MlKitTextResult;
+    const text = typeof result?.text === "string" ? result.text.trim() : "";
     if (!text) return null;
 
     // Find the best matching line.

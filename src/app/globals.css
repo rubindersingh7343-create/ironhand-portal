@@ -695,6 +695,27 @@ body[data-top-nav="true"] .scroll-top-bar__nav {
     inset 0 0 0 1px rgba(148, 163, 184, 0.08);
 }
 
+/* Variance tones (Cash/Scr deltas under employee name). */
+.variance-tone {
+  font-weight: 600;
+}
+
+.variance-tone--pos {
+  color: rgba(110, 231, 183, 0.95); /* emerald-ish */
+}
+
+.variance-tone--neg {
+  color: rgba(251, 113, 133, 0.95); /* rose-ish */
+}
+
+.variance-tone--zero {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.variance-tone--unknown {
+  color: rgba(148, 163, 184, 0.8);
+}
+
 .media-modal {
   border: 1px solid rgba(56, 189, 248, 0.18);
   background: radial-gradient(
@@ -2073,6 +2094,7 @@ body:has(.owner-portal-shell) {
   background: rgba(6, 12, 28, 0.92);
   padding: 16px 18px;
   text-align: center;
+  color: rgba(255, 255, 255, 0.92);
   box-shadow: 0 18px 40px rgba(2, 6, 23, 0.55);
   z-index: 4;
 }
@@ -2088,6 +2110,13 @@ body:has(.owner-portal-shell) {
 .scratcher-scan-result,
 .scratcher-scan-manual {
   bottom: 40px;
+}
+
+/* Make Confirm/Result appear at the very top (user expects immediate feedback after capture). */
+.scratcher-scan-error,
+.scratcher-scan-result {
+  top: 16px;
+  bottom: auto;
 }
 
 .scratcher-scan-actions {

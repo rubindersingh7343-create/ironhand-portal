@@ -19,6 +19,7 @@
     "@capacitor/camera": "^8.0.1",
     "@pantrist/capacitor-plugin-ml-kit-text-recognition": "^8.0.0",
     "@supabase/supabase-js": "^2.86.0",
+    "@zxing/browser": "^0.1.5",
     "clsx": "^2.1.1",
     "jsonwebtoken": "^9.0.2",
     "next": "^16.0.7",
