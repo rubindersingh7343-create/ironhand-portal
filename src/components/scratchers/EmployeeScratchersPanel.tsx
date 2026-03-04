@@ -28,36 +28,86 @@ interface SlotBundle {
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
+const withTimeout = async <T,>(promise: Promise<T>, ms: number): Promise<T> => {
+  let timeoutId: number | null = null;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error("timeout")), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId);
+  }
+};
+
+const dataUrlToBase64 = (dataUrl: string) => {
+  const idx = dataUrl.indexOf(",");
+  return idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl;
+};
+
 async function detectBarcodeFromDataUrl(dataUrl: string): Promise<string | null> {
   if (typeof window === "undefined") return null;
   const ctor = (window as any).BarcodeDetector as
     | (new (options?: { formats?: string[] }) => { detect: (image: any) => Promise<any[]> })
     | undefined;
-  if (!ctor) return null;
 
   try {
-    const detector = new ctor({
-      formats: [
-        "code_128",
-        "code_39",
-        "ean_13",
-        "ean_8",
-        "upc_a",
-        "upc_e",
-        "itf",
-        "codabar",
-        "qr_code",
-      ],
-    });
+    // 1) Prefer BarcodeDetector when available (fastest).
+    if (ctor) {
+      const detector = new ctor({
+        formats: [
+          "code_128",
+          "code_39",
+          "ean_13",
+          "ean_8",
+          "upc_a",
+          "upc_e",
+          "itf",
+          "codabar",
+          "qr_code",
+        ],
+      });
 
-    const blob = await fetch(dataUrl).then((res) => res.blob());
-    // createImageBitmap is supported on iOS 16+; if it fails, just bail.
-    const bitmap = await createImageBitmap(blob);
-    const results = await detector.detect(bitmap);
-    // @ts-ignore - some browsers implement close()
-    bitmap.close?.();
-    const raw = String(results?.[0]?.rawValue ?? "").trim();
-    return raw || null;
+      const blob = await fetch(dataUrl).then((res) => res.blob());
+      // createImageBitmap can fail on some iOS builds; treat as "no result" and fall through.
+      const bitmap = await createImageBitmap(blob);
+      const results = await withTimeout(detector.detect(bitmap), 1800);
+      // @ts-ignore - some browsers implement close()
+      bitmap.close?.();
+      const raw = String(results?.[0]?.rawValue ?? "").trim();
+      if (raw) return raw;
+    }
+
+    // 2) Native fallback: ML Kit text recognition (Capacitor) for iOS/Android shells.
+    const Cap = (window as any).Capacitor;
+    if (!Cap?.isNativePlatform?.()) return null;
+    const plugin = Cap?.Plugins?.CapacitorPluginMlKitTextRecognition;
+    if (!plugin || typeof plugin.detectText !== "function") return null;
+
+    const base64Image = dataUrlToBase64(dataUrl);
+    const result = (await withTimeout(
+      plugin.detectText({ base64Image, rotation: 0 }),
+      2200,
+    )) as any;
+    const text = String(result?.text ?? "").trim();
+    if (!text) return null;
+
+    // Find the best matching line.
+    const lines = text
+      .split(/\r?\n+/)
+      .map((l: string) => l.trim())
+      .filter(Boolean);
+    for (const candidate of lines) {
+      const parsed = parseScratcherLine(candidate);
+      if (!parsed) continue;
+      const end = parsed.end ? parsed.end.padStart(3, "0") : null;
+      return `${parsed.game}-${parsed.pack}-${parsed.roll}${end ? `-${end}` : ""}`;
+    }
+    // As a last attempt, parse against the full blob.
+    const parsed = parseScratcherLine(text);
+    if (!parsed) return null;
+    const end = parsed.end ? parsed.end.padStart(3, "0") : null;
+    return `${parsed.game}-${parsed.pack}-${parsed.roll}${end ? `-${end}` : ""}`;
   } catch {
     return null;
   }
