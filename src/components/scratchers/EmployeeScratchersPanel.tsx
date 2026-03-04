@@ -1,10 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import IHModal from "@/components/ui/IHModal";
 import type {
   ScratcherPackEvent,
-  ScratcherPack,
   ScratcherProduct,
   ScratcherShiftSnapshot,
   ScratcherShiftSnapshotItem,
@@ -14,7 +13,6 @@ import type {
 } from "@/lib/types";
 import ScratchersLogbookModal from "@/components/scratchers/ScratchersLogbookModal";
 import FileViewer from "@/components/records/FileViewer";
-import { parseScratcherLine } from "@/lib/scratchers/ocr";
 
 interface SlotBundle {
   slots: ScratcherSlot[];
@@ -48,8 +46,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   const [eventFile, setEventFile] = useState<File | null>(null);
   const [activeFile, setActiveFile] = useState<StoredFile | null>(null);
   const [endValues, setEndValues] = useState<Record<string, string>>({});
-  const [endFullLines, setEndFullLines] = useState<Record<string, string>>({});
-  const [endLineMismatch, setEndLineMismatch] = useState<Record<string, boolean>>({});
   const [snapshotDate] = useState(() => todayIso());
   const [activationData, setActivationData] = useState({
     productId: "",
@@ -58,88 +54,10 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     receipt: null as File | null,
   });
   const [notice, setNotice] = useState<string | null>(null);
-  const [scannerOpen, setScannerOpen] = useState(false);
-  const [scannerSlotId, setScannerSlotId] = useState<string | null>(null);
-  const [scanState, setScanState] = useState<
-    "PREVIEW" | "CAPTURING" | "PROCESSING" | "RESULT" | "ERROR"
-  >("PREVIEW");
-  const [capturedImage, setCapturedImage] = useState<string | null>(null);
-  const [ocrResult, setOcrResult] = useState<{
-    fullLine: string;
-    lastDigits: string;
-    confidence: "low" | "medium" | "high";
-    prefixMismatch?: boolean;
-  } | null>(null);
-  const [scanError, setScanError] = useState<string | null>(null);
-  const [cameraReady, setCameraReady] = useState(false);
-  const [manualMode, setManualMode] = useState(false);
-  const [manualScanValue, setManualScanValue] = useState("");
-  const [manualScanLine, setManualScanLine] = useState("");
-  const [rapidMode, setRapidMode] = useState(true);
-  const [showCaptureFallback, setShowCaptureFallback] = useState(false);
-  const [torchAvailable, setTorchAvailable] = useState(false);
-  const [torchEnabled, setTorchEnabled] = useState(false);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const previewRef = useRef<HTMLDivElement | null>(null);
-  const targetRef = useRef<HTMLDivElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const scanLoopRef = useRef<number | null>(null);
-  const stableSinceRef = useRef<number | null>(null);
-  const lastSampleRef = useRef<Uint8ClampedArray | null>(null);
-  const cooldownUntilRef = useRef(0);
-  const captureInFlightRef = useRef(false);
-  const cameraStartingRef = useRef(false);
-  const scanStateRef = useRef(scanState);
-  const manualModeRef = useRef(manualMode);
-  const capturedImageRef = useRef<string | null>(capturedImage);
-
-  const logScan = useCallback(
-    (reason: string, nextState?: string) => {
-      // Debug logging for flicker/race conditions (remove later if noisy).
-      // eslint-disable-next-line no-console
-      console.log("[scan]", {
-        reason,
-        scanState: nextState ?? scanStateRef.current,
-        hasImage: Boolean(capturedImageRef.current),
-        hasResult: Boolean(ocrResult),
-        slotId: scannerSlotId,
-      });
-    },
-    [ocrResult, scannerSlotId],
-  );
-
-  const setScanStateLogged = useCallback(
-    (next: "PREVIEW" | "CAPTURING" | "PROCESSING" | "RESULT" | "ERROR", reason: string) => {
-      scanStateRef.current = next;
-      logScan(reason, next);
-      setScanState(next);
-    },
-    [logScan],
-  );
-
-  const clearScanData = useCallback(
-    (reason: string) => {
-      logScan(`${reason}.clear`, scanStateRef.current);
-      setCapturedImage(null);
-      setOcrResult(null);
-      setScanError(null);
-      capturedImageRef.current = null;
-    },
-    [logScan],
-  );
 
   const endSnapshotStorageKey = useMemo(
     () => `ih:scratchers:endSnapshot:${user.storeNumber}:${snapshotDate}`,
     [snapshotDate, user.storeNumber],
-  );
-  const endFullLinesStorageKey = useMemo(
-    () => `${endSnapshotStorageKey}:lines`,
-    [endSnapshotStorageKey],
-  );
-  const endMismatchStorageKey = useMemo(
-    () => `${endSnapshotStorageKey}:mismatch`,
-    [endSnapshotStorageKey],
   );
 
   useEffect(() => {
@@ -155,32 +73,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     }
   }, [endSnapshotStorageKey]);
 
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(endFullLinesStorageKey);
-      if (!saved) return;
-      const parsed = JSON.parse(saved);
-      if (parsed && typeof parsed === "object") {
-        setEndFullLines(parsed as Record<string, string>);
-      }
-    } catch {
-      // Ignore storage parse errors
-    }
-  }, [endFullLinesStorageKey]);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(endMismatchStorageKey);
-      if (!saved) return;
-      const parsed = JSON.parse(saved);
-      if (parsed && typeof parsed === "object") {
-        setEndLineMismatch(parsed as Record<string, boolean>);
-      }
-    } catch {
-      // Ignore storage parse errors
-    }
-  }, [endMismatchStorageKey]);
-
   const setEndValue = useCallback(
     (slotId: string, value: string) => {
       setEndValues((prev) => {
@@ -194,37 +86,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       });
     },
     [endSnapshotStorageKey],
-  );
-
-  const setEndFullLine = useCallback(
-    (slotId: string, value: string | null, mismatch?: boolean) => {
-      setEndFullLines((prev) => {
-        const next = { ...prev };
-        if (value) {
-          next[slotId] = value;
-        } else {
-          delete next[slotId];
-        }
-        try {
-          localStorage.setItem(endFullLinesStorageKey, JSON.stringify(next));
-        } catch {
-          // Ignore storage write errors
-        }
-        return next;
-      });
-      if (typeof mismatch === "boolean") {
-        setEndLineMismatch((prev) => {
-          const next = { ...prev, [slotId]: mismatch };
-          try {
-            localStorage.setItem(endMismatchStorageKey, JSON.stringify(next));
-          } catch {
-            // Ignore storage write errors
-          }
-          return next;
-        });
-      }
-    },
-    [endFullLinesStorageKey, endMismatchStorageKey],
   );
 
   const loadBundle = useCallback(async () => {
@@ -287,18 +148,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     const slots = bundle?.slots ?? [];
     return showInactive ? slots : slots.filter((slot) => slot.isActive);
   }, [bundle?.slots, showInactive]);
-
-  const scannableSlots = useMemo(() => {
-    return visibleSlots
-      .map((slot) => {
-        const packId = slot.activePackId ?? null;
-        const pack = packId ? packMap.get(packId) ?? null : null;
-        const hasActivePack = Boolean(pack && pack.status === "active");
-        return { slot, pack, hasActivePack };
-      })
-      .filter((entry) => entry.slot.isActive)
-      .sort((a, b) => a.slot.slotNumber - b.slot.slotNumber);
-  }, [visibleSlots, packMap]);
 
   const openActivationForSlot = (slotId: string) => {
     const slot = bundle?.slots?.find((entry) => entry.id === slotId);
@@ -427,520 +276,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     }
   }, [eventFile, eventNote, eventPackId, eventType, loadBundle]);
 
-  const getExpectedPackPrefix = useCallback(
-    (pack?: { id?: string; packCode?: string | null } | null) => {
-    if (!pack?.packCode) return null;
-    const parsed = parseScratcherLine(pack.packCode);
-    return parsed?.prefix ?? null;
-  }, []);
-
-  const stopCamera = useCallback(() => {
-    if (scanLoopRef.current) {
-      cancelAnimationFrame(scanLoopRef.current);
-      scanLoopRef.current = null;
-    }
-    stableSinceRef.current = null;
-    lastSampleRef.current = null;
-    const stream = streamRef.current;
-    if (stream) {
-      stream.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    setTorchAvailable(false);
-    setTorchEnabled(false);
-    setCameraReady(false);
-  }, []);
-
-  const pauseCamera = useCallback(() => {
-    const video = videoRef.current;
-    if (video && !video.paused) {
-      video.pause();
-    }
-  }, []);
-
-  const startCamera = useCallback(async () => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (cameraStartingRef.current) return;
-    if (streamRef.current) {
-      if (video.srcObject !== streamRef.current) {
-        video.srcObject = streamRef.current;
-      }
-      try {
-        await video.play();
-      } catch {
-        // ignore
-      }
-      if (scanStateRef.current === "ERROR") setScanError(null);
-      setCameraReady(true);
-      return;
-    }
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setScanError("Camera unavailable in this browser.");
-      setScanStateLogged("ERROR", "camera.unavailable");
-      setCameraReady(false);
-      return;
-    }
-    cameraStartingRef.current = true;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          facingMode: { ideal: "environment" },
-          // Higher-res preview improves OCR accuracy materially on iOS/Android webviews.
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-      });
-      streamRef.current = stream;
-      video.srcObject = stream;
-      video.setAttribute("playsinline", "true");
-      video.muted = true;
-      await video.play();
-      const track = stream.getVideoTracks()[0];
-      const caps = (track.getCapabilities?.() ?? {}) as { torch?: boolean };
-      setTorchAvailable(Boolean(caps.torch));
-      if (scanStateRef.current === "ERROR") setScanError(null);
-      setCameraReady(true);
-    } catch (error) {
-      console.error("camera start failed", error);
-      const name = (error as DOMException | Error)?.name ?? "";
-      if (!streamRef.current) {
-        setScanError(
-          name === "NotAllowedError"
-            ? "Camera permission denied."
-            : "Camera unavailable.",
-        );
-        setScanStateLogged("ERROR", "camera.start.failed");
-        setCameraReady(false);
-      }
-    } finally {
-      cameraStartingRef.current = false;
-    }
-  }, []);
-
-  const toggleTorch = useCallback(async () => {
-    const stream = streamRef.current;
-    if (!stream) return;
-    const track = stream.getVideoTracks()[0];
-    if (!track?.applyConstraints) return;
-    const caps = (track.getCapabilities?.() ?? {}) as { torch?: boolean };
-    if (!caps.torch) return;
-    const next = !torchEnabled;
-    try {
-      await track.applyConstraints({ advanced: [{ torch: next }] as any });
-      setTorchEnabled(next);
-    } catch (error) {
-      console.error("torch failed", error);
-    }
-  }, [torchEnabled]);
-
-  const computeRoiFromOverlay = useCallback(() => {
-    const video = videoRef.current;
-    const preview = previewRef.current;
-    const target = targetRef.current;
-    if (!video || !preview || !target) return null;
-    const previewRect = preview.getBoundingClientRect();
-    const targetRect = target.getBoundingClientRect();
-    if (!previewRect.width || !previewRect.height) return null;
-    const videoWidth = video.videoWidth;
-    const videoHeight = video.videoHeight;
-    if (!videoWidth || !videoHeight) return null;
-    const relX = targetRect.left - previewRect.left;
-    const relY = targetRect.top - previewRect.top;
-    const relW = targetRect.width;
-    const relH = targetRect.height;
-
-    const scale = Math.max(previewRect.width / videoWidth, previewRect.height / videoHeight);
-    const displayW = videoWidth * scale;
-    const displayH = videoHeight * scale;
-    const offsetX = (displayW - previewRect.width) / 2;
-    const offsetY = (displayH - previewRect.height) / 2;
-
-    let sx = (relX + offsetX) / scale;
-    let sy = (relY + offsetY) / scale;
-    let sw = relW / scale;
-    let sh = relH / scale;
-
-    const expandX = sw * 0.15;
-    const expandY = sh * 0.45;
-    sx -= expandX;
-    sy -= expandY;
-    sw += expandX * 2;
-    sh += expandY * 2;
-
-    sx = Math.max(0, Math.min(videoWidth - 1, sx));
-    sy = Math.max(0, Math.min(videoHeight - 1, sy));
-    sw = Math.max(1, Math.min(videoWidth - sx, sw));
-    sh = Math.max(1, Math.min(videoHeight - sy, sh));
-
-    return { sx, sy, sw, sh };
-  }, []);
-
-  const captureFrame = useCallback(() => {
-    const video = videoRef.current;
-    const roi = computeRoiFromOverlay();
-    if (!video || !roi) return null;
-    const fullCanvas = document.createElement("canvas");
-    fullCanvas.width = video.videoWidth || Math.round(roi.sw);
-    fullCanvas.height = video.videoHeight || Math.round(roi.sh);
-    const fullCtx = fullCanvas.getContext("2d");
-    if (!fullCtx) return null;
-    fullCtx.drawImage(video, 0, 0, fullCanvas.width, fullCanvas.height);
-    const fullImage = fullCanvas.toDataURL("image/jpeg", 0.9);
-
-    const cropCanvas = document.createElement("canvas");
-    cropCanvas.width = Math.round(roi.sw);
-    cropCanvas.height = Math.round(roi.sh);
-    const cropCtx = cropCanvas.getContext("2d");
-    if (!cropCtx) return null;
-    cropCtx.drawImage(
-      video,
-      roi.sx,
-      roi.sy,
-      roi.sw,
-      roi.sh,
-      0,
-      0,
-      cropCanvas.width,
-      cropCanvas.height,
-    );
-    const cropImage = cropCanvas.toDataURL("image/jpeg", 0.92);
-    return { fullImage, cropImage };
-  }, [computeRoiFromOverlay]);
-
-  const performOcr = useCallback(
-    async (
-      slotId: string,
-      pack: { id?: string; packCode?: string | null } | null,
-      imageBase64: string,
-    ) => {
-      setScanStateLogged("PROCESSING", "ocr.start");
-      setScanError(null);
-      const expectedPackPrefix = getExpectedPackPrefix(pack);
-      const response = await fetch("/api/ocr/scratcher", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageBase64,
-          storeId: user.storeNumber,
-          expectedPackPrefix,
-        }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setScanError(data?.error ?? "Unable to read ticket.");
-        setScanStateLogged("ERROR", "ocr.http_error");
-        return null;
-      }
-      setOcrResult({
-        fullLine: data.fullLine,
-        lastDigits: data.lastDigits,
-        confidence: data.confidence ?? "medium",
-        prefixMismatch: data.prefixMismatch ?? false,
-      });
-      setScanStateLogged("RESULT", "ocr.ok");
-      cooldownUntilRef.current = Date.now() + 1000;
-      return data as { fullLine: string; lastDigits: string };
-    },
-    [getExpectedPackPrefix, setScanStateLogged, user.storeNumber],
-  );
-
-  const captureAndDetect = useCallback(async () => {
-    if (!scannerSlotId || captureInFlightRef.current) return;
-    if (scanStateRef.current !== "PREVIEW" || capturedImageRef.current) return;
-    const slotEntry = scannableSlots.find((entry) => entry.slot.id === scannerSlotId);
-    if (!slotEntry) return;
-    captureInFlightRef.current = true;
-    try {
-      setScanError(null);
-      setScanStateLogged("CAPTURING", "capture.tap_or_auto");
-      const images = captureFrame();
-      if (!images) {
-        setScanError("Unable to capture image.");
-        setScanStateLogged("ERROR", "capture.failed");
-        return;
-      }
-      setCapturedImage(images.fullImage);
-      capturedImageRef.current = images.fullImage;
-      pauseCamera();
-      setScanStateLogged("PROCESSING", "capture.frozen");
-      try {
-        await performOcr(scannerSlotId, slotEntry.pack, images.cropImage);
-      } catch (error) {
-        console.error("ocr failed", error);
-        setScanError("Unable to read ticket. Try again.");
-        setScanStateLogged("ERROR", "ocr.throw");
-      }
-    } finally {
-      captureInFlightRef.current = false;
-    }
-  }, [captureFrame, pauseCamera, performOcr, scannerSlotId, scannableSlots, setScanStateLogged]);
-
-  const startStabilityLoop = useCallback(() => {
-    if (scanLoopRef.current) {
-      cancelAnimationFrame(scanLoopRef.current);
-      scanLoopRef.current = null;
-    }
-    const sampleCanvas =
-      sampleCanvasRef.current ?? document.createElement("canvas");
-    sampleCanvasRef.current = sampleCanvas;
-    sampleCanvas.width = 96;
-    sampleCanvas.height = 54;
-    const ctx = sampleCanvas.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return;
-
-    const tick = () => {
-      const currentState = scanStateRef.current;
-      const currentManual = manualModeRef.current;
-      const currentImage = capturedImageRef.current;
-      if (!scannerOpen || currentState !== "PREVIEW" || currentManual || currentImage) {
-        scanLoopRef.current = requestAnimationFrame(tick);
-        return;
-      }
-      if (Date.now() < cooldownUntilRef.current) {
-        stableSinceRef.current = null;
-        scanLoopRef.current = requestAnimationFrame(tick);
-        return;
-      }
-      const roi = computeRoiFromOverlay();
-      const video = videoRef.current;
-      if (!roi || !video || video.readyState < 2) {
-        scanLoopRef.current = requestAnimationFrame(tick);
-        return;
-      }
-      ctx.drawImage(
-        video,
-        roi.sx,
-        roi.sy,
-        roi.sw,
-        roi.sh,
-        0,
-        0,
-        sampleCanvas.width,
-        sampleCanvas.height,
-      );
-      const imageData = ctx.getImageData(
-        0,
-        0,
-        sampleCanvas.width,
-        sampleCanvas.height,
-      ).data;
-      let diff = 0;
-      const last = lastSampleRef.current;
-      if (last) {
-        for (let i = 0; i < imageData.length; i += 4) {
-          diff += Math.abs(imageData[i] - last[i]);
-        }
-        diff /= sampleCanvas.width * sampleCanvas.height;
-      }
-      lastSampleRef.current = new Uint8ClampedArray(imageData);
-      const now = Date.now();
-      if (diff < 6) {
-        if (!stableSinceRef.current) {
-          stableSinceRef.current = now;
-        }
-        if (stableSinceRef.current && now - stableSinceRef.current >= 400) {
-          stableSinceRef.current = null;
-          captureAndDetect();
-          scanLoopRef.current = requestAnimationFrame(tick);
-          return;
-        }
-      } else {
-        stableSinceRef.current = null;
-      }
-      scanLoopRef.current = requestAnimationFrame(tick);
-    };
-    scanLoopRef.current = requestAnimationFrame(tick);
-  }, [
-    captureAndDetect,
-    computeRoiFromOverlay,
-    manualMode,
-    capturedImage,
-    scannerOpen,
-    scanState,
-  ]);
-
-  const openScannerForSlot = useCallback(
-    async (slotId: string) => {
-      setScannerSlotId(slotId);
-      setScannerOpen(true);
-      clearScanData("open");
-      setScanStateLogged("PREVIEW", "open.preview");
-      setManualMode(false);
-      setManualScanValue("");
-      setManualScanLine("");
-      cooldownUntilRef.current = 0;
-      await startCamera();
-      startStabilityLoop();
-    },
-    [clearScanData, setScanStateLogged, startCamera, startStabilityLoop],
-  );
-
-  const closeScanner = useCallback(() => {
-    setScannerOpen(false);
-    setScannerSlotId(null);
-    clearScanData("close");
-    setScanStateLogged("PREVIEW", "close.reset");
-    setManualMode(false);
-    setManualScanValue("");
-    setManualScanLine("");
-    stopCamera();
-  }, [clearScanData, setScanStateLogged, stopCamera]);
-
-  const rescan = useCallback(async () => {
-    clearScanData("rescan");
-    setScanStateLogged("PREVIEW", "rescan.preview");
-    setManualMode(false);
-    setManualScanValue("");
-    setManualScanLine("");
-    cooldownUntilRef.current = Date.now() + 1000;
-    await startCamera();
-    startStabilityLoop();
-  }, [clearScanData, setScanStateLogged, startCamera, startStabilityLoop]);
-
-  const confirmScan = useCallback(() => {
-    if (!scannerSlotId || !ocrResult) return;
-    setEndValue(scannerSlotId, ocrResult.lastDigits);
-    setEndFullLine(scannerSlotId, ocrResult.fullLine, ocrResult.prefixMismatch);
-    if (ocrResult.prefixMismatch) {
-      console.warn("scratcher prefix mismatch", {
-        slotId: scannerSlotId,
-        fullLine: ocrResult.fullLine,
-      });
-    }
-    const currentIndex = scannableSlots.findIndex(
-      (entry) => entry.slot.id === scannerSlotId,
-    );
-    if (rapidMode && currentIndex >= 0) {
-      const hasValue = (slotId: string) =>
-        slotId === scannerSlotId
-          ? ocrResult.lastDigits
-          : endValues[slotId] ?? "";
-      const nextEntry = scannableSlots
-        .slice(currentIndex + 1)
-        .find((entry) => !hasValue(entry.slot.id));
-      if (nextEntry) {
-        setScannerSlotId(nextEntry.slot.id);
-        clearScanData("confirm.advance");
-        setScanStateLogged("PREVIEW", "confirm.next");
-        void startCamera();
-        startStabilityLoop();
-        return;
-      }
-    }
-    closeScanner();
-  }, [
-    closeScanner,
-    clearScanData,
-    endValues,
-    rapidMode,
-    scannableSlots,
-    ocrResult,
-    scannerSlotId,
-    setEndFullLine,
-    setEndValue,
-    setScanStateLogged,
-    startCamera,
-    startStabilityLoop,
-  ]);
-
-  const applyManualScan = useCallback(() => {
-    if (!scannerSlotId) return;
-    const trimmed = manualScanValue.trim();
-    if (!trimmed) return;
-    setEndValue(scannerSlotId, trimmed);
-    if (manualScanLine.trim()) {
-      const parsed = parseScratcherLine(manualScanLine.trim());
-      if (parsed) {
-        setEndFullLine(scannerSlotId, parsed.fullLine, false);
-      }
-    } else {
-      setEndFullLine(scannerSlotId, null, false);
-    }
-    const currentIndex = scannableSlots.findIndex(
-      (entry) => entry.slot.id === scannerSlotId,
-    );
-    if (rapidMode && currentIndex >= 0) {
-      const hasValue = (slotId: string) =>
-        slotId === scannerSlotId ? trimmed : endValues[slotId] ?? "";
-      const nextEntry = scannableSlots
-        .slice(currentIndex + 1)
-        .find((entry) => !hasValue(entry.slot.id));
-      if (nextEntry) {
-        setScannerSlotId(nextEntry.slot.id);
-        clearScanData("manual.advance");
-        setScanStateLogged("PREVIEW", "manual.next");
-        setManualScanValue("");
-        setManualScanLine("");
-        void startCamera();
-        startStabilityLoop();
-        return;
-      }
-    }
-    closeScanner();
-  }, [
-    closeScanner,
-    clearScanData,
-    endValues,
-    manualScanLine,
-    manualScanValue,
-    rapidMode,
-    scannerSlotId,
-    scannableSlots,
-    setEndFullLine,
-    setEndValue,
-    setScanStateLogged,
-    startCamera,
-    startStabilityLoop,
-  ]);
-
-  useEffect(() => {
-    if (!scannerOpen) return;
-    startCamera();
-    startStabilityLoop();
-  }, [scannerOpen, startCamera, startStabilityLoop]);
-
-  useEffect(() => {
-    scanStateRef.current = scanState;
-  }, [scanState]);
-
-  useEffect(() => {
-    manualModeRef.current = manualMode;
-  }, [manualMode]);
-
-  useEffect(() => {
-    capturedImageRef.current = capturedImage;
-  }, [capturedImage]);
-
-  useEffect(() => {
-    if (!scannerOpen) return;
-    if (manualMode) {
-      stopCamera();
-      return;
-    }
-    startCamera();
-    startStabilityLoop();
-  }, [manualMode, scannerOpen, startCamera, startStabilityLoop, stopCamera]);
-
-  useEffect(() => {
-    if (
-      !scannerOpen ||
-      scanState !== "PREVIEW" ||
-      manualMode ||
-      !cameraReady ||
-      capturedImage
-    ) {
-      setShowCaptureFallback(false);
-      return;
-    }
-    const timer = window.setTimeout(() => setShowCaptureFallback(true), 1500);
-    return () => window.clearTimeout(timer);
-  }, [scannerOpen, scanState, manualMode, scannerSlotId, cameraReady, capturedImage]);
-
   const packSizeForPrice = (price?: number | null) => {
     if (!Number.isFinite(price)) return null;
     const normalized = Number(Number(price).toFixed(2));
@@ -978,21 +313,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       })
       .sort((a, b) => a.price - b.price);
   }, [bundle?.products]);
-
-  const scannerEntry = useMemo(() => {
-    if (!scannerSlotId) return null;
-    return scannableSlots.find((entry) => entry.slot.id === scannerSlotId) ?? null;
-  }, [scannerSlotId, scannableSlots]);
-
-  const scanTotal = scannableSlots.length;
-  const scanIndex =
-    scannerSlotId && scanTotal
-      ? Math.max(
-          0,
-          scannableSlots.findIndex((entry) => entry.slot.id === scannerSlotId),
-        ) + 1
-      : 0;
-  const scanProgress = scanTotal ? scanIndex / scanTotal : 0;
 
   return (
     <section className="ui-card space-y-4 text-white">
@@ -1050,7 +370,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
         <span className="text-slate-200">
           End snapshot:{" "}
           <span className="text-slate-300">
-            scan or enter the end ticket inside each active slot (auto-submits with shift package)
+            fill the end ticket inside each active slot (auto-submits with shift package)
           </span>
         </span>
       </div>
@@ -1127,33 +447,20 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
                 </div>
 
                 {slot.isActive && (
-                  <div className="mt-3 space-y-2">
-                    <span className="text-xs uppercase tracking-[0.2em] text-slate-300">
-                      End ticket
-                    </span>
-                    <div className="flex flex-wrap items-center gap-2">
+                  <div className="mt-3">
+                    <label className="flex flex-col gap-2 text-sm text-slate-200">
+                      <span className="text-xs uppercase tracking-[0.2em] text-slate-300">
+                        End ticket
+                      </span>
                       <input
                         type="text"
                         inputMode="numeric"
                         value={endValues[slot.id] ?? ""}
                         onChange={(event) => setEndValue(slot.id, event.target.value)}
                         placeholder="Ending ticket number"
-                        data-full-line={endFullLines[slot.id] ?? ""}
-                        className="ui-field ui-field--slim flex-1 min-w-[140px]"
+                        className="ui-field ui-field--slim"
                       />
-                      <button
-                        type="button"
-                        className="ui-button ui-button-ghost"
-                        onClick={() => openScannerForSlot(slot.id)}
-                      >
-                        Scan
-                      </button>
-                    </div>
-                    {endLineMismatch[slot.id] && (
-                      <p className="text-[11px] text-amber-200">
-                        Pack prefix mismatch detected.
-                      </p>
-                    )}
+                    </label>
                   </div>
                 )}
                 {baselineActive && !baselineItem && (
@@ -1166,206 +473,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
           })}
         </div>
       )}
-
-      <IHModal
-        isOpen={scannerOpen}
-        onClose={closeScanner}
-        allowOutsideClose
-        panelClassName="scratcher-scan-modal"
-        backdropClassName="scratcher-scan-backdrop"
-        showCloseButton={false}
-      >
-        <div className="scratcher-scan-shell">
-          <div className="scratcher-scan-header">
-            <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                Scan end ticket
-              </p>
-              <h3 className="mt-1 text-lg font-semibold text-white">
-                {scannerEntry?.slot
-                  ? `Slot ${scannerEntry.slot.slotNumber}`
-                  : "Scratchers"}
-              </h3>
-              <p className="text-xs text-slate-400">
-                Scanning Slot {scanIndex || 1} of {scanTotal || 32}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
-              {torchAvailable && (
-                <button
-                  type="button"
-                  className="ui-button ui-button-ghost"
-                  onClick={toggleTorch}
-                >
-                  {torchEnabled ? "Flash on" : "Flash off"}
-                </button>
-              )}
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={rapidMode}
-                  onChange={(event) => setRapidMode(event.target.checked)}
-                />
-                Rapid scan
-              </label>
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={manualMode}
-                  onChange={(event) => setManualMode(event.target.checked)}
-                />
-                Manual mode
-              </label>
-              <button
-                type="button"
-                className="ui-button ui-button-ghost"
-                onClick={closeScanner}
-              >
-                Stop Scanning
-              </button>
-            </div>
-          </div>
-
-          <div className="scratcher-scan-progress">
-            <div
-              className="scratcher-scan-progress__bar"
-              style={{ width: `${Math.min(1, scanProgress) * 100}%` }}
-            />
-          </div>
-
-          <div className="scratcher-scan-body">
-            <div ref={previewRef} className="scratcher-scan-preview">
-              <video
-                ref={videoRef}
-                className="scratcher-scan-video"
-                autoPlay
-                playsInline
-                muted
-              />
-              {capturedImage && (
-                <img
-                  src={capturedImage}
-                  alt="Captured ticket"
-                  className="scratcher-scan-freeze"
-                />
-              )}
-              {scanState === "PREVIEW" && (
-                <div ref={targetRef} className="scratcher-scan-target" />
-              )}
-            </div>
-
-            {scanState === "PROCESSING" && (
-              <div className="scratcher-scan-status">Reading ticket…</div>
-            )}
-
-            {scanState === "ERROR" && scanError && (
-              <div className="scratcher-scan-error">
-                <p>{scanError}</p>
-                <div className="mt-3 flex flex-wrap justify-center gap-2">
-                  <button type="button" className="ui-button" onClick={rescan}>
-                    Try again
-                  </button>
-                  <button
-                    type="button"
-                    className="ui-button ui-button-ghost"
-                    onClick={() => setManualMode(true)}
-                  >
-                    Manual mode
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {scanState === "RESULT" && ocrResult && (
-              <div className="scratcher-scan-result">
-                <div className="space-y-2 text-left">
-                  <p className="text-xs uppercase tracking-[0.28em] text-slate-300">
-                    Full Line Detected
-                  </p>
-                  <p className="text-sm text-white">{ocrResult.fullLine}</p>
-                  <p className="text-xs uppercase tracking-[0.28em] text-slate-300">
-                    Extracted Last Digits
-                  </p>
-                  <p className="text-3xl font-semibold text-white">
-                    {ocrResult.lastDigits}
-                  </p>
-                  <div className="flex items-center gap-2 text-xs text-slate-300">
-                    <span
-                      className={`scratcher-scan-confidence scratcher-scan-confidence--${ocrResult.confidence}`}
-                    />
-                    Confidence: {ocrResult.confidence}
-                  </div>
-                  {ocrResult.prefixMismatch && (
-                    <p className="text-xs text-amber-200">
-                      Warning: pack prefix mismatch. You can still confirm.
-                    </p>
-                  )}
-                </div>
-                <div className="mt-4 flex flex-wrap justify-center gap-3">
-                  <button type="button" className="ui-button" onClick={confirmScan}>
-                    Confirm
-                  </button>
-                  <button
-                    type="button"
-                    className="ui-button ui-button-ghost"
-                    onClick={rescan}
-                  >
-                    Rescan
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {manualMode && scanState !== "RESULT" && (
-              <div className="scratcher-scan-manual">
-                <div className="space-y-2">
-                  <label className="flex flex-col gap-2 text-sm text-slate-200">
-                    <span>End ticket</span>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={manualScanValue}
-                      onChange={(event) => setManualScanValue(event.target.value)}
-                      className="ui-field ui-field--slim"
-                      placeholder="Enter last digits"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-2 text-sm text-slate-200">
-                    <span>Full line (optional)</span>
-                    <input
-                      type="text"
-                      value={manualScanLine}
-                      onChange={(event) => setManualScanLine(event.target.value)}
-                      className="ui-field ui-field--slim"
-                      placeholder="1706-1054979-6-110"
-                    />
-                  </label>
-                  <div className="flex justify-end">
-                    <button type="button" className="ui-button" onClick={applyManualScan}>
-                      Apply
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {!manualMode && scanState === "PREVIEW" && showCaptureFallback && (
-              <div className="scratcher-scan-actions">
-                <button type="button" className="ui-button" onClick={captureAndDetect}>
-                  Capture
-                </button>
-                <button
-                  type="button"
-                  className="ui-button ui-button-ghost"
-                  onClick={() => setManualMode(true)}
-                >
-                  Manual mode
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </IHModal>
 
       <IHModal isOpen={activationOpen} onClose={() => setActivationOpen(false)} allowOutsideClose>
         <div className="space-y-4">
