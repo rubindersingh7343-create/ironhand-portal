@@ -5,6 +5,8 @@ import clsx from "clsx";
 import IHModal from "@/components/ui/IHModal";
 import type { ShiftReceiptSalesFields } from "@/components/employee/ShiftReceiptScanModal";
 import { receiptDistanceGuideEnabled } from "@/lib/featureFlags";
+import { receiptParseBgV1, receiptRectOverlayV1 } from "@/lib/receipt/receiptFeatureFlags";
+import ReceiptRectOverlay from "@/components/receipt/ReceiptRectOverlay";
 import { Camera, CameraDirection, CameraResultType, CameraSource } from "@capacitor/camera";
 import { Capacitor } from "@capacitor/core";
 
@@ -70,6 +72,7 @@ type ShiftReceiptMultiPageScanModalProps = {
   storeId: string;
   onClose: () => void;
   onApply: (result: ShiftReceiptSalesFields, stitchedImageDataUrl: string) => void;
+  onBackgroundStart?: (payload: { pages: string[]; stitchedImageDataUrl: string }) => void;
   onFallbackSingle?: () => void;
 };
 
@@ -131,6 +134,7 @@ export default function ShiftReceiptMultiPageScanModal({
   storeId,
   onClose,
   onApply,
+  onBackgroundStart,
   onFallbackSingle,
 }: ShiftReceiptMultiPageScanModalProps) {
   const [stage, setStage] = useState<CaptureStage>("CAPTURE");
@@ -162,6 +166,8 @@ export default function ShiftReceiptMultiPageScanModal({
   const captureInFlightRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const fileCaptureTimeoutRef = useRef<number | null>(null);
+  const greenHistoryRef = useRef<number[]>([]);
+  const toneRef = useRef<GuideState["tone"]>("gray");
 
   const categoryOptions = useMemo(
     () =>
@@ -250,10 +256,12 @@ export default function ShiftReceiptMultiPageScanModal({
     return true;
   }, []);
 
-  const startCamera = useCallback(async () => {
-    if (captureMode !== "live") return;
+  const startLivePreview = useCallback(async () => {
+    // Receipt-only live preview camera. Keep it isolated from other scanners.
+    // Start regardless of current mode (callers may be switching from native capture fallback).
     stopCamera();
     setError(null);
+    setCaptureMode("live");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -275,7 +283,7 @@ export default function ShiftReceiptMultiPageScanModal({
       console.error("receipt camera start failed", err);
       setError("Camera access failed. You can use the classic receipt scan instead.");
     }
-  }, [captureMode, stopCamera]);
+  }, [stopCamera]);
 
   const computeRoi = useCallback(() => {
     const video = videoRef.current;
@@ -285,10 +293,12 @@ export default function ShiftReceiptMultiPageScanModal({
     if (!vw || !vh) return null;
 
     // Central frame ratios (matches overlay box).
-    const boxW = vw * 0.84;
-    const boxH = vh * 0.62;
-    const padX = vw * 0.03;
-    const padY = vh * 0.03;
+    // Keep legacy sizing by default; enable tall receipt rectangle behind receipt-only flag.
+    const boxW = receiptRectOverlayV1 ? vw * 0.62 : vw * 0.84;
+    const desiredH = receiptRectOverlayV1 ? boxW * 2.1 : vh * 0.62;
+    const boxH = receiptRectOverlayV1 ? Math.min(vh * 0.9, desiredH) : desiredH;
+    const padX = receiptRectOverlayV1 ? vw * 0.02 : vw * 0.03;
+    const padY = receiptRectOverlayV1 ? vh * 0.02 : vh * 0.03;
     const sx = Math.max(0, Math.floor((vw - boxW) / 2 - padX));
     const sy = Math.max(0, Math.floor((vh - boxH) / 2 - padY));
     const sw = Math.min(vw - sx, Math.floor(boxW + padX * 2));
@@ -357,10 +367,22 @@ export default function ShiftReceiptMultiPageScanModal({
     const variance = n ? Math.max(0, sumSq / n - mean * mean) : 0;
     const edgeFraction = n ? edgeCount / n : 0;
 
-    const sharpScore = clamp01((variance - 40) / 170);
-    const edgeScore = clamp01((edgeFraction - 0.05) / 0.16);
-    const score = clamp01(sharpScore * 0.6 + edgeScore * 0.4);
-    const tooClose = edgeFraction > 0.32;
+    // Receipt-only detection (DO NOT reuse with Scratchers scanner).
+    // Convert raw signals into "coverage" and "confidence" so UX rules can be tuned predictably.
+    const confidence = clamp01((variance - 40) / 170);
+    // Edge density grows as the receipt fills the frame; too-close tends to saturate.
+    const coverage = Math.max(0, Math.min(1.15, (edgeFraction - 0.04) / 0.18));
+    const tooClose = edgeFraction > 0.28;
+
+    const qualifiesGreen = !tooClose && coverage >= 0.62 && coverage <= 0.9 && confidence >= 0.6;
+    const qualifiesYellow =
+      (coverage >= 0.45 && coverage < 0.62) || (coverage > 0.9 && coverage <= 1.05);
+
+    // Smoothing: last 8 frames.
+    const history = greenHistoryRef.current;
+    history.push(qualifiesGreen ? 1 : 0);
+    if (history.length > 8) history.splice(0, history.length - 8);
+    const greenHits = history.reduce((acc, v) => acc + v, 0);
 
     // Stability gate for "Perfect — hold still"
     const stable = motion < 5.5;
@@ -373,9 +395,16 @@ export default function ShiftReceiptMultiPageScanModal({
     const stableLongEnough = stableSinceRef.current ? now - stableSinceRef.current >= 500 : false;
 
     let tone: GuideState["tone"] = "gray";
-    if (!tooClose && score >= 0.78) tone = "green";
-    else if (score >= 0.55) tone = "yellow";
-    else tone = "gray";
+    if (toneRef.current === "green") {
+      // Drop from green only when it really stops qualifying.
+      if (greenHits >= 2) tone = "green";
+      else tone = qualifiesYellow ? "yellow" : "gray";
+    } else {
+      if (greenHits >= 5) tone = "green";
+      else if (greenHits >= 3) tone = "yellow";
+      else tone = qualifiesYellow ? "yellow" : "gray";
+    }
+    toneRef.current = tone;
 
     let message = "Move closer";
     if (tooClose) message = "Too close — pull back a bit";
@@ -384,11 +413,11 @@ export default function ShiftReceiptMultiPageScanModal({
 
     setGuide((prev) => {
       // Avoid re-render spam when nothing materially changes.
-      if (prev.tone === tone && Math.abs(prev.score - score) < 0.03 && prev.stable === stableLongEnough) return prev;
+      if (prev.tone === tone && Math.abs(prev.score - coverage) < 0.03 && prev.stable === stableLongEnough) return prev;
       return {
         tone,
         message,
-        score,
+        score: coverage,
         sharpness: variance,
         edges: edgeFraction,
         tooClose,
@@ -455,7 +484,11 @@ export default function ShiftReceiptMultiPageScanModal({
           // Some shells return an empty payload without throwing. Treat that like a failure and
           // immediately fall back to file capture so the user still gets a camera prompt.
           setError(null);
-          if (!openFileCapture()) setError("Unable to capture. Try again or use Live preview.");
+          if (!openFileCapture()) {
+            // Some environments block programmatic file-input capture. Switch to live preview.
+            setError("Unable to capture. Switching to Live preview…");
+            void startLivePreview();
+          }
           return;
         }
         const compressed = await downscaleDataUrl(dataUrl, { maxWidth: 2200, quality: 0.88 });
@@ -473,8 +506,7 @@ export default function ShiftReceiptMultiPageScanModal({
         // If the native plugin is missing/unavailable, immediately fall back to live preview.
         if (lower.includes("not implemented") || lower.includes("unimplemented") || lower.includes("plugin")) {
           setError(null);
-          setCaptureMode("live");
-          void startCamera();
+          void startLivePreview();
           return;
         }
         if (lower.includes("denied") || lower.includes("permission")) {
@@ -487,7 +519,10 @@ export default function ShiftReceiptMultiPageScanModal({
         }
         // Last resort: try file capture, then show error only if we couldn't open it.
         setError(null);
-        if (!openFileCapture()) setError("Unable to capture. Try again or use Live preview.");
+        if (!openFileCapture()) {
+          setError("Unable to capture. Switching to Live preview…");
+          void startLivePreview();
+        }
       } finally {
         captureInFlightRef.current = false;
       }
@@ -532,7 +567,7 @@ export default function ShiftReceiptMultiPageScanModal({
     } finally {
       captureInFlightRef.current = false;
     }
-  }, [captureMode, computeRoi, guide.tone, openFileCapture, pages.length, startCamera]);
+  }, [captureMode, computeRoi, guide.tone, openFileCapture, pages.length, startLivePreview]);
 
   const onFileSelected = useCallback(
     async (file: File | null) => {
@@ -682,6 +717,16 @@ export default function ShiftReceiptMultiPageScanModal({
     }
   }, [categoryOptions, pages, storeId]);
 
+  const startBackgroundParse = useCallback(async () => {
+    if (pages.length === 0) return;
+    setError(null);
+    const stitched = (await stitchPages(pages)) ?? pages[0];
+    onBackgroundStart?.({ pages: [...pages], stitchedImageDataUrl: stitched });
+    stopCamera();
+    reset();
+    onClose();
+  }, [onBackgroundStart, onClose, pages, reset, stitchPages, stopCamera]);
+
   const openNativeScan = useCallback(async () => {
     const Cap = (typeof window !== "undefined" && (window as any).Capacitor) || null;
     const plugin = Cap?.Plugins?.ReceiptDocScanner;
@@ -709,9 +754,9 @@ export default function ShiftReceiptMultiPageScanModal({
   useEffect(() => {
     if (!isOpen) return;
     reset();
-    void startCamera();
+    void startLivePreview();
     return () => stopCamera();
-  }, [isOpen, reset, startCamera, stopCamera]);
+  }, [isOpen, reset, startLivePreview, stopCamera]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -826,8 +871,7 @@ export default function ShiftReceiptMultiPageScanModal({
                     : "border-white/10 bg-white/5 text-slate-100 hover:bg-white/10",
                 )}
                 onClick={() => {
-                  setCaptureMode("live");
-                  void startCamera();
+                  void startLivePreview();
                 }}
               >
                 Live preview
@@ -859,14 +903,26 @@ export default function ShiftReceiptMultiPageScanModal({
               )}
 
               <div className="pointer-events-none absolute inset-0">
-                <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/35" />
+                {receiptRectOverlayV1 ? (
+                  <ReceiptRectOverlay enabled tone={guide.tone} />
+                ) : (
+                  <>
+                    <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/35" />
+                    <div
+                      className={clsx(
+                        "absolute left-1/2 top-1/2 h-[62%] w-[84%] -translate-x-1/2 -translate-y-1/2 rounded-3xl border-2",
+                        frameCls,
+                      )}
+                    />
+                  </>
+                )}
+
                 <div
                   className={clsx(
-                    "absolute left-1/2 top-1/2 h-[62%] w-[84%] -translate-x-1/2 -translate-y-1/2 rounded-3xl border-2",
-                    frameCls,
+                    "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2",
+                    receiptRectOverlayV1 ? "w-[62%] aspect-[10/21] rounded-2xl" : "w-[84%] rounded-3xl",
                   )}
-                />
-                <div className="absolute left-1/2 top-1/2 w-[84%] -translate-x-1/2 -translate-y-1/2 rounded-3xl">
+                >
                   <div className="absolute -top-9 left-0 right-0 flex justify-center">
                     <span className={clsx("rounded-full border px-3 py-1 text-[11px] font-semibold", chipCls)}>
                       {captureMode === "native"
@@ -920,7 +976,7 @@ export default function ShiftReceiptMultiPageScanModal({
                   type="button"
                   className="ui-button ui-button-ghost"
                   disabled={pages.length === 0}
-                  onClick={() => void runParse()}
+                  onClick={() => void (receiptParseBgV1 && onBackgroundStart ? startBackgroundParse() : runParse())}
                 >
                   Done
                 </button>
@@ -985,7 +1041,12 @@ export default function ShiftReceiptMultiPageScanModal({
             <button type="button" className="ui-button ui-button-ghost" onClick={() => setStage("CAPTURE")}>
               Back to capture
             </button>
-            <button type="button" className="ui-button ui-button-primary" onClick={() => void runParse()} disabled={pages.length === 0}>
+            <button
+              type="button"
+              className="ui-button ui-button-primary"
+              onClick={() => void (receiptParseBgV1 && onBackgroundStart ? startBackgroundParse() : runParse())}
+              disabled={pages.length === 0}
+            >
               Try again
             </button>
           </div>

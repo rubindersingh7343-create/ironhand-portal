@@ -22,6 +22,8 @@ import ShiftTerminalReportAutoFillModal, {
 } from "@/components/employee/ShiftTerminalReportAutoFillModal";
 import type { NrsTerminalReportJson } from "@/lib/receiptParsing/nrsTerminalReport";
 import { receiptMultiPhotoEnabled } from "@/lib/featureFlags";
+import { receiptParseBgV1 } from "@/lib/receipt/receiptFeatureFlags";
+import { receiptVisionExtractionToSalesFields } from "@/lib/receipt/receiptVisionToSalesFields";
 
 interface EmployeeUploadFormProps {
   user: SessionUser;
@@ -79,6 +81,11 @@ export default function EmployeeUploadForm({
   const [receiptParsedJson, setReceiptParsedJson] = useState<NrsTerminalReportJson | null>(
     null,
   );
+  const [receiptBgStatus, setReceiptBgStatus] = useState<
+    "idle" | "parsing" | "done" | "error"
+  >("idle");
+  const [receiptBgError, setReceiptBgError] = useState<string | null>(null);
+  const receiptBgInFlightRef = useRef(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -229,6 +236,40 @@ export default function EmployeeUploadForm({
     setReceiptAutofillKeys(updates.map(([key]) => key));
     setReceiptAutofillConfirmed(false);
   }, []);
+
+  const startReceiptParseInBackground = useCallback(
+    async (pages: string[]) => {
+      if (!receiptParseBgV1) return;
+      if (!pages || pages.length === 0) return;
+      if (receiptBgInFlightRef.current) return;
+      receiptBgInFlightRef.current = true;
+      setReceiptBgStatus("parsing");
+      setReceiptBgError(null);
+      try {
+        const response = await fetch("/api/ai/receipt-multipage-parse", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            image_pages: pages.slice(0, 6),
+            store_id: user.storeNumber,
+          }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as any;
+        if (!response.ok) throw new Error(payload?.error ?? "Receipt scan failed.");
+        const extraction = payload?.extraction;
+        const sales = receiptVisionExtractionToSalesFields(extraction?.fields);
+        applyReceiptScan(sales);
+        setReceiptBgStatus("done");
+      } catch (err) {
+        console.error("receipt background parse failed", err);
+        setReceiptBgStatus("error");
+        setReceiptBgError(err instanceof Error ? err.message : "Receipt scan failed.");
+      } finally {
+        receiptBgInFlightRef.current = false;
+      }
+    },
+    [applyReceiptScan, user.storeNumber],
+  );
 
   const applyTerminalReceiptScan = useCallback((result: NrsTerminalReportJson) => {
     const format = (value: number | null) =>
@@ -774,6 +815,21 @@ export default function EmployeeUploadForm({
               Scan receipt to attach the sales report photo.
             </p>
           )}
+          {receiptBgStatus === "parsing" && (
+            <div className="mt-3 rounded-2xl border border-blue-400/20 bg-blue-500/10 px-4 py-3 text-xs text-blue-100">
+              Parsing receipt in background… you can continue with Scratchers.
+            </div>
+          )}
+          {receiptBgStatus === "done" && (
+            <div className="mt-3 rounded-2xl border border-emerald-300/20 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-100">
+              Receipt ready — review and confirm the highlighted totals.
+            </div>
+          )}
+          {receiptBgStatus === "error" && receiptBgError && (
+            <div className="mt-3 rounded-2xl border border-rose-300/20 bg-rose-500/10 px-4 py-3 text-xs text-rose-100">
+              Receipt scan failed in background: {receiptBgError}
+            </div>
+          )}
         </div>
         <div
           className={clsx(
@@ -826,7 +882,9 @@ export default function EmployeeUploadForm({
           ))}
         </div>
 
-        <EmployeeScratchersPanel user={user} />
+        <div data-ih-section="scratchers">
+          <EmployeeScratchersPanel user={user} />
+        </div>
 
         {user.role === "employee" && (
           <div className="space-y-3 rounded-2xl border border-white/10 bg-[#0f1a33] p-4">
@@ -1018,6 +1076,15 @@ export default function EmployeeUploadForm({
         onFallbackSingle={() => {
           setReceiptMultiScanOpen(false);
           setReceiptScanOpen(true);
+        }}
+        onBackgroundStart={({ pages, stitchedImageDataUrl }) => {
+          setReceiptPhotoDataUrl(stitchedImageDataUrl);
+          void startReceiptParseInBackground(pages);
+          // Nudge the user toward the next step (Scratchers) without changing Scratchers logic.
+          window.setTimeout(() => {
+            const anchor = document.querySelector("[data-ih-section='scratchers']");
+            anchor?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+          }, 50);
         }}
         onApply={(result, stitchedImageDataUrl) => {
           setReceiptPhotoDataUrl(stitchedImageDataUrl);
