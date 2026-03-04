@@ -28,6 +28,41 @@ interface SlotBundle {
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
+async function detectBarcodeFromDataUrl(dataUrl: string): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  const ctor = (window as any).BarcodeDetector as
+    | (new (options?: { formats?: string[] }) => { detect: (image: any) => Promise<any[]> })
+    | undefined;
+  if (!ctor) return null;
+
+  try {
+    const detector = new ctor({
+      formats: [
+        "code_128",
+        "code_39",
+        "ean_13",
+        "ean_8",
+        "upc_a",
+        "upc_e",
+        "itf",
+        "codabar",
+        "qr_code",
+      ],
+    });
+
+    const blob = await fetch(dataUrl).then((res) => res.blob());
+    // createImageBitmap is supported on iOS 16+; if it fails, just bail.
+    const bitmap = await createImageBitmap(blob);
+    const results = await detector.detect(bitmap);
+    // @ts-ignore - some browsers implement close()
+    bitmap.close?.();
+    const raw = String(results?.[0]?.rawValue ?? "").trim();
+    return raw || null;
+  } catch {
+    return null;
+  }
+}
+
 export default function EmployeeScratchersPanel({ user }: { user: SessionUser }) {
   const [bundle, setBundle] = useState<SlotBundle | null>(null);
   const [loading, setLoading] = useState(false);
@@ -620,33 +655,45 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     ) => {
       setScanStateLogged("PROCESSING", "ocr.start");
       setScanError(null);
+
       const expectedPackPrefix = getExpectedPackPrefix(pack);
-      const response = await fetch("/api/ocr/scratcher", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageBase64,
-          storeId: user.storeNumber,
-          expectedPackPrefix,
-        }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setScanError(data?.error ?? "Unable to read ticket.");
-        setScanStateLogged("ERROR", "ocr.http_error");
+      const rawLine = await detectBarcodeFromDataUrl(imageBase64);
+      if (!rawLine) {
+        setScanError("No barcode detected. Try again, move closer, or use Manual mode.");
+        setScanStateLogged("ERROR", "ocr.no_barcode");
         return null;
       }
+
+      const parsed = parseScratcherLine(rawLine);
+      if (!parsed) {
+        setScanError("Barcode detected, but format looks wrong. Try again or use Manual mode.");
+        setScanStateLogged("ERROR", "ocr.bad_format");
+        return null;
+      }
+
+      const lastDigits = parsed.end;
+      if (!lastDigits) {
+        setScanError("Barcode detected, but end ticket digits are missing. Try again.");
+        setScanStateLogged("ERROR", "ocr.missing_end");
+        return null;
+      }
+
+      const prefixMismatch = Boolean(expectedPackPrefix && expectedPackPrefix !== parsed.prefix);
+      const confidence: "low" | "medium" | "high" =
+        parsed.end && parsed.end.length === 3 ? "high" : "medium";
+
       setOcrResult({
-        fullLine: data.fullLine,
-        lastDigits: data.lastDigits,
-        confidence: data.confidence ?? "medium",
-        prefixMismatch: data.prefixMismatch ?? false,
+        fullLine: rawLine,
+        lastDigits,
+        confidence,
+        prefixMismatch,
       });
       setScanStateLogged("RESULT", "ocr.ok");
       cooldownUntilRef.current = Date.now() + 1000;
-      return data as { fullLine: string; lastDigits: string };
+
+      return { fullLine: rawLine, lastDigits };
     },
-    [getExpectedPackPrefix, setScanStateLogged, user.storeNumber],
+    [getExpectedPackPrefix, setScanStateLogged],
   );
 
   const captureAndDetect = useCallback(async () => {
@@ -856,7 +903,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     if (manualScanLine.trim()) {
       const parsed = parseScratcherLine(manualScanLine.trim());
       if (parsed) {
-        setEndFullLine(scannerSlotId, parsed.fullLine, false);
+        setEndFullLine(scannerSlotId, parsed.raw, false);
       }
     } else {
       setEndFullLine(scannerSlotId, null, false);
