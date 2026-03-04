@@ -695,27 +695,6 @@ body[data-top-nav="true"] .scroll-top-bar__nav {
     inset 0 0 0 1px rgba(148, 163, 184, 0.08);
 }
 
-/* Variance tones (Cash/Scr deltas under employee name). */
-.variance-tone {
-  font-weight: 600;
-}
-
-.variance-tone--pos {
-  color: rgba(110, 231, 183, 0.95); /* emerald-ish */
-}
-
-.variance-tone--neg {
-  color: rgba(251, 113, 133, 0.95); /* rose-ish */
-}
-
-.variance-tone--zero {
-  color: rgba(255, 255, 255, 0.92);
-}
-
-.variance-tone--unknown {
-  color: rgba(148, 163, 184, 0.8);
-}
-
 .media-modal {
   border: 1px solid rgba(56, 189, 248, 0.18);
   background: radial-gradient(
