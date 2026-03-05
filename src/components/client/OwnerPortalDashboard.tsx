@@ -296,13 +296,13 @@ function OwnerPortalDashboardContent({
         aria-label="Owner portal pages"
       >
         <section className="owner-portal-page" id="owner-shift-reports">
-          <div className="owner-portal-page__content space-y-5 sm:space-y-6">
+          <div className="owner-portal-page__content space-y-4 sm:space-y-5">
             {renderOwnerHeader()}
             <div className="owner-portal-section" id="owner-employee-uploads">
               <div className="ui-card space-y-3 text-white">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <p className="text-xs uppercase tracking-[0.3em] text-slate-300">
+                    <p className="text-xs uppercase tracking-[0.22em] text-slate-300">
                       Shift uploads
                     </p>
                     <p className="mt-2 text-sm font-semibold text-slate-100">

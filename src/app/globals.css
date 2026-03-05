@@ -560,13 +560,13 @@ body[data-top-nav="true"] .scroll-top-bar__nav {
   gap: 10px;
   /* Match iOS "native" bottom bars (YouTube-style): short bar + safe area only. */
   height: calc(48px + env(safe-area-inset-bottom));
-  padding: 0 12px env(safe-area-inset-bottom);
+  padding: 6px 12px env(safe-area-inset-bottom);
 }
 
 .owner-bottom-bar__slot {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .owner-bottom-bar__slot--right {
@@ -575,15 +575,15 @@ body[data-top-nav="true"] .scroll-top-bar__nav {
 
 .owner-bottom-bar__ai {
   display: grid;
-  grid-template-rows: 34px 10px;
+  grid-template-rows: 34px 12px;
   align-items: center;
   justify-items: center;
-  gap: 2px;
+  gap: 4px;
   border: none;
   background: none;
   color: rgba(226, 232, 240, 0.95);
-  font-size: 7px;
-  letter-spacing: 0.16em;
+  font-size: 8px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   height: 48px;
   padding: 0;
@@ -625,8 +625,8 @@ body[data-top-nav="true"] .scroll-top-bar__nav {
 
 .owner-bottom-bar__icon svg,
 .portal-bottom-bar__icon svg {
-  width: 17px;
-  height: 17px;
+  width: 20px;
+  height: 20px;
 }
 
 
@@ -648,7 +648,7 @@ body[data-top-nav="true"] .scroll-top-bar__nav {
 
 .owner-bottom-bar__ai-label {
   color: rgba(226, 232, 240, 0.85);
-  line-height: 1;
+  line-height: 1.05;
   white-space: nowrap;
   max-width: 110px;
   overflow: hidden;
@@ -670,6 +670,20 @@ body[data-top-nav="true"] .scroll-top-bar__nav {
   background: rgba(11, 20, 40, 0.5);
   color: rgba(226, 232, 240, 0.9);
   transition: border-color 180ms ease, background-color 180ms ease;
+}
+
+/* Premium feel on the Shift + Reports page: slightly tighter padding and less "puffy" shadow. */
+#owner-shift-reports .ui-card {
+  padding: 16px;
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow:
+    0 14px 34px rgba(15, 23, 42, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -8px 14px rgba(15, 23, 42, 0.18);
+}
+
+#owner-shift-reports .ui-card--compact {
+  padding: 16px;
 }
 
 .owner-bottom-bar__icon:hover,
@@ -1469,7 +1483,7 @@ select.ui-field--slim {
   padding: 4px 10px;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: rgba(226, 232, 240, 0.7);
   transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
@@ -1738,12 +1752,12 @@ body:has(.owner-portal-shell) {
 .owner-portal-nav__btn,
 .top-bar-nav__btn {
   flex: 0 0 auto;
-  padding: 6px 10px;
+  padding: 6px 11px;
   border-radius: 999px;
   border: 1px solid transparent;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--background);
   background: transparent;
@@ -1804,7 +1818,7 @@ body:has(.owner-portal-shell) {
   text-shadow: 0 2px 8px rgba(8, 14, 30, 0.55);
   background: linear-gradient(140deg, rgba(20, 52, 102, 0.95), rgba(10, 24, 56, 0.94));
   border-color: rgba(148, 163, 184, 0.35);
-  box-shadow: 0 12px 26px rgba(6, 16, 36, 0.5);
+  box-shadow: 0 10px 22px rgba(6, 16, 36, 0.42);
 }
 
 /* Dim inactive nav items when one is selected. */
@@ -2091,11 +2105,17 @@ body:has(.owner-portal-shell) {
   bottom: 40px;
 }
 
-/* Make Confirm/Result appear at the very top (user expects immediate feedback after capture). */
+/*
+ * Make Confirm/Result appear at the very top, and never hide behind the captured image.
+ * Note: IHModal panels use a transform animation; on iOS Safari that can mess with
+ * absolute positioning + stacking. `position: fixed` is the most reliable here.
+ */
 .scratcher-scan-error,
 .scratcher-scan-result {
-  top: 16px;
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 14px);
   bottom: auto;
+  z-index: 10002;
 }
 
 .scratcher-scan-actions {

@@ -468,7 +468,7 @@ export default function FullDayReportsPanel({
       <div className="flex flex-wrap items-center justify-between gap-4">
         {!embedded && (
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-slate-300">
+            <p className="text-xs uppercase tracking-[0.22em] text-slate-300">
               Full Day Reports
             </p>
           </div>
@@ -495,7 +495,7 @@ export default function FullDayReportsPanel({
             }}
             className="ui-field ui-field--slim"
           />
-          <span className="text-[11px] uppercase tracking-[0.18em] text-slate-400">
+          <span className="text-[11px] font-semibold text-slate-400/80">
             To
           </span>
           <input
@@ -532,21 +532,21 @@ export default function FullDayReportsPanel({
             <div className="ui-ink-inverse scroll-clip rounded-2xl border border-white/10 bg-[#0f1a33]">
               <div className="max-h-[360px] overflow-x-auto">
                 <table
-                  className="w-full table-fixed text-left text-[13px] text-slate-200"
+                  className="w-full table-fixed text-left text-[13px] leading-[1.35] text-slate-200"
                   style={{ minWidth: `${minTableWidth}px` }}
                 >
-                  <thead className="sticky top-0 z-10 bg-[#0f1a33] text-[11px] uppercase tracking-[0.24em] text-slate-300">
+                  <thead className="sticky top-0 z-10 bg-[#0f1a33] text-[10px] uppercase tracking-[0.14em] text-slate-300/90">
                     <tr>
-                      <th className="w-[130px] px-2 py-3 md:px-4">Store</th>
+                      <th className="w-[130px] px-3 py-3">Store</th>
                       {visibleItems.map((item) => (
                         <th
                           key={`${item.key}-${item.label}`}
-                          className="w-[110px] px-2 py-3 text-right md:px-4"
+                          className="w-[110px] px-3 py-3 text-right"
                         >
                           {item.label}
                         </th>
                       ))}
-                      <th className="sticky right-0 w-[56px] bg-[#0f1a33] px-1.5 py-3 text-right md:px-2"></th>
+                      <th className="sticky right-0 w-[56px] bg-[#0f1a33] px-2 py-3 text-right"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -600,8 +600,8 @@ export default function FullDayReportsPanel({
                         <tr
                           className="border-t border-white/5 transition hover:bg-white/5 active:bg-white/10"
                         >
-                          <td className="px-2 py-4 text-white md:px-4 whitespace-normal break-words leading-snug">
-                            {displayName}
+                          <td className="px-3 py-4 text-slate-100 whitespace-normal break-words leading-snug">
+                            <div className="font-semibold">{displayName}</div>
                             {!activeRecord && missingLabel && (
                               <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-500 whitespace-nowrap">
                                 {missingLabel}
@@ -611,26 +611,26 @@ export default function FullDayReportsPanel({
                           {visibleItems.map((item) => (
                             <td
                               key={`${store.storeId}-${item.key}`}
-                              className="ui-tabular px-2 py-4 text-right md:px-4"
+                              className="ui-tabular px-3 py-4 text-right"
                             >
                               {totals
                                 ? formatMoney(getTotalsItemAmount(totals, item))
                                 : "--"}
                             </td>
                           ))}
-                          <td className="sticky right-0 bg-[#0f1a33] px-1.5 py-4 text-right md:px-2">
+                          <td className="sticky right-0 bg-[#0f1a33] px-2 py-4 text-right">
                             {canInvestigate ? (
                               <button
                                 type="button"
                                 onClick={() => {
                                   if (activeRecord) openReport(activeRecord, displayName);
                                 }}
-                                className={`inline-flex h-7 w-7 items-center justify-center rounded-full border text-[10px] font-semibold transition ${
+                                className={`inline-flex h-8 w-8 items-center justify-center rounded-full border bg-white/0 text-[10px] font-semibold transition ${
                                   localStatus[reportId] === "resolved"
                                     ? "border-emerald-300/60 text-emerald-200"
                                     : localStatus[reportId] === "investigating"
                                       ? "border-amber-300/60 text-amber-200"
-                                      : "border-white/20 text-white hover:border-white/60"
+                                      : "border-white/20 text-white hover:border-white/60 hover:bg-white/5"
                                 }`}
                                 aria-label="Investigate"
                               >
@@ -651,7 +651,7 @@ export default function FullDayReportsPanel({
                               <button
                                 type="button"
                                 disabled
-                                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 text-[10px] font-semibold text-slate-500/80"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/0 text-[10px] font-semibold text-slate-500/80"
                                 aria-label="Investigate"
                               >
                                 <svg
@@ -672,28 +672,35 @@ export default function FullDayReportsPanel({
                         </tr>
                         {activeRecord && (
                           <tr className="border-t border-white/5 bg-white/5">
-                            <td className="px-2 py-3 text-white md:px-4">
-                              Net
+                            <td className="px-3 py-3 text-[12px] font-semibold text-slate-300">
+                              <span className="text-slate-400">Net</span>
                             </td>
-                            {visibleItems.map((item) => (
-                              <td
-                                key={`${store.storeId}-net-${item.key}`}
-                                className="ui-tabular px-2 py-3 text-right md:px-4 text-emerald-300"
-                              >
-                                {item.key === "gross"
-                                  ? netSummary
-                                    ? formatMoney(netSummary.netTotal)
-                                    : "--"
-                                  : netSummary
-                                    ? formatMoney(
-                                        netSummary.breakdown.find(
-                                          (entry) => entry.key === item.key,
-                                        )?.net ?? 0,
-                                      )
-                                    : "--"}
-                              </td>
-                            ))}
-                            <td className="sticky right-0 bg-[#0f1a33] px-1.5 py-3 text-right md:px-2"></td>
+                            {visibleItems.map((item) => {
+                              const raw =
+                                !netSummary
+                                  ? null
+                                  : item.key === "gross"
+                                    ? netSummary.netTotal
+                                    : netSummary.breakdown.find((entry) => entry.key === item.key)
+                                        ?.net ?? null;
+                              const tone =
+                                raw === null
+                                  ? "text-slate-500"
+                                  : raw > 0.01
+                                    ? "text-emerald-300"
+                                    : raw < -0.01
+                                      ? "text-rose-300"
+                                      : "text-slate-200";
+                              return (
+                                <td
+                                  key={`${store.storeId}-net-${item.key}`}
+                                  className={`ui-tabular px-3 py-3 text-right ${tone}`}
+                                >
+                                  {raw === null ? "--" : formatMoney(raw)}
+                                </td>
+                              );
+                            })}
+                            <td className="sticky right-0 bg-[#0f1a33] px-2 py-3 text-right"></td>
                           </tr>
                         )}
                       </Fragment>

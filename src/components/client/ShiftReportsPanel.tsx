@@ -490,11 +490,11 @@ export default function ShiftReportsPanel({
     () => Math.max(440, 100 + visibleItems.length * 120 + 56),
     [visibleItems.length],
   );
-  const varianceTone = (value: number | null) => {
-    if (value === null) return "text-slate-400";
-    if (value > 0.01) return "text-emerald-300";
-    if (value < -0.01) return "text-rose-300";
-    return "text-slate-300";
+  const varianceColor = (value: number | null) => {
+    if (value === null) return "rgba(148, 163, 184, 0.85)"; // muted slate
+    if (value < -0.01) return "rgba(251, 113, 133, 0.95)"; // red/rose
+    if (value > 0.01) return "rgba(110, 231, 183, 0.95)"; // green/emerald
+    return "rgba(255, 255, 255, 0.92)"; // white
   };
 
   useEffect(() => {
@@ -711,7 +711,7 @@ export default function ShiftReportsPanel({
       <div className="flex flex-wrap items-center justify-between gap-4">
         {!embedded && (
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-slate-300">
+            <p className="text-xs uppercase tracking-[0.22em] text-slate-300">
               Shift Reports
             </p>
           </div>
@@ -763,7 +763,7 @@ export default function ShiftReportsPanel({
               }}
               className="ui-field ui-field--slim"
             />
-            <span className="text-[11px] uppercase tracking-[0.18em] text-slate-400">
+            <span className="text-[11px] font-semibold text-slate-400/80">
               To
             </span>
             <input
@@ -803,21 +803,21 @@ export default function ShiftReportsPanel({
                 data-report-scroll="shift"
               >
                 <table
-                  className="w-full table-fixed text-left text-[13px] text-slate-200"
+                  className="w-full table-fixed text-left text-[13px] leading-[1.35] text-slate-200"
                   style={{ minWidth: `${minTableWidth}px` }}
                 >
-                  <thead className="sticky top-0 z-10 bg-[#0f1a33] text-[11px] uppercase tracking-[0.24em] text-slate-300">
+                  <thead className="sticky top-0 z-10 bg-[#0f1a33] text-[10px] uppercase tracking-[0.14em] text-slate-300/90">
                     <tr>
-                      <th className="w-[100px] px-2 py-3 md:px-3 whitespace-nowrap">Name</th>
+                      <th className="w-[92px] px-3 py-3 whitespace-nowrap">Name</th>
                       {visibleItems.map((item) => (
                         <th
                           key={`${item.key}-${item.label}`}
-                          className="w-[120px] px-2 py-3 text-right md:px-3 whitespace-nowrap"
+                          className="w-[120px] px-3 py-3 text-right whitespace-nowrap"
                         >
                           {item.label}
                         </th>
                       ))}
-                      <th className="sticky right-0 w-[56px] bg-[#0f1a33] px-1.5 py-3 text-right md:px-2"></th>
+                      <th className="sticky right-0 w-[56px] bg-[#0f1a33] px-2 py-3 text-right"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -856,8 +856,10 @@ export default function ShiftReportsPanel({
                             <tr
                               className="border-t border-white/5 transition hover:bg-white/5 active:bg-white/10"
                             >
-                              <td className="px-2 py-4 text-white md:px-3">
-                                {formatShortName(row.employeeName)}
+                              <td className="px-3 py-4 text-slate-100">
+                                <div className="font-semibold">
+                                  {formatShortName(row.employeeName)}
+                                </div>
                                 {!report && missingLabel && (
                                   <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-500 whitespace-nowrap">
                                     {missingLabel}
@@ -871,17 +873,32 @@ export default function ShiftReportsPanel({
                                     return null;
                                   }
                                   return (
-                                    <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
-                                      <span className={`font-semibold ${varianceTone(checks.cash ?? null)}`}>
-                                        Cash {hasCash ? formatMoney(checks.cash as number) : "--"}
+                                    <div className="mt-1 flex flex-wrap gap-3 text-[11px] text-slate-400">
+                                      <span className="inline-flex items-baseline gap-1">
+                                        <span className="text-slate-400">Cash</span>
+                                        <span
+                                          className="font-semibold"
+                                          style={{ color: varianceColor(checks.cash ?? null) }}
+                                        >
+                                          {hasCash ? formatMoney(checks.cash as number) : "--"}
+                                        </span>
                                       </span>
-                                      <span className={`font-semibold ${varianceTone(checks.scr ?? null)}`}>
-                                        Scr{" "}
-                                        {scratchersLoading
-                                          ? "…"
-                                          : hasScr
-                                            ? formatMoney(checks.scr as number)
-                                            : "--"}
+                                      <span className="inline-flex items-baseline gap-1">
+                                        <span className="text-slate-400">Scr</span>
+                                        <span
+                                          className="font-semibold"
+                                          style={{
+                                            color: scratchersLoading
+                                              ? varianceColor(null)
+                                              : varianceColor(checks.scr ?? null),
+                                          }}
+                                        >
+                                          {scratchersLoading
+                                            ? "…"
+                                            : hasScr
+                                              ? formatMoney(checks.scr as number)
+                                              : "--"}
+                                        </span>
                                       </span>
                                     </div>
                                   );
@@ -892,13 +909,13 @@ export default function ShiftReportsPanel({
                                 return (
                                   <td
                                     key={`${row.key}-${item.key}`}
-                                    className="ui-tabular px-2 py-4 text-right md:px-3 text-slate-100"
+                                    className="ui-tabular px-3 py-4 text-right text-slate-100"
                                   >
                                     {report ? formatMoney(amount) : "--"}
                                   </td>
                                 );
                               })}
-                              <td className="sticky right-0 bg-[#0f1a33] px-1.5 py-4 text-right md:px-2">
+                              <td className="sticky right-0 bg-[#0f1a33] px-2 py-4 text-right">
                                 {canInvestigate ? (
                                   <button
                                     type="button"
@@ -906,7 +923,7 @@ export default function ShiftReportsPanel({
                                       if (report) openInvestigate(report);
                                     }}
                                     disabled={!report}
-                                    className={`inline-flex h-7 w-7 items-center justify-center rounded-full border text-[10px] font-semibold transition ${
+                                    className={`inline-flex h-8 w-8 items-center justify-center rounded-full border bg-white/0 text-[10px] font-semibold transition ${
                                       report && getStatus(report) === "resolved"
                                         ? "border-emerald-300/60 text-emerald-200"
                                         : report &&
@@ -914,8 +931,8 @@ export default function ShiftReportsPanel({
                                               getStatus(report) === "in_progress")
                                           ? "border-amber-300/60 text-amber-200"
                                           : hasDiscrepancy
-                                            ? "border-white/20 text-white hover:border-white/60"
-                                            : "border-white/10 text-slate-300 hover:border-white/40"
+                                            ? "border-white/20 text-white hover:border-white/60 hover:bg-white/5"
+                                            : "border-white/10 text-slate-300 hover:border-white/40 hover:bg-white/5"
                                     } ${report ? "" : "opacity-50 cursor-not-allowed"}`}
                                     aria-label="Investigate"
                                   >
@@ -936,7 +953,7 @@ export default function ShiftReportsPanel({
                                   <button
                                     type="button"
                                     disabled
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 text-[10px] font-semibold text-slate-500/80"
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/0 text-[10px] font-semibold text-slate-500/80"
                                     aria-label="Investigate"
                                   >
                                     <svg
@@ -959,30 +976,40 @@ export default function ShiftReportsPanel({
                               <tr
                                 className="border-t border-white/5 bg-white/5"
                               >
-                                <td className="px-2 py-3 text-white md:px-3">
-                                  Net
+                                <td className="px-3 py-3 text-[12px] font-semibold text-slate-300">
+                                  <span className="text-slate-400">Net</span>
                                 </td>
                                 {visibleItems.map((item) => {
                                   const amount = row.totals[item.key] ?? 0;
                                   const margin = Number(item.marginPercent ?? 0);
                                   const hasMargin = Number.isFinite(margin) && margin > 0;
                                   const netValue = (amount * margin) / 100;
+                                  const raw =
+                                    item.key === "gross"
+                                      ? netMarginItems.length > 0
+                                        ? netTotal
+                                        : null
+                                      : hasMargin
+                                        ? netValue
+                                        : null;
+                                  const tone =
+                                    raw === null
+                                      ? "text-slate-500"
+                                      : raw > 0.01
+                                        ? "text-emerald-300"
+                                        : raw < -0.01
+                                          ? "text-rose-300"
+                                          : "text-slate-200";
                                   return (
                                     <td
                                       key={`${row.key}-net-${item.key}`}
-                                      className="ui-tabular px-2 py-3 text-right md:px-3 text-emerald-300"
+                                      className={`ui-tabular px-3 py-3 text-right ${tone}`}
                                     >
-                                      {item.key === "gross"
-                                        ? netMarginItems.length > 0
-                                          ? formatMoney(netTotal)
-                                          : "--"
-                                        : hasMargin
-                                          ? formatMoney(netValue)
-                                          : "--"}
+                                      {raw === null ? "--" : formatMoney(raw)}
                                     </td>
                                   );
                                 })}
-                                <td className="sticky right-0 bg-[#0f1a33] px-1.5 py-3 text-right md:px-2"></td>
+                                <td className="sticky right-0 bg-[#0f1a33] px-2 py-3 text-right"></td>
                               </tr>
                             )}
                           </Fragment>

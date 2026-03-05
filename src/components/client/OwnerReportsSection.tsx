@@ -239,7 +239,7 @@ export default function OwnerReportsSection({ user }: { user: SessionUser }) {
   return (
     <section className="ui-card text-white">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-sm uppercase tracking-[0.3em] text-slate-300">
+        <h2 className="text-sm uppercase tracking-[0.22em] text-slate-300">
           Reports
         </h2>
         <div className="flex flex-wrap items-center gap-2">
