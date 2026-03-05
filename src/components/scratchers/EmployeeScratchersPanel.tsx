@@ -14,7 +14,7 @@ import type {
 } from "@/lib/types";
 import ScratchersLogbookModal from "@/components/scratchers/ScratchersLogbookModal";
 import FileViewer from "@/components/records/FileViewer";
-import { parseScratcherLine } from "@/lib/scratchers/ocr";
+import { extractScratcherTicketIdFromOcrText, parseScratcherLine } from "@/lib/scratchers/ocr";
 
 interface SlotBundle {
   slots: ScratcherSlot[];
@@ -45,68 +45,15 @@ const dataUrlToBase64 = (dataUrl: string) => {
   return idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl;
 };
 
-async function detectBarcodeWithZxing(dataUrl: string): Promise<string | null> {
+/**
+ * Scratchers end-ticket scanning is TEXT OCR only (no barcode detection).
+ * Uses native ML Kit text recognition via Capacitor.
+ */
+async function detectScratcherLineFromDataUrl(
+  dataUrl: string,
+): Promise<ReturnType<typeof parseScratcherLine> | null> {
   if (typeof window === "undefined") return null;
   try {
-    // Lazy-load to avoid impacting startup time.
-    const mod: any = await import("@zxing/browser");
-    const ReaderCtor = mod?.BrowserMultiFormatReader;
-    if (typeof ReaderCtor !== "function") return null;
-    const reader = new ReaderCtor();
-
-    const img = new Image();
-    img.src = dataUrl;
-    // decode() is supported on modern Safari/iOS; if it fails, bail out.
-    // @ts-ignore
-    await img.decode?.();
-
-    // decodeFromImageElement resolves to Result (has getText()).
-    const result = (await withTimeout(reader.decodeFromImageElement(img), 2000)) as any;
-    const text = String(result?.getText?.() ?? "").trim();
-    return text || null;
-  } catch {
-    return null;
-  }
-}
-
-async function detectBarcodeFromDataUrl(dataUrl: string): Promise<string | null> {
-  if (typeof window === "undefined") return null;
-  const ctor = (window as any).BarcodeDetector as
-    | (new (options?: { formats?: string[] }) => { detect: (image: any) => Promise<any[]> })
-    | undefined;
-
-  try {
-    // 1) Prefer BarcodeDetector when available (fastest).
-    if (ctor) {
-      const detector = new ctor({
-        formats: [
-          "code_128",
-          "code_39",
-          "ean_13",
-          "ean_8",
-          "upc_a",
-          "upc_e",
-          "itf",
-          "codabar",
-          "qr_code",
-        ],
-      });
-
-      const blob = await fetch(dataUrl).then((res) => res.blob());
-      // createImageBitmap can fail on some iOS builds; treat as "no result" and fall through.
-      const bitmap = await createImageBitmap(blob);
-      const results = await withTimeout(detector.detect(bitmap), 1800);
-      // @ts-ignore - some browsers implement close()
-      bitmap.close?.();
-      const raw = String(results?.[0]?.rawValue ?? "").trim();
-      if (raw) return raw;
-    }
-
-    // 1b) Web fallback when BarcodeDetector isn't available / unreliable (iOS Safari).
-    const zxing = await detectBarcodeWithZxing(dataUrl);
-    if (zxing) return zxing;
-
-    // 2) Native fallback: ML Kit text recognition (Capacitor) for iOS/Android shells.
     const Cap = (window as any).Capacitor;
     if (!Cap?.isNativePlatform?.()) return null;
     const plugin = Cap?.Plugins?.CapacitorPluginMlKitTextRecognition;
@@ -120,23 +67,7 @@ async function detectBarcodeFromDataUrl(dataUrl: string): Promise<string | null>
     )) as MlKitTextResult;
     const text = typeof result?.text === "string" ? result.text.trim() : "";
     if (!text) return null;
-
-    // Find the best matching line.
-    const lines = text
-      .split(/\r?\n+/)
-      .map((l: string) => l.trim())
-      .filter(Boolean);
-    for (const candidate of lines) {
-      const parsed = parseScratcherLine(candidate);
-      if (!parsed) continue;
-      const end = parsed.end ? parsed.end.padStart(3, "0") : null;
-      return `${parsed.game}-${parsed.pack}-${parsed.roll}${end ? `-${end}` : ""}`;
-    }
-    // As a last attempt, parse against the full blob.
-    const parsed = parseScratcherLine(text);
-    if (!parsed) return null;
-    const end = parsed.end ? parsed.end.padStart(3, "0") : null;
-    return `${parsed.game}-${parsed.pack}-${parsed.roll}${end ? `-${end}` : ""}`;
+    return extractScratcherTicketIdFromOcrText(text);
   } catch {
     return null;
   }
@@ -202,10 +133,13 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   const stableSinceRef = useRef<number | null>(null);
   const lastSampleRef = useRef<Uint8ClampedArray | null>(null);
   const cooldownUntilRef = useRef(0);
+  const scanStartedAtRef = useRef<number>(0);
+  const scanAttemptsRef = useRef<number>(0);
   const captureInFlightRef = useRef(false);
   const cameraStartingRef = useRef(false);
   const scanStateRef = useRef(scanState);
   const manualModeRef = useRef(manualMode);
+  const rapidModeRef = useRef(rapidMode);
   const capturedImageRef = useRef<string | null>(capturedImage);
 
   const logScan = useCallback(
@@ -588,7 +522,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       } catch {
         // ignore
       }
-      if (scanStateRef.current === "ERROR") setScanError(null);
       setCameraReady(true);
       return;
     }
@@ -617,7 +550,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       const track = stream.getVideoTracks()[0];
       const caps = (track.getCapabilities?.() ?? {}) as { torch?: boolean };
       setTorchAvailable(Boolean(caps.torch));
-      if (scanStateRef.current === "ERROR") setScanError(null);
       setCameraReady(true);
     } catch (error) {
       console.error("camera start failed", error);
@@ -726,6 +658,29 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     return { fullImage, cropImage };
   }, [computeRoiFromOverlay]);
 
+  const captureCropOnly = useCallback(() => {
+    const video = videoRef.current;
+    const roi = computeRoiFromOverlay();
+    if (!video || !roi) return null;
+    const cropCanvas = document.createElement("canvas");
+    cropCanvas.width = Math.round(roi.sw);
+    cropCanvas.height = Math.round(roi.sh);
+    const cropCtx = cropCanvas.getContext("2d");
+    if (!cropCtx) return null;
+    cropCtx.drawImage(
+      video,
+      roi.sx,
+      roi.sy,
+      roi.sw,
+      roi.sh,
+      0,
+      0,
+      cropCanvas.width,
+      cropCanvas.height,
+    );
+    return cropCanvas.toDataURL("image/jpeg", 0.9);
+  }, [computeRoiFromOverlay]);
+
   const performOcr = useCallback(
     async (
       slotId: string,
@@ -736,33 +691,21 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       setScanError(null);
 
       const expectedPackPrefix = getExpectedPackPrefix(pack);
-      const rawLine = await detectBarcodeFromDataUrl(imageBase64);
-      if (!rawLine) {
-        setScanError("No barcode detected. Try again, move closer, or use Manual mode.");
-        setScanStateLogged("ERROR", "ocr.no_barcode");
+      const parsed = await detectScratcherLineFromDataUrl(imageBase64);
+      if (!parsed?.end) {
+        setScanError("Unable to read ticket number. Try again, move closer, or use Manual mode.");
+        setScanStateLogged("ERROR", "ocr.no_match");
         return null;
       }
-
-      const parsed = parseScratcherLine(rawLine);
-      if (!parsed) {
-        setScanError("Barcode detected, but format looks wrong. Try again or use Manual mode.");
-        setScanStateLogged("ERROR", "ocr.bad_format");
-        return null;
-      }
-
-      const lastDigits = parsed.end;
-      if (!lastDigits) {
-        setScanError("Barcode detected, but end ticket digits are missing. Try again.");
-        setScanStateLogged("ERROR", "ocr.missing_end");
-        return null;
-      }
+      const lastDigits = parsed.end.padStart(3, "0");
+      const fullLine = `${parsed.game}-${parsed.pack}-${parsed.roll}-${lastDigits}`;
 
       const prefixMismatch = Boolean(expectedPackPrefix && expectedPackPrefix !== parsed.prefix);
       const confidence: "low" | "medium" | "high" =
-        parsed.end && parsed.end.length === 3 ? "high" : "medium";
+        lastDigits.length === 3 ? "high" : "medium";
 
       setOcrResult({
-        fullLine: rawLine,
+        fullLine,
         lastDigits,
         confidence,
         prefixMismatch,
@@ -770,14 +713,96 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       setScanStateLogged("RESULT", "ocr.ok");
       cooldownUntilRef.current = Date.now() + 1000;
 
-      return { fullLine: rawLine, lastDigits };
+      return { fullLine, lastDigits };
     },
     [getExpectedPackPrefix, setScanStateLogged],
   );
 
+  const attemptRapidOcr = useCallback(async () => {
+    if (!scannerSlotId || captureInFlightRef.current) return;
+    if (manualModeRef.current) return;
+    if (capturedImageRef.current) return;
+    if (scanStateRef.current !== "PREVIEW" && scanStateRef.current !== "PROCESSING") return;
+    if (Date.now() < cooldownUntilRef.current) return;
+    if (!cameraReady) return;
+    const slotEntry = scannableSlots.find((entry) => entry.slot.id === scannerSlotId);
+    if (!slotEntry) return;
+
+    if (!scanStartedAtRef.current) {
+      scanStartedAtRef.current = Date.now();
+      scanAttemptsRef.current = 0;
+    }
+
+    captureInFlightRef.current = true;
+    try {
+      setScanStateLogged("PROCESSING", "rapid.ocr.attempt");
+      const cropImage = captureCropOnly();
+      if (!cropImage) {
+        cooldownUntilRef.current = Date.now() + 400;
+        setScanStateLogged("PREVIEW", "rapid.capture.failed");
+        return;
+      }
+      scanAttemptsRef.current += 1;
+      const parsed = await detectScratcherLineFromDataUrl(cropImage);
+      if (parsed?.end) {
+        const images = captureFrame();
+        if (images?.fullImage) {
+          setCapturedImage(images.fullImage);
+          capturedImageRef.current = images.fullImage;
+          pauseCamera();
+        }
+        // Mirror performOcr success mapping (but without barcode wording / without early error).
+        const expectedPackPrefix = getExpectedPackPrefix(slotEntry.pack);
+        const lastDigits = parsed.end.padStart(3, "0");
+        const fullLine = `${parsed.game}-${parsed.pack}-${parsed.roll}-${lastDigits}`;
+        const prefixMismatch = Boolean(expectedPackPrefix && expectedPackPrefix !== parsed.prefix);
+        const confidence: "low" | "medium" | "high" = lastDigits.length === 3 ? "high" : "medium";
+        setOcrResult({ fullLine, lastDigits, confidence, prefixMismatch });
+        setScanStateLogged("RESULT", "rapid.ocr.ok");
+        cooldownUntilRef.current = Date.now() + 1000;
+        return;
+      }
+
+      // No match: keep scanning; only surface an error after a short timeout.
+      cooldownUntilRef.current = Date.now() + 350;
+      const elapsed = Date.now() - (scanStartedAtRef.current || Date.now());
+      if (elapsed > 2800 && scanAttemptsRef.current >= 3) {
+        setScanError("Unable to read ticket number. Try again, move closer, or use Manual mode.");
+        setScanStateLogged("ERROR", "rapid.timeout");
+        return;
+      }
+      setScanStateLogged("PREVIEW", "rapid.no_match");
+    } catch (error) {
+      console.error("rapid ocr failed", error);
+      cooldownUntilRef.current = Date.now() + 600;
+      const elapsed = Date.now() - (scanStartedAtRef.current || Date.now());
+      if (elapsed > 2800) {
+        setScanError("Unable to read ticket number. Try again, move closer, or use Manual mode.");
+        setScanStateLogged("ERROR", "rapid.throw");
+      } else {
+        setScanStateLogged("PREVIEW", "rapid.throw.retry");
+      }
+    } finally {
+      captureInFlightRef.current = false;
+    }
+  }, [
+    cameraReady,
+    captureCropOnly,
+    captureFrame,
+    getExpectedPackPrefix,
+    pauseCamera,
+    scannerSlotId,
+    scannableSlots,
+    setScanStateLogged,
+  ]);
+
   const captureAndDetect = useCallback(async () => {
     if (!scannerSlotId || captureInFlightRef.current) return;
-    if (scanStateRef.current !== "PREVIEW" || capturedImageRef.current) return;
+    if (
+      (scanStateRef.current !== "PREVIEW" && scanStateRef.current !== "PROCESSING") ||
+      capturedImageRef.current
+    )
+      return;
     const slotEntry = scannableSlots.find((entry) => entry.slot.id === scannerSlotId);
     if (!slotEntry) return;
     captureInFlightRef.current = true;
@@ -790,15 +815,16 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
         setScanStateLogged("ERROR", "capture.failed");
         return;
       }
-      setCapturedImage(images.fullImage);
-      capturedImageRef.current = images.fullImage;
-      pauseCamera();
-      setScanStateLogged("PROCESSING", "capture.frozen");
       try {
+        // Manual capture: freeze immediately and run OCR once on the still image.
+        setCapturedImage(images.fullImage);
+        capturedImageRef.current = images.fullImage;
+        pauseCamera();
+        setScanStateLogged("PROCESSING", "capture.frozen");
         await performOcr(scannerSlotId, slotEntry.pack, images.cropImage);
       } catch (error) {
         console.error("ocr failed", error);
-        setScanError("Unable to read ticket. Try again.");
+        setScanError("Unable to read ticket number. Try again.");
         setScanStateLogged("ERROR", "ocr.throw");
       }
     } finally {
@@ -823,7 +849,13 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       const currentState = scanStateRef.current;
       const currentManual = manualModeRef.current;
       const currentImage = capturedImageRef.current;
+      const currentRapid = rapidModeRef.current;
       if (!scannerOpen || currentState !== "PREVIEW" || currentManual || currentImage) {
+        scanLoopRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      if (!currentRapid) {
+        stableSinceRef.current = null;
         scanLoopRef.current = requestAnimationFrame(tick);
         return;
       }
@@ -871,7 +903,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
         }
         if (stableSinceRef.current && now - stableSinceRef.current >= 400) {
           stableSinceRef.current = null;
-          captureAndDetect();
+          attemptRapidOcr();
           scanLoopRef.current = requestAnimationFrame(tick);
           return;
         }
@@ -882,7 +914,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     };
     scanLoopRef.current = requestAnimationFrame(tick);
   }, [
-    captureAndDetect,
+    attemptRapidOcr,
     computeRoiFromOverlay,
     manualMode,
     capturedImage,
@@ -900,6 +932,8 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       setManualScanValue("");
       setManualScanLine("");
       cooldownUntilRef.current = 0;
+      scanStartedAtRef.current = Date.now();
+      scanAttemptsRef.current = 0;
       await startCamera();
       startStabilityLoop();
     },
@@ -924,6 +958,8 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     setManualScanValue("");
     setManualScanLine("");
     cooldownUntilRef.current = Date.now() + 1000;
+    scanStartedAtRef.current = Date.now();
+    scanAttemptsRef.current = 0;
     await startCamera();
     startStabilityLoop();
   }, [clearScanData, setScanStateLogged, startCamera, startStabilityLoop]);
@@ -1037,6 +1073,10 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   useEffect(() => {
     manualModeRef.current = manualMode;
   }, [manualMode]);
+
+  useEffect(() => {
+    rapidModeRef.current = rapidMode;
+  }, [rapidMode]);
 
   useEffect(() => {
     capturedImageRef.current = capturedImage;
@@ -1375,12 +1415,18 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
                   className="scratcher-scan-freeze"
                 />
               )}
-              {scanState === "PREVIEW" && (
+              {(scanState === "PREVIEW" || scanState === "PROCESSING") && !capturedImage && (
                 <div ref={targetRef} className="scratcher-scan-target" />
               )}
             </div>
 
-            {scanState === "PROCESSING" && (
+            {(scanState === "PROCESSING" ||
+              (!manualMode &&
+                rapidMode &&
+                scanState === "PREVIEW" &&
+                !capturedImage &&
+                !ocrResult &&
+                !scanError)) && (
               <div className="scratcher-scan-status">Reading ticket…</div>
             )}
 
