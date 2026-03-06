@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import IHModal from "@/components/ui/IHModal";
 import type {
   ScratcherPackEvent,
-  ScratcherPack,
   ScratcherProduct,
   ScratcherShiftSnapshot,
   ScratcherShiftSnapshotItem,
@@ -54,17 +53,31 @@ async function detectScratcherLineFromDataUrl(
 ): Promise<ReturnType<typeof parseScratcherLine> | null> {
   if (typeof window === "undefined") return null;
   try {
-    const Cap = (window as any).Capacitor;
+    type CapWindow = Window & {
+      Capacitor?: {
+        isNativePlatform?: () => boolean;
+        Plugins?: Record<string, unknown>;
+      };
+    };
+    const Cap = (window as unknown as CapWindow).Capacitor;
     if (!Cap?.isNativePlatform?.()) return null;
-    const plugin = Cap?.Plugins?.CapacitorPluginMlKitTextRecognition;
-    if (!plugin || typeof plugin.detectText !== "function") return null;
+    const plugin = (Cap.Plugins as Record<string, unknown> | undefined)
+      ?.CapacitorPluginMlKitTextRecognition as
+      | {
+          detectText?: (args: {
+            base64Image: string;
+            rotation: number;
+          }) => Promise<{ text?: unknown }>;
+        }
+      | undefined;
+    const detectText = plugin?.detectText;
+    if (typeof detectText !== "function") return null;
 
     const base64Image = dataUrlToBase64(dataUrl);
-    type MlKitTextResult = { text?: unknown };
     const result = (await withTimeout(
-      plugin.detectText({ base64Image, rotation: 0 }),
+      detectText({ base64Image, rotation: 0 }),
       2200,
-    )) as MlKitTextResult;
+    )) as { text?: unknown };
     const text = typeof result?.text === "string" ? result.text.trim() : "";
     if (!text) return null;
     return extractScratcherTicketIdFromOcrText(text);
@@ -116,6 +129,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     prefixMismatch?: boolean;
   } | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [scanToast, setScanToast] = useState<string | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
   const [manualMode, setManualMode] = useState(false);
   const [manualScanValue, setManualScanValue] = useState("");
@@ -138,6 +152,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   const liveOcrInFlightRef = useRef(false);
   const captureInFlightRef = useRef(false);
   const cameraStartingRef = useRef(false);
+  const scanToastTimeoutRef = useRef<number | null>(null);
   const scanStateRef = useRef(scanState);
   const manualModeRef = useRef(manualMode);
   const rapidModeRef = useRef(rapidMode);
@@ -173,10 +188,27 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       setCapturedImage(null);
       setOcrResult(null);
       setScanError(null);
+      setScanToast(null);
+      if (scanToastTimeoutRef.current) {
+        window.clearTimeout(scanToastTimeoutRef.current);
+        scanToastTimeoutRef.current = null;
+      }
       capturedImageRef.current = null;
     },
     [logScan],
   );
+
+  const showScanToast = useCallback((message: string) => {
+    if (scanToastTimeoutRef.current) {
+      window.clearTimeout(scanToastTimeoutRef.current);
+      scanToastTimeoutRef.current = null;
+    }
+    setScanToast(message);
+    scanToastTimeoutRef.current = window.setTimeout(() => {
+      setScanToast(null);
+      scanToastTimeoutRef.current = null;
+    }, 900);
+  }, []);
 
   const endSnapshotStorageKey = useMemo(
     () => `ih:scratchers:endSnapshot:${user.storeNumber}:${snapshotDate}`,
@@ -567,7 +599,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     } finally {
       cameraStartingRef.current = false;
     }
-  }, []);
+  }, [setScanStateLogged]);
 
   const toggleTorch = useCallback(async () => {
     const stream = streamRef.current;
@@ -578,7 +610,9 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     if (!caps.torch) return;
     const next = !torchEnabled;
     try {
-      await track.applyConstraints({ advanced: [{ torch: next }] as any });
+      await track.applyConstraints(
+        { advanced: [{ torch: next }] } as unknown as MediaTrackConstraints,
+      );
       setTorchEnabled(next);
     } catch (error) {
       console.error("torch failed", error);
@@ -691,9 +725,15 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       setScanStateLogged("PROCESSING", "ocr.start");
       setScanError(null);
 
+      // eslint-disable-next-line no-console
+      console.log("OCR_STARTED");
       const expectedPackPrefix = getExpectedPackPrefix(pack);
       const parsed = await detectScratcherLineFromDataUrl(imageBase64);
+      // eslint-disable-next-line no-console
+      console.log("OCR_RESULT:", parsed);
       if (!parsed?.end) {
+        // eslint-disable-next-line no-console
+        console.log("OCR_FAILED_STAY_ON_SLOT");
         setScanError("Unable to read ticket number. Try again, move closer, or use Manual mode.");
         setScanStateLogged("ERROR", "ocr.no_match");
         return null;
@@ -706,22 +746,58 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       const confidence: "low" | "medium" | "high" =
         rawEnd.length === 3 ? "high" : "medium";
 
+      setEndValue(slotId, lastDigits);
+      setEndFullLine(slotId, fullLine, prefixMismatch);
+      if (prefixMismatch) {
+        console.warn("scratcher prefix mismatch", {
+          slotId,
+          fullLine,
+        });
+      }
+
+      const currentIndex = scannableSlots.findIndex((entry) => entry.slot.id === slotId);
+      const hasValue = (id: string) => (id === slotId ? lastDigits : endValues[id] ?? "");
+      const nextEntry =
+        currentIndex >= 0
+          ? scannableSlots.slice(currentIndex + 1).find((entry) => !hasValue(entry.slot.id))
+          : null;
+
+      if (nextEntry) {
+        // eslint-disable-next-line no-console
+        console.log("OCR_SUCCESS_ADVANCING");
+        setScannerSlotId(nextEntry.slot.id);
+        clearScanData("ocr.success.advance");
+        setScanStateLogged("PREVIEW", "ocr.success.next");
+        showScanToast(`Saved • Slot ${nextEntry.slot.slotNumber} ready`);
+        cooldownUntilRef.current = Date.now() + 900;
+        stableSinceRef.current = null;
+        lastSampleRef.current = null;
+        void startCamera();
+        return { fullLine, lastDigits };
+      }
+
       setOcrResult({
         fullLine,
         lastDigits,
         confidence,
         prefixMismatch,
       });
-      // eslint-disable-next-line no-console
-      console.log("SCRATCHER OCR RESULT:", parsed);
-      // eslint-disable-next-line no-console
-      console.log("SHOWING CONFIRM MODAL");
-      setScanStateLogged("RESULT", "ocr.ok");
+      setScanStateLogged("RESULT", "ocr.ok_last");
       cooldownUntilRef.current = Date.now() + 1000;
 
       return { fullLine, lastDigits };
     },
-    [getExpectedPackPrefix, setScanStateLogged],
+    [
+      clearScanData,
+      endValues,
+      getExpectedPackPrefix,
+      scannableSlots,
+      setEndFullLine,
+      setEndValue,
+      setScanStateLogged,
+      showScanToast,
+      startCamera,
+    ],
   );
 
   const setResultFromParsed = useCallback(
@@ -811,6 +887,8 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   ]);
 
   const captureAndDetect = useCallback(async () => {
+    // eslint-disable-next-line no-console
+    console.log("CAPTURE_CLICKED");
     if (!scannerSlotId || captureInFlightRef.current) return;
     if (
       scanStateRef.current !== "PREVIEW" ||
@@ -829,6 +907,8 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
         setScanStateLogged("ERROR", "capture.failed");
         return;
       }
+      // eslint-disable-next-line no-console
+      console.log("IMAGE_CAPTURED");
       try {
         // Auto capture: freeze immediately and run OCR once on the still image.
         setCapturedImage(images.fullImage);
@@ -1430,11 +1510,13 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
               scanState === "CAPTURING" ||
               scanState === "PROCESSING") &&
               !manualMode &&
-              !capturedImage &&
               !ocrResult &&
+              !scanToast &&
               !scanError) && (
               <div className="scratcher-scan-status">Reading ticket…</div>
             )}
+
+            {scanToast && <div className="scratcher-scan-status">{scanToast}</div>}
 
             {scanState === "ERROR" && scanError && (
               <div className="scratcher-scan-error">
