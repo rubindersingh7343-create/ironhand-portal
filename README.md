@@ -12,6 +12,20 @@ npm run dev
 
 Uploads are saved to `public/uploads` and metadata is stored in `data/storage.json`. These files remain local—wire up S3/Azure/etc. when you’re ready for production storage.
 
+## Deploy (Vercel)
+
+1) Create/update `hiremote-operations-portal/.codex.env` with:
+
+```bash
+VERCEL_TOKEN=your_vercel_token
+```
+
+2) Deploy to production:
+
+```bash
+npm run deploy:prod
+```
+
 ## Demo accounts
 
 | Role            | Email                 | Password   | Notes                  |

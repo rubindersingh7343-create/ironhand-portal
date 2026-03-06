@@ -10,6 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "deploy:prod": "bash scripts/vercel-deploy-prod.sh",
     "test": "vitest run"
   },
   "dependencies": {

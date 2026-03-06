@@ -490,11 +490,12 @@ export default function ShiftReportsPanel({
     () => Math.max(440, 100 + visibleItems.length * 120 + 56),
     [visibleItems.length],
   );
-  const varianceColor = (value: number | null) => {
-    if (value === null) return "rgba(148, 163, 184, 0.85)"; // muted slate
-    if (value < -0.01) return "rgba(251, 113, 133, 0.95)"; // red/rose
-    if (value > 0.01) return "rgba(110, 231, 183, 0.95)"; // green/emerald
-    return "rgba(255, 255, 255, 0.92)"; // white
+  const varianceTextClass = (value: number | null) => {
+    if (value === null) return "text-slate-400";
+    const rounded = Math.round(value * 100) / 100;
+    if (rounded < 0) return "text-red-400";
+    if (rounded > 0) return "text-emerald-300";
+    return "text-slate-100";
   };
 
   useEffect(() => {
@@ -873,25 +874,21 @@ export default function ShiftReportsPanel({
                                     return null;
                                   }
                                   return (
-                                    <div className="mt-1 flex flex-wrap gap-3 text-[11px] text-slate-400">
+                                    <div className="mt-1 flex flex-wrap gap-3 text-[11px]">
                                       <span className="inline-flex items-baseline gap-1">
                                         <span className="text-slate-400">Cash</span>
-                                        <span
-                                          className="font-semibold"
-                                          style={{ color: varianceColor(checks.cash ?? null) }}
-                                        >
+                                        <span className={`font-semibold ${varianceTextClass(checks.cash ?? null)}`}>
                                           {hasCash ? formatMoney(checks.cash as number) : "--"}
                                         </span>
                                       </span>
                                       <span className="inline-flex items-baseline gap-1">
                                         <span className="text-slate-400">Scr</span>
                                         <span
-                                          className="font-semibold"
-                                          style={{
-                                            color: scratchersLoading
-                                              ? varianceColor(null)
-                                              : varianceColor(checks.scr ?? null),
-                                          }}
+                                          className={`font-semibold ${
+                                            scratchersLoading
+                                              ? "text-slate-400"
+                                              : varianceTextClass(checks.scr ?? null)
+                                          }`}
                                         >
                                           {scratchersLoading
                                             ? "…"
