@@ -133,10 +133,14 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   const stableSinceRef = useRef<number | null>(null);
   const lastSampleRef = useRef<Uint8ClampedArray | null>(null);
   const cooldownUntilRef = useRef(0);
+  const scanStartedAtRef = useRef<number>(0);
+  const scanAttemptsRef = useRef<number>(0);
+  const liveOcrInFlightRef = useRef(false);
   const captureInFlightRef = useRef(false);
   const cameraStartingRef = useRef(false);
   const scanStateRef = useRef(scanState);
   const manualModeRef = useRef(manualMode);
+  const rapidModeRef = useRef(rapidMode);
   const capturedImageRef = useRef<string | null>(capturedImage);
 
   const logScan = useCallback(
@@ -655,6 +659,29 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     return { fullImage, cropImage };
   }, [computeRoiFromOverlay]);
 
+  const captureCropOnly = useCallback(() => {
+    const video = videoRef.current;
+    const roi = computeRoiFromOverlay();
+    if (!video || !roi) return null;
+    const cropCanvas = document.createElement("canvas");
+    cropCanvas.width = Math.round(roi.sw);
+    cropCanvas.height = Math.round(roi.sh);
+    const cropCtx = cropCanvas.getContext("2d");
+    if (!cropCtx) return null;
+    cropCtx.drawImage(
+      video,
+      roi.sx,
+      roi.sy,
+      roi.sw,
+      roi.sh,
+      0,
+      0,
+      cropCanvas.width,
+      cropCanvas.height,
+    );
+    return cropCanvas.toDataURL("image/jpeg", 0.88);
+  }, [computeRoiFromOverlay]);
+
   const performOcr = useCallback(
     async (
       slotId: string,
@@ -696,6 +723,92 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     },
     [getExpectedPackPrefix, setScanStateLogged],
   );
+
+  const setResultFromParsed = useCallback(
+    (pack: { id?: string; packCode?: string | null } | null, parsed: ReturnType<typeof parseScratcherLine>) => {
+      const expectedPackPrefix = getExpectedPackPrefix(pack);
+      if (!parsed?.end) return;
+      const rawEnd = parsed.end;
+      const lastDigits = rawEnd.padStart(3, "0");
+      const fullLine = `${parsed.game}-${parsed.pack}-${parsed.roll}-${lastDigits}`;
+      const prefixMismatch = Boolean(expectedPackPrefix && expectedPackPrefix !== parsed.prefix);
+      const confidence: "low" | "medium" | "high" = rawEnd.length === 3 ? "high" : "medium";
+
+      setOcrResult({ fullLine, lastDigits, confidence, prefixMismatch });
+      // eslint-disable-next-line no-console
+      console.log("SCRATCHER OCR RESULT:", parsed);
+      // eslint-disable-next-line no-console
+      console.log("SHOWING CONFIRM MODAL");
+      setScanStateLogged("RESULT", "ocr.ok");
+      cooldownUntilRef.current = Date.now() + 900;
+    },
+    [getExpectedPackPrefix, setScanStateLogged],
+  );
+
+  const attemptLiveDetect = useCallback(async () => {
+    if (!scannerSlotId) return;
+    if (manualModeRef.current) return;
+    if (!rapidModeRef.current) return;
+    if (capturedImageRef.current) return;
+    if (scanStateRef.current !== "PREVIEW") return;
+    if (scanError) return;
+    if (Date.now() < cooldownUntilRef.current) return;
+    if (!cameraReady) return;
+    if (liveOcrInFlightRef.current) return;
+
+    const slotEntry = scannableSlots.find((entry) => entry.slot.id === scannerSlotId);
+    if (!slotEntry) return;
+
+    if (!scanStartedAtRef.current) {
+      scanStartedAtRef.current = Date.now();
+      scanAttemptsRef.current = 0;
+    }
+
+    liveOcrInFlightRef.current = true;
+    try {
+      const cropImage = captureCropOnly();
+      if (!cropImage) {
+        cooldownUntilRef.current = Date.now() + 300;
+        return;
+      }
+      const parsed = await detectScratcherLineFromDataUrl(cropImage);
+      if (parsed?.end) {
+        const images = captureFrame();
+        if (images?.fullImage) {
+          setCapturedImage(images.fullImage);
+          capturedImageRef.current = images.fullImage;
+          pauseCamera();
+        }
+        setScanError(null);
+        setResultFromParsed(slotEntry.pack, parsed);
+        return;
+      }
+
+      scanAttemptsRef.current += 1;
+      cooldownUntilRef.current = Date.now() + 320;
+      const elapsed = Date.now() - (scanStartedAtRef.current || Date.now());
+      if (elapsed > 2800 && scanAttemptsRef.current >= 3) {
+        setScanError("Unable to read ticket number. Try again, move closer, or use Manual mode.");
+        setScanStateLogged("ERROR", "live.timeout");
+        return;
+      }
+    } catch (e) {
+      console.error("live ocr failed", e);
+      cooldownUntilRef.current = Date.now() + 450;
+    } finally {
+      liveOcrInFlightRef.current = false;
+    }
+  }, [
+    cameraReady,
+    captureCropOnly,
+    captureFrame,
+    pauseCamera,
+    scanError,
+    scannerSlotId,
+    scannableSlots,
+    setResultFromParsed,
+    setScanStateLogged,
+  ]);
 
   const captureAndDetect = useCallback(async () => {
     if (!scannerSlotId || captureInFlightRef.current) return;
@@ -799,9 +912,9 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
         if (!stableSinceRef.current) {
           stableSinceRef.current = now;
         }
-        if (stableSinceRef.current && now - stableSinceRef.current >= 400) {
+        if (stableSinceRef.current && now - stableSinceRef.current >= 260) {
           stableSinceRef.current = null;
-          captureAndDetect();
+          void attemptLiveDetect();
           scanLoopRef.current = requestAnimationFrame(tick);
           return;
         }
@@ -811,7 +924,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       scanLoopRef.current = requestAnimationFrame(tick);
     };
     scanLoopRef.current = requestAnimationFrame(tick);
-  }, [captureAndDetect, computeRoiFromOverlay]);
+  }, [attemptLiveDetect, computeRoiFromOverlay, scannerOpen]);
 
   const openScannerForSlot = useCallback(
     async (slotId: string) => {
@@ -823,6 +936,8 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       setManualScanValue("");
       setManualScanLine("");
       cooldownUntilRef.current = 0;
+      scanStartedAtRef.current = 0;
+      scanAttemptsRef.current = 0;
       await startCamera();
       startStabilityLoop();
     },
@@ -847,6 +962,8 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     setManualScanValue("");
     setManualScanLine("");
     cooldownUntilRef.current = Date.now() + 1000;
+    scanStartedAtRef.current = 0;
+    scanAttemptsRef.current = 0;
     await startCamera();
     startStabilityLoop();
   }, [clearScanData, setScanStateLogged, startCamera, startStabilityLoop]);
@@ -960,6 +1077,10 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   useEffect(() => {
     manualModeRef.current = manualMode;
   }, [manualMode]);
+
+  useEffect(() => {
+    rapidModeRef.current = rapidMode;
+  }, [rapidMode]);
 
   useEffect(() => {
     capturedImageRef.current = capturedImage;
