@@ -16,6 +16,12 @@ const normalize = (value: string) =>
 const normalizeOcrText = (value: string) =>
   String(value ?? "")
     .toUpperCase()
+    // Common OCR confusions on ticket ids.
+    // This is intentionally a little aggressive because we only match digit-heavy patterns later.
+    .replace(/[O]/g, "0")
+    .replace(/[IL]/g, "1")
+    .replace(/[S]/g, "5")
+    .replace(/[B]/g, "8")
     .replace(/\s+/g, " ")
     .trim();
 
