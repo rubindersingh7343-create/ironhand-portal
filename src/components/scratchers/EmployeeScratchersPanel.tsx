@@ -738,6 +738,9 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       cancelAnimationFrame(scanLoopRef.current);
       scanLoopRef.current = null;
     }
+    // Reset stability state so we don't instantly trigger after Retake/slot advance.
+    stableSinceRef.current = null;
+    lastSampleRef.current = null;
     const sampleCanvas =
       sampleCanvasRef.current ?? document.createElement("canvas");
     sampleCanvasRef.current = sampleCanvas;
