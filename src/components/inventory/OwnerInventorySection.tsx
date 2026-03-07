@@ -55,6 +55,53 @@ export default function OwnerInventorySection() {
   const [applied, setApplied] = useState(false);
   const [forceApplyReady, setForceApplyReady] = useState(false);
 
+  const shouldReencode = (input: File) => {
+    const type = (input.type || "").toLowerCase();
+    if (type.includes("heic") || type.includes("heif")) return true;
+    // Keep payload small/reliable on mobile + faster parse.
+    if (input.size > 4_500_000) return true;
+    // Prefer JPEG for predictable server preprocessing.
+    if (type && type !== "image/jpeg" && type !== "image/jpg") return true;
+    return false;
+  };
+
+  const loadBitmap = async (input: File): Promise<ImageBitmap | null> => {
+    try {
+      if ("createImageBitmap" in window) {
+        return await createImageBitmap(input);
+      }
+    } catch {
+      // fall through
+    }
+    return null;
+  };
+
+  const reencodeToJpeg = async (input: File): Promise<File> => {
+    const bitmap = await loadBitmap(input);
+    if (!bitmap) return input;
+
+    const maxDim = 2000;
+    const w = bitmap.width || 1;
+    const h = bitmap.height || 1;
+    const scale = Math.min(1, maxDim / Math.max(w, h));
+    const outW = Math.max(1, Math.round(w * scale));
+    const outH = Math.max(1, Math.round(h * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = outW;
+    canvas.height = outH;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return input;
+    ctx.drawImage(bitmap, 0, 0, outW, outH);
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", 0.82),
+    );
+    if (!blob) return input;
+    const nameBase = (input.name || "invoice").replace(/\.[^.]+$/, "");
+    return new File([blob], `${nameBase}.jpg`, { type: "image/jpeg" });
+  };
+
   const parseInvoice = async () => {
     if (!storeId) {
       setError("Select a store first.");
@@ -69,13 +116,26 @@ export default function OwnerInventorySection() {
     setApplied(false);
     setForceApplyReady(false);
     try {
+      const prepared = shouldReencode(file) ? await reencodeToJpeg(file) : file;
       const form = new FormData();
       form.set("storeId", storeId);
-      form.set("file", file);
+      form.set("file", prepared);
       const res = await fetch("/api/inventory/invoices/parse", { method: "POST", body: form });
-      const data = await res.json().catch(() => ({}));
+      const text = await res.text();
+      const data = (() => {
+        try {
+          return JSON.parse(text);
+        } catch {
+          return {};
+        }
+      })();
       if (!res.ok) {
-        setError(data?.error ?? "Parse failed.");
+        const serverError = typeof data?.error === "string" ? data.error : "";
+        const snippet = !serverError && text ? text.slice(0, 180) : "";
+        setError(
+          serverError ||
+            `Parse failed (HTTP ${res.status}).${snippet ? ` ${snippet}` : ""}`,
+        );
         return;
       }
       setParsed(data as ParseResponse);
@@ -134,6 +194,11 @@ export default function OwnerInventorySection() {
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             className="ui-field"
           />
+          {file && (
+            <span className="text-xs text-slate-400">
+              {file.name || "invoice"} • {(file.size / 1024 / 1024).toFixed(1)}MB
+            </span>
+          )}
           <button type="button" className="ui-button ui-button-primary" disabled={busy} onClick={parseInvoice}>
             {busy ? "Parsing…" : "Parse"}
           </button>
