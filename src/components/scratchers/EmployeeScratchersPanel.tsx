@@ -154,6 +154,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   const cameraStartingRef = useRef(false);
   const scanSessionRef = useRef(0);
   const captureFlowLockedRef = useRef(false);
+  const captureModeActiveRef = useRef(false);
   const scanToastTimeoutRef = useRef<number | null>(null);
   const scanStateRef = useRef(scanState);
   const manualModeRef = useRef(manualMode);
@@ -727,15 +728,16 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       setScanStateLogged("PROCESSING", "ocr.start");
       setScanError(null);
 
+      const captureMode = captureModeActiveRef.current;
       // eslint-disable-next-line no-console
-      console.log("OCR_STARTED");
+      console.log(captureMode ? "OCR_STARTED_CAPTURE_MODE" : "OCR_STARTED");
       const expectedPackPrefix = getExpectedPackPrefix(pack);
       const parsed = await detectScratcherLineFromDataUrl(imageBase64);
       // eslint-disable-next-line no-console
-      console.log("OCR_RESULT:", parsed);
+      console.log(captureMode ? "OCR_RESULT_CAPTURE_MODE:" : "OCR_RESULT:", parsed);
       if (!parsed?.end) {
         // eslint-disable-next-line no-console
-        console.log("OCR_FAILED_CAPTURE_FLOW");
+        console.log(captureMode ? "OCR_FAILED_CAPTURE_MODE" : "OCR_FAILED_CAPTURE_FLOW");
         setScanError("Unable to read ticket number. Try again, move closer, or use Manual mode.");
         setScanStateLogged("ERROR", "ocr.no_match");
         return null;
@@ -767,6 +769,8 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       if (nextEntry) {
         // eslint-disable-next-line no-console
         console.log("OCR_SUCCESS_ADVANCING");
+        // eslint-disable-next-line no-console
+        console.log(captureMode ? "OCR_SUCCESS_CAPTURE_MODE" : "OCR_SUCCESS");
         scanSessionRef.current += 1;
         scanStartedAtRef.current = 0;
         scanAttemptsRef.current = 0;
@@ -829,9 +833,16 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   const attemptLiveDetect = useCallback(async () => {
     if (!scannerSlotId) return;
     const sessionAtStart = scanSessionRef.current;
+    if (captureModeActiveRef.current) {
+      // eslint-disable-next-line no-console
+      console.log("LIVE_DETECT_BLOCKED_DURING_CAPTURE");
+      return;
+    }
+    // Temporary stabilization: once the capture fallback UI is active, stop rapid live detect.
+    if (showCaptureFallback) return;
     if (captureFlowLockedRef.current || captureInFlightRef.current) {
       // eslint-disable-next-line no-console
-      console.log("LIVE_DETECT_SKIPPED_CAPTURE_FLOW");
+      console.log("LIVE_DETECT_BLOCKED_DURING_CAPTURE");
       return;
     }
     if (manualModeRef.current) return;
@@ -861,11 +872,12 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       const parsed = await detectScratcherLineFromDataUrl(cropImage);
       if (
         scanSessionRef.current !== sessionAtStart ||
+        captureModeActiveRef.current ||
         captureFlowLockedRef.current ||
         captureInFlightRef.current
       ) {
         // eslint-disable-next-line no-console
-        console.log("LIVE_DETECT_SKIPPED_CAPTURE_FLOW");
+        console.log("LIVE_DETECT_BLOCKED_DURING_CAPTURE");
         return;
       }
       if (parsed?.end) {
@@ -886,11 +898,12 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       if (elapsed > 2800 && scanAttemptsRef.current >= 3) {
         if (
           scanSessionRef.current !== sessionAtStart ||
+          captureModeActiveRef.current ||
           captureFlowLockedRef.current ||
           captureInFlightRef.current
         ) {
           // eslint-disable-next-line no-console
-          console.log("LIVE_TIMEOUT_SKIPPED_CAPTURE_FLOW");
+          console.log("LIVE_TIMEOUT_BLOCKED_DURING_CAPTURE");
           return;
         }
         setScanError("Unable to read ticket number. Try again, move closer, or use Manual mode.");
@@ -911,6 +924,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     scanError,
     scannerSlotId,
     scannableSlots,
+    showCaptureFallback,
     setResultFromParsed,
     setScanStateLogged,
   ]);
@@ -926,6 +940,15 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       return;
     const slotEntry = scannableSlots.find((entry) => entry.slot.id === scannerSlotId);
     if (!slotEntry) return;
+    captureModeActiveRef.current = true;
+    // eslint-disable-next-line no-console
+    console.log("CAPTURE_MODE_ENABLED");
+    if (scanLoopRef.current) {
+      cancelAnimationFrame(scanLoopRef.current);
+      scanLoopRef.current = null;
+    }
+    stableSinceRef.current = null;
+    lastSampleRef.current = null;
     captureFlowLockedRef.current = true;
     scanSessionRef.current += 1;
     scanStartedAtRef.current = 0;
@@ -963,6 +986,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   }, [captureFrame, pauseCamera, performOcr, scannerSlotId, scannableSlots, setScanStateLogged]);
 
   const startStabilityLoop = useCallback(() => {
+    if (captureModeActiveRef.current) return;
     if (scanLoopRef.current) {
       cancelAnimationFrame(scanLoopRef.current);
       scanLoopRef.current = null;
@@ -1046,6 +1070,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     async (slotId: string) => {
       scanSessionRef.current += 1;
       captureFlowLockedRef.current = false;
+      captureModeActiveRef.current = false;
       setScannerSlotId(slotId);
       setScannerOpen(true);
       clearScanData("open");
@@ -1065,6 +1090,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   const closeScanner = useCallback(() => {
     scanSessionRef.current += 1;
     captureFlowLockedRef.current = false;
+    captureModeActiveRef.current = false;
     setScannerOpen(false);
     setScannerSlotId(null);
     clearScanData("close");
@@ -1078,6 +1104,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   const rescan = useCallback(async () => {
     scanSessionRef.current += 1;
     captureFlowLockedRef.current = false;
+    captureModeActiveRef.current = false;
     clearScanData("rescan");
     setScanStateLogged("PREVIEW", "rescan.preview");
     setManualMode(false);
