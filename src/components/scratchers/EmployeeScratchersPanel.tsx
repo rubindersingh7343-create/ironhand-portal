@@ -152,6 +152,8 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   const liveOcrInFlightRef = useRef(false);
   const captureInFlightRef = useRef(false);
   const cameraStartingRef = useRef(false);
+  const scanSessionRef = useRef(0);
+  const captureFlowLockedRef = useRef(false);
   const scanToastTimeoutRef = useRef<number | null>(null);
   const scanStateRef = useRef(scanState);
   const manualModeRef = useRef(manualMode);
@@ -733,7 +735,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       console.log("OCR_RESULT:", parsed);
       if (!parsed?.end) {
         // eslint-disable-next-line no-console
-        console.log("OCR_FAILED_STAY_ON_SLOT");
+        console.log("OCR_FAILED_CAPTURE_FLOW");
         setScanError("Unable to read ticket number. Try again, move closer, or use Manual mode.");
         setScanStateLogged("ERROR", "ocr.no_match");
         return null;
@@ -765,6 +767,9 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       if (nextEntry) {
         // eslint-disable-next-line no-console
         console.log("OCR_SUCCESS_ADVANCING");
+        scanSessionRef.current += 1;
+        scanStartedAtRef.current = 0;
+        scanAttemptsRef.current = 0;
         setScannerSlotId(nextEntry.slot.id);
         clearScanData("ocr.success.advance");
         setScanStateLogged("PREVIEW", "ocr.success.next");
@@ -823,6 +828,12 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
 
   const attemptLiveDetect = useCallback(async () => {
     if (!scannerSlotId) return;
+    const sessionAtStart = scanSessionRef.current;
+    if (captureFlowLockedRef.current || captureInFlightRef.current) {
+      // eslint-disable-next-line no-console
+      console.log("LIVE_DETECT_SKIPPED_CAPTURE_FLOW");
+      return;
+    }
     if (manualModeRef.current) return;
     if (!rapidModeRef.current) return;
     if (capturedImageRef.current) return;
@@ -848,6 +859,15 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
         return;
       }
       const parsed = await detectScratcherLineFromDataUrl(cropImage);
+      if (
+        scanSessionRef.current !== sessionAtStart ||
+        captureFlowLockedRef.current ||
+        captureInFlightRef.current
+      ) {
+        // eslint-disable-next-line no-console
+        console.log("LIVE_DETECT_SKIPPED_CAPTURE_FLOW");
+        return;
+      }
       if (parsed?.end) {
         const images = captureFrame();
         if (images?.fullImage) {
@@ -864,6 +884,15 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       cooldownUntilRef.current = Date.now() + 320;
       const elapsed = Date.now() - (scanStartedAtRef.current || Date.now());
       if (elapsed > 2800 && scanAttemptsRef.current >= 3) {
+        if (
+          scanSessionRef.current !== sessionAtStart ||
+          captureFlowLockedRef.current ||
+          captureInFlightRef.current
+        ) {
+          // eslint-disable-next-line no-console
+          console.log("LIVE_TIMEOUT_SKIPPED_CAPTURE_FLOW");
+          return;
+        }
         setScanError("Unable to read ticket number. Try again, move closer, or use Manual mode.");
         setScanStateLogged("ERROR", "live.timeout");
         return;
@@ -897,6 +926,12 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       return;
     const slotEntry = scannableSlots.find((entry) => entry.slot.id === scannerSlotId);
     if (!slotEntry) return;
+    captureFlowLockedRef.current = true;
+    scanSessionRef.current += 1;
+    scanStartedAtRef.current = 0;
+    scanAttemptsRef.current = 0;
+    // eslint-disable-next-line no-console
+    console.log("CAPTURE_FLOW_LOCKED");
     captureInFlightRef.current = true;
     try {
       setScanError(null);
@@ -923,6 +958,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       }
     } finally {
       captureInFlightRef.current = false;
+      captureFlowLockedRef.current = false;
     }
   }, [captureFrame, pauseCamera, performOcr, scannerSlotId, scannableSlots, setScanStateLogged]);
 
@@ -1008,6 +1044,8 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
 
   const openScannerForSlot = useCallback(
     async (slotId: string) => {
+      scanSessionRef.current += 1;
+      captureFlowLockedRef.current = false;
       setScannerSlotId(slotId);
       setScannerOpen(true);
       clearScanData("open");
@@ -1025,6 +1063,8 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   );
 
   const closeScanner = useCallback(() => {
+    scanSessionRef.current += 1;
+    captureFlowLockedRef.current = false;
     setScannerOpen(false);
     setScannerSlotId(null);
     clearScanData("close");
@@ -1036,6 +1076,8 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   }, [clearScanData, setScanStateLogged, stopCamera]);
 
   const rescan = useCallback(async () => {
+    scanSessionRef.current += 1;
+    captureFlowLockedRef.current = false;
     clearScanData("rescan");
     setScanStateLogged("PREVIEW", "rescan.preview");
     setManualMode(false);
@@ -1070,6 +1112,10 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
         .slice(currentIndex + 1)
         .find((entry) => !hasValue(entry.slot.id));
       if (nextEntry) {
+        scanSessionRef.current += 1;
+        captureFlowLockedRef.current = false;
+        scanStartedAtRef.current = 0;
+        scanAttemptsRef.current = 0;
         setScannerSlotId(nextEntry.slot.id);
         clearScanData("confirm.advance");
         setScanStateLogged("PREVIEW", "confirm.next");
@@ -1117,6 +1163,10 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
         .slice(currentIndex + 1)
         .find((entry) => !hasValue(entry.slot.id));
       if (nextEntry) {
+        scanSessionRef.current += 1;
+        captureFlowLockedRef.current = false;
+        scanStartedAtRef.current = 0;
+        scanAttemptsRef.current = 0;
         setScannerSlotId(nextEntry.slot.id);
         clearScanData("manual.advance");
         setScanStateLogged("PREVIEW", "manual.next");
