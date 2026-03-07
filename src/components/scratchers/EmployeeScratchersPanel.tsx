@@ -1515,11 +1515,14 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
                   ? `Slot ${scannerEntry.slot.slotNumber}`
                   : "Scratchers"}
               </h3>
-              <p className="text-xs text-slate-400">
-                Scanning Slot {scanIndex || 1} of {scanTotal || 32}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
+	              <p className="text-xs text-slate-400">
+	                Scanning Slot {scanIndex || 1} of {scanTotal || 32}
+	              </p>
+	              <p className="mt-1 text-[11px] font-semibold text-emerald-200/90">
+	                PUSH CHECK: 2026-03-07-001
+	              </p>
+	            </div>
+	            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
               {torchAvailable && (
                 <button
                   type="button"
