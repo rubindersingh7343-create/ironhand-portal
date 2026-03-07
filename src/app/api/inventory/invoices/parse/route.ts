@@ -171,7 +171,6 @@ async function ensureProduct(args: {
     store_id: args.storeId,
     name: args.name.trim().slice(0, 180),
     normalized_name: normalized,
-    base_unit: "each",
     brand: args.brand ?? null,
     size: args.size ?? null,
     unit_type: args.unitType ?? null,
@@ -187,7 +186,16 @@ async function ensureProduct(args: {
   // Best-effort initialize stock row.
   await args.supabase!
     .from("inventory_stocks")
-    .upsert({ store_id: args.storeId, product_id: payload.id }, { onConflict: "store_id,product_id" } as any);
+    .upsert(
+      {
+        store_id: args.storeId,
+        product_id: payload.id,
+        on_hand_units: 0,
+        low_stock_threshold: 0,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "store_id,product_id" } as any,
+    );
 
   return { id: payload.id, action: "created" as const, reason: "No product match; created new product." };
 }
@@ -309,6 +317,7 @@ export async function POST(request: Request) {
     const lineRows: any[] = [];
 
     for (const [index, line] of (vision.parsed.line_items ?? []).entries()) {
+      stage = `line.${index}.match`;
       const rawDescription = String(line?.description ?? "").trim();
       if (!rawDescription) continue;
 
@@ -337,7 +346,7 @@ export async function POST(request: Request) {
 
       const ensured = matched
         ? matched
-        : await ensureProduct({
+        : (stage = `line.${index}.create_product`, await ensureProduct({
             supabase,
             storeId,
             name: rawDescription,
@@ -346,7 +355,7 @@ export async function POST(request: Request) {
             unitsPerCase,
             unitsPerPack,
             unitType: normalizeUnitToken(line?.unit) ?? null,
-          });
+          }));
 
       const normalizedQty = computeNormalizedUnits({
         quantity: typeof line?.quantity === "number" ? line.quantity : null,
