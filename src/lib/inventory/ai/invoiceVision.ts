@@ -1,52 +1,30 @@
 import OpenAI from "openai";
 
-export type InventoryInvoiceVisionLineItem = {
-  description: string;
-  sku: string | null;
-  upc: string | null;
-  quantity: number | null;
-  quantity_text: string | null;
-  unit: string | null; // ex: "case", "pack", "each"
-  pack_info: string | null; // ex: "12/750ML"
-  units_per_case: number | null;
-  units_per_pack: number | null;
-  unit_cost: number | null;
-  line_total: number | null;
-  confidence: number; // 0..1
-  evidence: string[];
-};
-
-export type InventoryInvoiceVisionOutput = {
+export type InventoryInvoiceHeaderOutput = {
   extracted_text: string;
-  vendor: {
-    name: string | null;
-    address: string | null;
-    confidence: number;
-    evidence: string[];
-  };
-  customer: {
-    name: string | null;
-    address: string | null;
-    confidence: number;
-    evidence: string[];
-  };
-  invoice: {
-    number: string | null;
-    date: string | null; // Prefer ISO yyyy-mm-dd
-    confidence: number;
-    evidence: string[];
-  };
+  vendor: { name: string | null; evidence: string | null };
+  customer: { name: string | null; evidence: string | null };
+  invoice: { number: string | null; date: string | null; evidence: string | null };
   totals: {
     subtotal: number | null;
     tax: number | null;
-    deposits: number | null;
-    discounts: number | null;
     total: number | null;
-    confidence: number;
-    evidence: string[];
+    evidence: string | null;
   };
-  line_items: InventoryInvoiceVisionLineItem[];
-  notes: string[];
+};
+
+export type InventoryInvoiceLineItemOutput = {
+  description: string;
+  size: string | null;
+  quantity: number | null;
+  quantity_text: string | null;
+  unit: string | null;
+  line_total: number | null;
+  evidence: string;
+};
+
+export type InventoryInvoiceLineItemsOutput = {
+  line_items: InventoryInvoiceLineItemOutput[];
 };
 
 const extractOutputText = (response: any) => {
@@ -70,7 +48,7 @@ const safeJson = (value: unknown) => {
   }
 };
 
-const buildSchema = () => ({
+const buildHeaderSchema = () => ({
   type: "object",
   additionalProperties: false,
   properties: {
@@ -80,33 +58,28 @@ const buildSchema = () => ({
       additionalProperties: false,
       properties: {
         name: { type: ["string", "null"] },
-        address: { type: ["string", "null"] },
-        confidence: { type: "number" },
-        evidence: { type: "array", items: { type: "string" } },
+        evidence: { type: ["string", "null"], description: "Verbatim snippet that contains the vendor name." },
       },
-      required: ["name", "address", "confidence", "evidence"],
+      required: ["name", "evidence"],
     },
     customer: {
       type: "object",
       additionalProperties: false,
       properties: {
         name: { type: ["string", "null"] },
-        address: { type: ["string", "null"] },
-        confidence: { type: "number" },
-        evidence: { type: "array", items: { type: "string" } },
+        evidence: { type: ["string", "null"], description: "Verbatim snippet that contains the customer/store name." },
       },
-      required: ["name", "address", "confidence", "evidence"],
+      required: ["name", "evidence"],
     },
     invoice: {
       type: "object",
       additionalProperties: false,
       properties: {
         number: { type: ["string", "null"] },
-        date: { type: ["string", "null"], description: "Invoice date in ISO yyyy-mm-dd if possible." },
-        confidence: { type: "number" },
-        evidence: { type: "array", items: { type: "string" } },
+        date: { type: ["string", "null"], description: "Invoice date in the format shown on the invoice." },
+        evidence: { type: ["string", "null"], description: "Verbatim snippet containing invoice number/date." },
       },
-      required: ["number", "date", "confidence", "evidence"],
+      required: ["number", "date", "evidence"],
     },
     totals: {
       type: "object",
@@ -114,57 +87,72 @@ const buildSchema = () => ({
       properties: {
         subtotal: { type: ["number", "null"] },
         tax: { type: ["number", "null"] },
-        deposits: { type: ["number", "null"] },
-        discounts: { type: ["number", "null"] },
         total: { type: ["number", "null"] },
-        confidence: { type: "number" },
-        evidence: { type: "array", items: { type: "string" } },
+        evidence: { type: ["string", "null"], description: "Verbatim snippet containing the totals." },
       },
-      required: ["subtotal", "tax", "deposits", "discounts", "total", "confidence", "evidence"],
+      required: ["subtotal", "tax", "total", "evidence"],
     },
+  },
+  required: ["extracted_text", "vendor", "customer", "invoice", "totals"],
+});
+
+const buildLineItemsSchema = () => ({
+  type: "object",
+  additionalProperties: false,
+  properties: {
     line_items: {
       type: "array",
       items: {
         type: "object",
         additionalProperties: false,
         properties: {
-          description: { type: "string" },
-          sku: { type: ["string", "null"] },
-          upc: { type: ["string", "null"] },
-          quantity: { type: ["number", "null"] },
-          quantity_text: { type: ["string", "null"] },
-          unit: { type: ["string", "null"], description: "Unit label like case/pack/each/bottle/can." },
-          pack_info: { type: ["string", "null"], description: "Pack size text like 12/750ML, 24x16.9oz, etc." },
-          units_per_case: { type: ["number", "null"] },
-          units_per_pack: { type: ["number", "null"] },
-          unit_cost: { type: ["number", "null"], description: "Unit cost in dollars." },
-          line_total: { type: ["number", "null"], description: "Extended line total in dollars." },
-          confidence: { type: "number", description: "0..1 confidence for the line item extraction." },
-          evidence: { type: "array", items: { type: "string" } },
+          description: { type: "string", description: "Product description as printed on the row." },
+          size: { type: ["string", "null"], description: "Size/format token (e.g. 750ML, 50ML, 12/750ML) if printed." },
+          quantity: { type: ["number", "null"], description: "Numeric quantity if clearly readable." },
+          quantity_text: { type: ["string", "null"], description: "Verbatim quantity cell text (do not normalize)." },
+          unit: { type: ["string", "null"], description: "Verbatim unit token/cell text (do not infer)." },
+          line_total: { type: ["number", "null"], description: "Extended line total if clearly readable." },
+          evidence: { type: "string", description: "Verbatim row snippet that supports the extracted fields." },
         },
-        required: [
-          "description",
-          "sku",
-          "upc",
-          "quantity",
-          "quantity_text",
-          "unit",
-          "pack_info",
-          "units_per_case",
-          "units_per_pack",
-          "unit_cost",
-          "line_total",
-          "confidence",
-          "evidence",
-        ],
+        required: ["description", "size", "quantity", "quantity_text", "unit", "line_total", "evidence"],
       },
     },
-    notes: { type: "array", items: { type: "string" } },
   },
-  required: ["extracted_text", "vendor", "customer", "invoice", "totals", "line_items", "notes"],
+  required: ["line_items"],
 });
 
-export async function runInventoryInvoiceVision(args: {
+const scrubEvidenceLockedHeader = (parsed: InventoryInvoiceHeaderOutput): InventoryInvoiceHeaderOutput => {
+  const lockString = (value: string | null, evidence: string | null) => {
+    const v = typeof value === "string" ? value.trim() : "";
+    const e = typeof evidence === "string" ? evidence : "";
+    if (!v) return { value: null as string | null, evidence: evidence ?? null };
+    if (!e) return { value: null as string | null, evidence: null };
+    const normV = v.toLowerCase();
+    const normE = e.toLowerCase();
+    if (!normE.includes(normV)) return { value: null as string | null, evidence };
+    return { value: v, evidence };
+  };
+
+  const vendor = lockString(parsed.vendor?.name ?? null, parsed.vendor?.evidence ?? null);
+  const customer = lockString(parsed.customer?.name ?? null, parsed.customer?.evidence ?? null);
+  const invoiceNumber = lockString(parsed.invoice?.number ?? null, parsed.invoice?.evidence ?? null);
+  const invoiceDate = lockString(parsed.invoice?.date ?? null, parsed.invoice?.evidence ?? null);
+
+  return {
+    extracted_text: String(parsed.extracted_text ?? ""),
+    vendor: { name: vendor.value, evidence: vendor.evidence },
+    customer: { name: customer.value, evidence: customer.evidence },
+    invoice: { number: invoiceNumber.value, date: invoiceDate.value, evidence: parsed.invoice?.evidence ?? null },
+    totals: {
+      subtotal: typeof parsed.totals?.subtotal === "number" ? parsed.totals.subtotal : null,
+      tax: typeof parsed.totals?.tax === "number" ? parsed.totals.tax : null,
+      total: typeof parsed.totals?.total === "number" ? parsed.totals.total : null,
+      evidence: parsed.totals?.evidence ?? null,
+    },
+  };
+};
+
+export async function runInventoryInvoiceHeaderVision(args: {
   client: OpenAI;
   model: string;
   dataUrl: string;
@@ -179,15 +167,12 @@ export async function runInventoryInvoiceVision(args: {
           {
             type: "input_text",
             text:
-              "You are an expert invoice parser for liquor / convenience store vendor invoices.\n" +
-              "Goal: understand the invoice (not just OCR).\n" +
-              "Rules:\n" +
-              "- Use the IMAGE as the source of truth.\n" +
-              "- Extract the VENDOR (seller) and the CUSTOMER/STORE (receiver) separately.\n" +
-              "- Extract invoice number, invoice date, totals, and detailed line items.\n" +
-              "- For each line item: keep the description as printed; extract quantity and unit (case/pack/each) when shown; capture pack size text when present.\n" +
-              "- Provide short evidence snippets (exact text fragments) for key fields.\n" +
-              "- Do not invent missing values. Use null when unknown.\n" +
+              "You extract header fields from a liquor/convenience vendor invoice IMAGE.\n" +
+              "STRICT RULES (anti-hallucination):\n" +
+              "- Use ONLY values you can read in the image.\n" +
+              "- Every non-null field MUST include verbatim evidence copied from the image that contains that value.\n" +
+              "- If you cannot find verbatim evidence in the image, set the value to null.\n" +
+              "- Do NOT infer names, addresses, totals, or dates.\n" +
               "- Output MUST be strict JSON matching the schema.\n",
           },
         ],
@@ -195,7 +180,10 @@ export async function runInventoryInvoiceVision(args: {
       {
         role: "user",
         content: [
-          { type: "input_text", text: "Parse this vendor invoice." },
+          {
+            type: "input_text",
+            text: "Extract vendor/customer/invoice header fields from this invoice. Do not extract line items in this pass.",
+          },
           { type: "input_image", image_url: args.dataUrl, detail: args.detail },
         ],
       },
@@ -203,18 +191,94 @@ export async function runInventoryInvoiceVision(args: {
     text: {
       format: {
         type: "json_schema",
-        name: "inventory_invoice_parse",
+        name: "inventory_invoice_header",
         strict: true,
-        schema: buildSchema(),
+        schema: buildHeaderSchema(),
       },
     },
   });
 
   const outputText = extractOutputText(response).trim();
-  const parsed = safeJson(outputText) as InventoryInvoiceVisionOutput | null;
+  const parsed = safeJson(outputText) as InventoryInvoiceHeaderOutput | null;
   if (!parsed) {
     throw new Error("Inventory invoice vision returned invalid JSON.");
   }
-  return { parsed, outputText };
+  return { parsed: scrubEvidenceLockedHeader(parsed), outputText };
 }
 
+export async function runInventoryInvoiceLineItemsVision(args: {
+  client: OpenAI;
+  model: string;
+  dataUrl: string;
+  detail: "high";
+}) {
+  const response = await args.client.responses.create({
+    model: args.model,
+    input: [
+      {
+        role: "system",
+        content: [
+          {
+            type: "input_text",
+            text:
+              "You extract ONLY the LINE-ITEM TABLE from a liquor distributor invoice IMAGE.\n" +
+              "Treat the invoice as a structured table: one product per visible row.\n" +
+              "STRICT RULES (anti-hallucination):\n" +
+              "- Use ONLY values you can read in the image.\n" +
+              "- Do NOT guess quantities, units, sizes, or totals.\n" +
+              "- If a cell value is not clearly readable from the row, set that field to null.\n" +
+              "- For EVERY returned row, include a verbatim row evidence snippet copied from the image.\n" +
+              "- Evidence MUST be copied verbatim (no paraphrase) and should include the row's key tokens.\n" +
+              "- Output MUST be strict JSON matching the schema.\n",
+          },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text:
+              "Extract all visible line-item rows. For each row, populate description/size/quantity/unit/line_total only if clearly readable. Keep quantity_text and unit as verbatim cell text when present.",
+          },
+          { type: "input_image", image_url: args.dataUrl, detail: args.detail },
+        ],
+      },
+    ],
+    text: {
+      format: {
+        type: "json_schema",
+        name: "inventory_invoice_line_items",
+        strict: true,
+        schema: buildLineItemsSchema(),
+      },
+    },
+  });
+
+  const outputText = extractOutputText(response).trim();
+  const parsed = safeJson(outputText) as InventoryInvoiceLineItemsOutput | null;
+  if (!parsed) {
+    throw new Error("Inventory invoice line-item vision returned invalid JSON.");
+  }
+  const line_items = Array.isArray(parsed.line_items) ? parsed.line_items : [];
+  const cleaned: InventoryInvoiceLineItemsOutput = {
+    line_items: line_items
+      .map((item) => {
+        const description = String(item?.description ?? "").trim();
+        if (!description) return null;
+        const evidence = String(item?.evidence ?? "").trim();
+        if (!evidence) return null;
+        return {
+          description,
+          size: item?.size ? String(item.size).trim() : null,
+          quantity: typeof item?.quantity === "number" && Number.isFinite(item.quantity) ? item.quantity : null,
+          quantity_text: item?.quantity_text ? String(item.quantity_text).trim() : null,
+          unit: item?.unit ? String(item.unit).trim() : null,
+          line_total: typeof item?.line_total === "number" && Number.isFinite(item.line_total) ? item.line_total : null,
+          evidence,
+        } satisfies InventoryInvoiceLineItemOutput;
+      })
+      .filter(Boolean) as InventoryInvoiceLineItemOutput[],
+  };
+  return { parsed: cleaned, outputText };
+}

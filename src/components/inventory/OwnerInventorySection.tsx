@@ -55,6 +55,12 @@ export default function OwnerInventorySection() {
   const [applied, setApplied] = useState(false);
   const [forceApplyReady, setForceApplyReady] = useState(false);
 
+  const modelOrientation = (() => {
+    const output = parsed?.raw_model_output as any;
+    const v = typeof output?.orientation === "string" ? output.orientation : null;
+    return v;
+  })();
+
   const shouldReencode = (input: File) => {
     const type = (input.type || "").toLowerCase();
     if (type.includes("heic") || type.includes("heif")) return true;
@@ -185,8 +191,9 @@ export default function OwnerInventorySection() {
       <div className="rounded-2xl border border-white/10 bg-slate-950/20 p-4">
         <p className="text-xs uppercase tracking-[0.22em] text-slate-300">Parse vendor invoice</p>
         <p className="mt-2 text-sm text-slate-200">
-          Upload a liquor/convenience invoice image. The parser uses the image directly (vision + reasoning),
-          returns raw extracted text, normalized fields, and debug match reasons.
+          Upload a liquor/convenience invoice image. The parser uses the image directly (vision + reasoning) with an
+          evidence-locked header pass + a dedicated line-item table pass, then returns raw extracted text, normalized
+          fields, and debug match reasons.
         </p>
         <p className="mt-2 text-xs text-slate-400">Current store: {storeLabel}</p>
 
@@ -249,6 +256,12 @@ export default function OwnerInventorySection() {
                 {typeof parsed.total_cents === "number" ? `$${(parsed.total_cents / 100).toFixed(2)}` : "—"}
               </p>
             </div>
+            {modelOrientation && (
+              <div>
+                <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Orientation</p>
+                <p>{modelOrientation}</p>
+              </div>
+            )}
           </div>
 
           <details className="rounded-xl border border-white/10 bg-black/10 p-3">

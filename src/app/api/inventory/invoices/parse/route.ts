@@ -4,7 +4,7 @@ import crypto from "crypto";
 import sharp from "sharp";
 import { getSessionUser } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
-import { runInventoryInvoiceVision } from "@/lib/inventory/ai/invoiceVision";
+import { runInventoryInvoiceHeaderVision, runInventoryInvoiceLineItemsVision } from "@/lib/inventory/ai/invoiceVision";
 import {
   normalizeName,
   normalizeUnitToken,
@@ -65,12 +65,27 @@ async function preprocessImageForVision(buffer: Buffer) {
   const img = sharp(buffer, { failOnError: false }).rotate();
   const meta = await img.metadata().catch(() => ({} as any));
   const width = typeof meta?.width === "number" ? meta.width : null;
-  const resizeWidth = width && width > 2200 ? 2200 : width && width < 1200 ? 1200 : undefined;
+  const height = typeof meta?.height === "number" ? meta.height : null;
+  const maxWidth = 2800;
+  const minWidth = 1600;
+  const resizeWidth = width && width > maxWidth ? maxWidth : width && width < minWidth ? minWidth : undefined;
   const processed = await img
     .resize(resizeWidth ? { width: resizeWidth } : undefined)
-    .jpeg({ quality: 82 })
+    .jpeg({ quality: 84 })
     .toBuffer();
-  return { buffer: processed, mime: "image/jpeg" as const };
+
+  const shouldTryRotate90 = typeof width === "number" && typeof height === "number" ? width > height : false;
+  const rotated90 = shouldTryRotate90
+    ? await sharp(processed, { failOnError: false }).rotate(90).jpeg({ quality: 84 }).toBuffer()
+    : null;
+
+  return {
+    buffers: {
+      rot0: processed,
+      rot90: rotated90,
+    },
+    mime: "image/jpeg" as const,
+  };
 }
 
 async function uploadInvoiceFile(args: {
@@ -220,6 +235,10 @@ function computeNormalizedUnits(args: {
     return { units: null as number | null, reviewRequired: true, reason: "Missing/invalid quantity." };
   }
 
+  if (!unit) {
+    return { units: null, reviewRequired: true, reason: "Missing/unknown unit." };
+  }
+
   if (unit === "case") {
     if (!unitsPerCase || unitsPerCase <= 0) {
       return { units: null, reviewRequired: true, reason: "Unit=case but units_per_case missing." };
@@ -233,7 +252,7 @@ function computeNormalizedUnits(args: {
     return { units: qty * unitsPerPack, reviewRequired: false, reason: `pack × ${unitsPerPack}` };
   }
 
-  return { units: qty, reviewRequired: false, reason: unit ? `unit=${unit}` : "default=each" };
+  return { units: qty, reviewRequired: false, reason: `unit=${unit}` };
 }
 
 export async function POST(request: Request) {
@@ -281,6 +300,14 @@ export async function POST(request: Request) {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   let stage = "start";
 
+  const buildDataUrl = (mime: string, buf: Buffer) => `data:${mime};base64,${buf.toString("base64")}`;
+  const scoreHeader = (parsed: any) => {
+    const vendor = String(parsed?.vendor?.name ?? "").trim();
+    const invoiceNo = String(parsed?.invoice?.number ?? "").trim();
+    const invoiceDate = String(parsed?.invoice?.date ?? "").trim();
+    return (vendor ? 2 : 0) + (invoiceNo ? 2 : 0) + (invoiceDate ? 1 : 0);
+  };
+
   try {
     stage = "read_file";
     const rawBuffer = Buffer.from(await file.arrayBuffer());
@@ -290,22 +317,34 @@ export async function POST(request: Request) {
 
     stage = "preprocess";
     const prepared = await preprocessImageForVision(rawBuffer);
-    const dataUrl = `data:${prepared.mime};base64,${prepared.buffer.toString("base64")}`;
+    const candidates = [
+      { label: "rot0" as const, dataUrl: buildDataUrl(prepared.mime, prepared.buffers.rot0) },
+      ...(prepared.buffers.rot90 ? [{ label: "rot90" as const, dataUrl: buildDataUrl(prepared.mime, prepared.buffers.rot90) }] : []),
+    ];
 
-    // Fast pass then reliability pass.
-    stage = "openai.low";
-    const low = await runInventoryInvoiceVision({ client, model: MODEL, dataUrl, detail: "low" });
-    const lowHasLines = Array.isArray(low.parsed.line_items) && low.parsed.line_items.length > 0;
-    const lowHasVendor = Boolean(low.parsed.vendor?.name);
-    const vision = await (async () => {
-      if (lowHasLines && lowHasVendor) return { ...low, detail: "low" as const };
-      stage = "openai.high";
-      const high = await runInventoryInvoiceVision({ client, model: MODEL, dataUrl, detail: "high" });
-      return { ...high, detail: "high" as const };
+    // Header pass: fast then reliability; try rotated candidate if it scores better.
+    stage = "openai.header.low";
+    const headerLowResults = [];
+    for (const c of candidates) {
+      const res = await runInventoryInvoiceHeaderVision({ client, model: MODEL, dataUrl: c.dataUrl, detail: "low" });
+      headerLowResults.push({ ...c, ...res, detail: "low" as const });
+    }
+    headerLowResults.sort((a: any, b: any) => scoreHeader(b.parsed) - scoreHeader(a.parsed));
+    const bestLow = headerLowResults[0];
+
+    const needsHigh = scoreHeader(bestLow.parsed) < 4;
+    const header = await (async () => {
+      if (!needsHigh) return bestLow;
+      stage = "openai.header.high";
+      const res = await runInventoryInvoiceHeaderVision({ client, model: MODEL, dataUrl: bestLow.dataUrl, detail: "high" });
+      return { ...bestLow, ...res, detail: "high" as const };
     })();
 
+    stage = "openai.lines.high";
+    const lines = await runInventoryInvoiceLineItemsVision({ client, model: MODEL, dataUrl: header.dataUrl, detail: "high" });
+
     stage = "vendor.ensure";
-    const vendorRaw = String(vision.parsed.vendor?.name ?? "").trim() || null;
+    const vendorRaw = String(header.parsed.vendor?.name ?? "").trim() || null;
     const vendorDebug = vendorRaw
       ? await ensureVendor({ supabase, storeId, vendorName: vendorRaw })
       : null;
@@ -316,13 +355,13 @@ export async function POST(request: Request) {
     const lineDebug: any[] = [];
     const lineRows: any[] = [];
 
-    for (const [index, line] of (vision.parsed.line_items ?? []).entries()) {
+    for (const [index, line] of (lines.parsed.line_items ?? []).entries()) {
       stage = `line.${index}.match`;
       const rawDescription = String(line?.description ?? "").trim();
       if (!rawDescription) continue;
 
-      const lineUpc = line?.upc ? String(line.upc).replace(/[^\d]/g, "").slice(0, 14) : null;
-      const lineSku = line?.sku ? String(line.sku).trim() : null;
+      const lineUpc = null;
+      const lineSku = null;
 
       const candidateScores = products
         .map((p: any) => {
@@ -341,8 +380,8 @@ export async function POST(request: Request) {
           ? { id: chosen.product_id, action: "matched" as const, reason: `score=${chosen.score.toFixed(2)}` }
           : null;
 
-      const unitsPerCase = typeof line?.units_per_case === "number" ? line.units_per_case : null;
-      const unitsPerPack = typeof line?.units_per_pack === "number" ? line.units_per_pack : null;
+      const unitsPerCase = null;
+      const unitsPerPack = null;
 
       const ensured = matched
         ? matched
@@ -361,19 +400,17 @@ export async function POST(request: Request) {
         quantity: typeof line?.quantity === "number" ? line.quantity : null,
         quantityText: line?.quantity_text ?? null,
         unitText: line?.unit ?? null,
-        packInfo: line?.pack_info ?? null,
+        packInfo: line?.size ?? null,
         unitsPerCase: unitsPerCase ?? null,
         unitsPerPack: unitsPerPack ?? null,
       });
 
-      const unitCostCents = parseMoneyToCents(line?.unit_cost);
+      const unitCostCents = null as number | null;
       const lineTotalCents = parseMoneyToCents(line?.line_total);
-      const extractionConfidence = clamp01(Number(line?.confidence ?? 0));
 
       const needsReview =
         normalizedQty.reviewRequired ||
         !ensured?.id ||
-        extractionConfidence < 0.55 ||
         (matched ? chosen?.score < 0.78 : false);
 
       lineDebug.push({
@@ -402,11 +439,10 @@ export async function POST(request: Request) {
         match_confidence: matched ? chosen?.score ?? null : null,
         review_required: Boolean(needsReview),
         metadata: {
-          pack_info: line?.pack_info ?? null,
+          size: line?.size ?? null,
           units_per_case: unitsPerCase,
           units_per_pack: unitsPerPack,
-          extraction_confidence: extractionConfidence,
-          evidence: Array.isArray(line?.evidence) ? line.evidence : [],
+          evidence: line?.evidence ? [String(line.evidence)] : [],
           quantity_reason: normalizedQty.reason,
           upc: lineUpc,
           sku: lineSku,
@@ -415,15 +451,15 @@ export async function POST(request: Request) {
     }
 
     const invoiceId = crypto.randomUUID();
-    const invoiceNumber = vision.parsed.invoice?.number ? String(vision.parsed.invoice.number).trim() : null;
-    const invoiceDate = vision.parsed.invoice?.date ? String(vision.parsed.invoice.date).trim() : null;
-    const totalCents = parseMoneyToCents(vision.parsed.totals?.total);
+    const invoiceNumber = header.parsed.invoice?.number ? String(header.parsed.invoice.number).trim() : null;
+    const invoiceDate = header.parsed.invoice?.date ? String(header.parsed.invoice.date).trim() : null;
+    const totalCents = parseMoneyToCents(header.parsed.totals?.total);
 
     const parsedJson = {
       model: {
-        detail: vision.detail,
-        output_text: vision.outputText,
-        parsed: vision.parsed,
+        orientation: header.label,
+        header: { detail: header.detail, output_text: header.outputText, parsed: header.parsed },
+        line_items: { detail: "high", output_text: lines.outputText, parsed: lines.parsed },
       },
       normalized: {
         store_id: storeId,
@@ -451,7 +487,7 @@ export async function POST(request: Request) {
       invoice_number: invoiceNumber,
       invoice_date: invoiceDate,
       total_cents: totalCents,
-      raw_ocr_text: vision.parsed.extracted_text ?? null,
+      raw_ocr_text: header.parsed.extracted_text ?? null,
       parsed_json: parsedJson as any,
       parse_status: "parsed",
       review_status: "needs_review",
@@ -480,12 +516,8 @@ export async function POST(request: Request) {
       total_cents: totalCents,
       review_status: "needs_review",
       parse_status: "parsed",
-      raw_extracted_text: vision.parsed.extracted_text ?? "",
-      raw_model_output: {
-        detail: vision.detail,
-        output_text: vision.outputText,
-        parsed: vision.parsed,
-      },
+      raw_extracted_text: header.parsed.extracted_text ?? "",
+      raw_model_output: parsedJson.model,
       normalized: parsedJson.normalized,
       debug: parsedJson.debug,
     });
