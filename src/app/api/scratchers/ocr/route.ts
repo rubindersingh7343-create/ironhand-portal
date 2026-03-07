@@ -95,38 +95,51 @@ export async function POST(req: Request) {
 
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  const response = await client.responses.create({
+  const buildInput = (detail: "low" | "high") => [
+    {
+      role: "system" as const,
+      content: [
+        {
+          type: "input_text" as const,
+          text:
+            "You are an OCR engine.\n" +
+            "Task: read the printed scratcher ticket id line from the image.\n" +
+            "Rules:\n" +
+            "- Output ONLY text you can see (no commentary).\n" +
+            "- Prefer the ticket id line formatted like ####-######(6-8)-#-##(2-3).\n" +
+            "- If multiple candidates are visible, output them on separate lines.\n" +
+            "- Do NOT invent missing digits.\n",
+        },
+      ],
+    },
+    {
+      role: "user" as const,
+      content: [
+        { type: "input_text" as const, text: "Extract the scratcher ticket id line." },
+        { type: "input_image" as const, image_url: dataUrl, detail },
+      ],
+    },
+  ];
+
+  // Fast path: low-detail is usually enough for the digit line and is faster/cheaper.
+  // Reliability path: if parsing fails, retry once with high detail.
+  const responseLow = await client.responses.create({
     model: MODEL,
-    input: [
-      {
-        role: "system",
-        content: [
-          {
-            type: "input_text",
-            text:
-              "You are an OCR engine.\n" +
-              "Task: read the printed scratcher ticket id line from the image.\n" +
-              "Rules:\n" +
-              "- Output ONLY text you can see (no commentary).\n" +
-              "- Prefer the ticket id line formatted like ####-######(6-8)-#-##(2-3).\n" +
-              "- If multiple candidates are visible, output them on separate lines.\n" +
-              "- Do NOT invent missing digits.\n",
-          },
-        ],
-      },
-      {
-        role: "user",
-        content: [
-          { type: "input_text", text: "Extract the scratcher ticket id line." },
-          { type: "input_image", image_url: dataUrl, detail: "high" },
-        ],
-      },
-    ],
+    input: buildInput("low"),
   });
 
-  const ocrText = extractOutputText(response).trim();
-  const parsed = ocrText ? extractScratcherTicketIdFromOcrText(ocrText) : null;
+  const lowText = extractOutputText(responseLow).trim();
+  const lowParsed = lowText ? extractScratcherTicketIdFromOcrText(lowText) : null;
+  if (lowParsed) {
+    return NextResponse.json({ parsed: lowParsed, ocrText: lowText, detail: "low" });
+  }
 
-  return NextResponse.json({ parsed, ocrText });
+  const responseHigh = await client.responses.create({
+    model: MODEL,
+    input: buildInput("high"),
+  });
+
+  const highText = extractOutputText(responseHigh).trim();
+  const highParsed = highText ? extractScratcherTicketIdFromOcrText(highText) : null;
+  return NextResponse.json({ parsed: highParsed, ocrText: highText, detail: "high" });
 }
-

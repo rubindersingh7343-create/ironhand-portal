@@ -681,9 +681,13 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     fullCtx.drawImage(video, 0, 0, fullCanvas.width, fullCanvas.height);
     const fullImage = fullCanvas.toDataURL("image/jpeg", 0.9);
 
+    // Crop image is only used for OCR; keep it smaller to reduce upload + OCR latency.
+    const maxOcrWidth = 1200;
+    const ocrScale =
+      roi.sw > maxOcrWidth ? maxOcrWidth / Math.max(1, roi.sw) : 1;
     const cropCanvas = document.createElement("canvas");
-    cropCanvas.width = Math.round(roi.sw);
-    cropCanvas.height = Math.round(roi.sh);
+    cropCanvas.width = Math.max(1, Math.round(roi.sw * ocrScale));
+    cropCanvas.height = Math.max(1, Math.round(roi.sh * ocrScale));
     const cropCtx = cropCanvas.getContext("2d");
     if (!cropCtx) return null;
     cropCtx.drawImage(
@@ -697,7 +701,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       cropCanvas.width,
       cropCanvas.height,
     );
-    const cropImage = cropCanvas.toDataURL("image/jpeg", 0.92);
+    const cropImage = cropCanvas.toDataURL("image/jpeg", 0.82);
     return { fullImage, cropImage };
   }, [computeRoiFromOverlay]);
 
