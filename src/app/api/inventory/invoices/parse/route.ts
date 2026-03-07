@@ -324,24 +324,47 @@ export async function POST(request: Request) {
 
     // Header pass: fast then reliability; try rotated candidate if it scores better.
     stage = "openai.header.low";
-    const headerLowResults = [];
+    const headerLowResults: Array<any> = [];
+    const headerLowErrors: Array<{ label: string; message: string }> = [];
     for (const c of candidates) {
-      const res = await runInventoryInvoiceHeaderVision({ client, model: MODEL, dataUrl: c.dataUrl, detail: "low" });
-      headerLowResults.push({ ...c, ...res, detail: "low" as const });
+      try {
+        const res = await runInventoryInvoiceHeaderVision({ client, model: MODEL, dataUrl: c.dataUrl, detail: "low" });
+        headerLowResults.push({ ...c, ...res, detail: "low" as const });
+      } catch (e) {
+        const err = e as any;
+        headerLowErrors.push({ label: c.label, message: String(err?.message ?? "low pass failed") });
+      }
     }
-    headerLowResults.sort((a: any, b: any) => scoreHeader(b.parsed) - scoreHeader(a.parsed));
-    const bestLow = headerLowResults[0];
 
-    const needsHigh = scoreHeader(bestLow.parsed) < 4;
+    const pickBest = (results: Array<any>) => {
+      results.sort((a: any, b: any) => scoreHeader(b.parsed) - scoreHeader(a.parsed));
+      return results[0] ?? null;
+    };
+
+    const bestLow = pickBest(headerLowResults);
     const header = await (async () => {
+      const target = bestLow ?? candidates[0];
+      const needsHigh = !bestLow || scoreHeader(bestLow.parsed) < 4;
       if (!needsHigh) return bestLow;
       stage = "openai.header.high";
-      const res = await runInventoryInvoiceHeaderVision({ client, model: MODEL, dataUrl: bestLow.dataUrl, detail: "high" });
-      return { ...bestLow, ...res, detail: "high" as const };
+      const res = await runInventoryInvoiceHeaderVision({ client, model: MODEL, dataUrl: target.dataUrl, detail: "high" });
+      return { ...target, ...res, detail: "high" as const, low_errors: headerLowErrors };
     })();
 
     stage = "openai.lines.high";
-    const lines = await runInventoryInvoiceLineItemsVision({ client, model: MODEL, dataUrl: header.dataUrl, detail: "high" });
+    const lines = await (async () => {
+      try {
+        return await runInventoryInvoiceLineItemsVision({ client, model: MODEL, dataUrl: header.dataUrl, detail: "high" });
+      } catch (e) {
+        const err = e as any;
+        console.warn("[inventory-invoice-parse] line-items pass failed", {
+          request_id: requestId,
+          stage,
+          message: String(err?.message ?? "unknown"),
+        });
+        return { parsed: { line_items: [] as any[] }, outputText: "" };
+      }
+    })();
 
     stage = "vendor.ensure";
     const vendorRaw = String(header.parsed.vendor?.name ?? "").trim() || null;

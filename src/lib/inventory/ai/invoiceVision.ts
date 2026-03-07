@@ -41,11 +41,26 @@ const extractOutputText = (response: any) => {
 
 const safeJson = (value: unknown) => {
   if (!value || typeof value !== "string") return null;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
+  const raw = value.trim();
+  const unfence = (text: string) => {
+    const m = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    return m?.[1]?.trim() ?? text;
+  };
+  const extractBraced = (text: string) => {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start === -1 || end === -1 || end <= start) return null;
+    return text.slice(start, end + 1);
+  };
+  const candidates = [raw, unfence(raw), extractBraced(raw)].filter((c): c is string => Boolean(c));
+  for (const c of candidates) {
+    try {
+      return JSON.parse(c);
+    } catch {
+      // continue
+    }
   }
+  return null;
 };
 
 const buildHeaderSchema = () => ({
