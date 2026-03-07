@@ -130,31 +130,18 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   } | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanToast, setScanToast] = useState<string | null>(null);
-  const [cameraReady, setCameraReady] = useState(false);
   const [manualMode, setManualMode] = useState(false);
   const [manualScanValue, setManualScanValue] = useState("");
   const [manualScanLine, setManualScanLine] = useState("");
   const [rapidMode, setRapidMode] = useState(true);
-  const [showCaptureFallback, setShowCaptureFallback] = useState(false);
   const [torchAvailable, setTorchAvailable] = useState(false);
   const [torchEnabled, setTorchEnabled] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
   const targetRef = useRef<HTMLDivElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const scanLoopRef = useRef<number | null>(null);
-  const stableSinceRef = useRef<number | null>(null);
-  const lastSampleRef = useRef<Uint8ClampedArray | null>(null);
-  const cooldownUntilRef = useRef(0);
-  const scanStartedAtRef = useRef<number>(0);
-  const scanAttemptsRef = useRef<number>(0);
-  const liveOcrInFlightRef = useRef(false);
   const captureInFlightRef = useRef(false);
   const cameraStartingRef = useRef(false);
-  const scanSessionRef = useRef(0);
-  const captureFlowLockedRef = useRef(false);
-  const captureModeActiveRef = useRef(false);
   const scanToastTimeoutRef = useRef<number | null>(null);
   const scanStateRef = useRef(scanState);
   const manualModeRef = useRef(manualMode);
@@ -519,12 +506,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   }, []);
 
   const stopCamera = useCallback(() => {
-    if (scanLoopRef.current) {
-      cancelAnimationFrame(scanLoopRef.current);
-      scanLoopRef.current = null;
-    }
-    stableSinceRef.current = null;
-    lastSampleRef.current = null;
     const stream = streamRef.current;
     if (stream) {
       stream.getTracks().forEach((track) => track.stop());
@@ -535,7 +516,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     }
     setTorchAvailable(false);
     setTorchEnabled(false);
-    setCameraReady(false);
   }, []);
 
   const pauseCamera = useCallback(() => {
@@ -558,13 +538,11 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       } catch {
         // ignore
       }
-      setCameraReady(true);
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia) {
       setScanError("Camera unavailable in this browser.");
       setScanStateLogged("ERROR", "camera.unavailable");
-      setCameraReady(false);
       return;
     }
     cameraStartingRef.current = true;
@@ -586,7 +564,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       const track = stream.getVideoTracks()[0];
       const caps = (track.getCapabilities?.() ?? {}) as { torch?: boolean };
       setTorchAvailable(Boolean(caps.torch));
-      setCameraReady(true);
     } catch (error) {
       console.error("camera start failed", error);
       const name = (error as DOMException | Error)?.name ?? "";
@@ -597,7 +574,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
             : "Camera unavailable.",
         );
         setScanStateLogged("ERROR", "camera.start.failed");
-        setCameraReady(false);
       }
     } finally {
       cameraStartingRef.current = false;
@@ -696,48 +672,23 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     return { fullImage, cropImage };
   }, [computeRoiFromOverlay]);
 
-  const captureCropOnly = useCallback(() => {
-    const video = videoRef.current;
-    const roi = computeRoiFromOverlay();
-    if (!video || !roi) return null;
-    const cropCanvas = document.createElement("canvas");
-    cropCanvas.width = Math.round(roi.sw);
-    cropCanvas.height = Math.round(roi.sh);
-    const cropCtx = cropCanvas.getContext("2d");
-    if (!cropCtx) return null;
-    cropCtx.drawImage(
-      video,
-      roi.sx,
-      roi.sy,
-      roi.sw,
-      roi.sh,
-      0,
-      0,
-      cropCanvas.width,
-      cropCanvas.height,
-    );
-    return cropCanvas.toDataURL("image/jpeg", 0.88);
-  }, [computeRoiFromOverlay]);
-
   const performOcr = useCallback(
     async (
-      slotId: string,
       pack: { id?: string; packCode?: string | null } | null,
       imageBase64: string,
     ) => {
       setScanStateLogged("PROCESSING", "ocr.start");
       setScanError(null);
 
-      const captureMode = captureModeActiveRef.current;
       // eslint-disable-next-line no-console
-      console.log(captureMode ? "OCR_STARTED_CAPTURE_MODE" : "OCR_STARTED");
+      console.log("OCR_STARTED");
       const expectedPackPrefix = getExpectedPackPrefix(pack);
       const parsed = await detectScratcherLineFromDataUrl(imageBase64);
       // eslint-disable-next-line no-console
-      console.log(captureMode ? "OCR_RESULT_CAPTURE_MODE:" : "OCR_RESULT:", parsed);
+      console.log("OCR_RESULT", parsed);
       if (!parsed?.end) {
         // eslint-disable-next-line no-console
-        console.log(captureMode ? "OCR_FAILED_CAPTURE_MODE" : "OCR_FAILED_CAPTURE_FLOW");
+        console.log("OCR_FAILED");
         setScanError("Unable to read ticket number. Try again, move closer, or use Manual mode.");
         setScanStateLogged("ERROR", "ocr.no_match");
         return null;
@@ -747,187 +698,10 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       const fullLine = `${parsed.game}-${parsed.pack}-${parsed.roll}-${lastDigits}`;
 
       const prefixMismatch = Boolean(expectedPackPrefix && expectedPackPrefix !== parsed.prefix);
-      const confidence: "low" | "medium" | "high" =
-        rawEnd.length === 3 ? "high" : "medium";
-
-      setEndValue(slotId, lastDigits);
-      setEndFullLine(slotId, fullLine, prefixMismatch);
-      if (prefixMismatch) {
-        console.warn("scratcher prefix mismatch", {
-          slotId,
-          fullLine,
-        });
-      }
-
-      const currentIndex = scannableSlots.findIndex((entry) => entry.slot.id === slotId);
-      const hasValue = (id: string) => (id === slotId ? lastDigits : endValues[id] ?? "");
-      const nextEntry =
-        currentIndex >= 0
-          ? scannableSlots.slice(currentIndex + 1).find((entry) => !hasValue(entry.slot.id))
-          : null;
-
-      if (nextEntry) {
-        // eslint-disable-next-line no-console
-        console.log("OCR_SUCCESS_ADVANCING");
-        // eslint-disable-next-line no-console
-        console.log(captureMode ? "OCR_SUCCESS_CAPTURE_MODE" : "OCR_SUCCESS");
-        scanSessionRef.current += 1;
-        scanStartedAtRef.current = 0;
-        scanAttemptsRef.current = 0;
-        setScannerSlotId(nextEntry.slot.id);
-        clearScanData("ocr.success.advance");
-        setScanStateLogged("PREVIEW", "ocr.success.next");
-        showScanToast(`Saved • Slot ${nextEntry.slot.slotNumber} ready`);
-        cooldownUntilRef.current = Date.now() + 900;
-        stableSinceRef.current = null;
-        lastSampleRef.current = null;
-        void startCamera();
-        return { fullLine, lastDigits };
-      }
-
-      setOcrResult({
-        fullLine,
-        lastDigits,
-        confidence,
-        prefixMismatch,
-      });
-      setScanStateLogged("RESULT", "ocr.ok_last");
-      cooldownUntilRef.current = Date.now() + 1000;
-
-      return { fullLine, lastDigits };
-    },
-    [
-      clearScanData,
-      endValues,
-      getExpectedPackPrefix,
-      scannableSlots,
-      setEndFullLine,
-      setEndValue,
-      setScanStateLogged,
-      showScanToast,
-      startCamera,
-    ],
-  );
-
-  const setResultFromParsed = useCallback(
-    (pack: { id?: string; packCode?: string | null } | null, parsed: ReturnType<typeof parseScratcherLine>) => {
-      const expectedPackPrefix = getExpectedPackPrefix(pack);
-      if (!parsed?.end) return;
-      const rawEnd = parsed.end;
-      const lastDigits = rawEnd.padStart(3, "0");
-      const fullLine = `${parsed.game}-${parsed.pack}-${parsed.roll}-${lastDigits}`;
-      const prefixMismatch = Boolean(expectedPackPrefix && expectedPackPrefix !== parsed.prefix);
-      const confidence: "low" | "medium" | "high" = rawEnd.length === 3 ? "high" : "medium";
-
-      setOcrResult({ fullLine, lastDigits, confidence, prefixMismatch });
-      // eslint-disable-next-line no-console
-      console.log("SCRATCHER OCR RESULT:", parsed);
-      // eslint-disable-next-line no-console
-      console.log("SHOWING CONFIRM MODAL");
-      setScanStateLogged("RESULT", "ocr.ok");
-      cooldownUntilRef.current = Date.now() + 900;
+      return { fullLine, lastDigits, prefixMismatch };
     },
     [getExpectedPackPrefix, setScanStateLogged],
   );
-
-  const attemptLiveDetect = useCallback(async () => {
-    if (!scannerSlotId) return;
-    const sessionAtStart = scanSessionRef.current;
-    if (captureModeActiveRef.current) {
-      // eslint-disable-next-line no-console
-      console.log("LIVE_DETECT_BLOCKED_DURING_CAPTURE");
-      return;
-    }
-    // Temporary stabilization: once the capture fallback UI is active, stop rapid live detect.
-    if (showCaptureFallback) return;
-    if (captureFlowLockedRef.current || captureInFlightRef.current) {
-      // eslint-disable-next-line no-console
-      console.log("LIVE_DETECT_BLOCKED_DURING_CAPTURE");
-      return;
-    }
-    if (manualModeRef.current) return;
-    if (!rapidModeRef.current) return;
-    if (capturedImageRef.current) return;
-    if (scanStateRef.current !== "PREVIEW") return;
-    if (scanError) return;
-    if (Date.now() < cooldownUntilRef.current) return;
-    if (!cameraReady) return;
-    if (liveOcrInFlightRef.current) return;
-
-    const slotEntry = scannableSlots.find((entry) => entry.slot.id === scannerSlotId);
-    if (!slotEntry) return;
-
-    if (!scanStartedAtRef.current) {
-      scanStartedAtRef.current = Date.now();
-      scanAttemptsRef.current = 0;
-    }
-
-    liveOcrInFlightRef.current = true;
-    try {
-      const cropImage = captureCropOnly();
-      if (!cropImage) {
-        cooldownUntilRef.current = Date.now() + 300;
-        return;
-      }
-      const parsed = await detectScratcherLineFromDataUrl(cropImage);
-      if (
-        scanSessionRef.current !== sessionAtStart ||
-        captureModeActiveRef.current ||
-        captureFlowLockedRef.current ||
-        captureInFlightRef.current
-      ) {
-        // eslint-disable-next-line no-console
-        console.log("LIVE_DETECT_BLOCKED_DURING_CAPTURE");
-        return;
-      }
-      if (parsed?.end) {
-        const images = captureFrame();
-        if (images?.fullImage) {
-          setCapturedImage(images.fullImage);
-          capturedImageRef.current = images.fullImage;
-          pauseCamera();
-        }
-        setScanError(null);
-        setResultFromParsed(slotEntry.pack, parsed);
-        return;
-      }
-
-      scanAttemptsRef.current += 1;
-      cooldownUntilRef.current = Date.now() + 320;
-      const elapsed = Date.now() - (scanStartedAtRef.current || Date.now());
-      if (elapsed > 2800 && scanAttemptsRef.current >= 3) {
-        if (
-          scanSessionRef.current !== sessionAtStart ||
-          captureModeActiveRef.current ||
-          captureFlowLockedRef.current ||
-          captureInFlightRef.current
-        ) {
-          // eslint-disable-next-line no-console
-          console.log("LIVE_TIMEOUT_BLOCKED_DURING_CAPTURE");
-          return;
-        }
-        setScanError("Unable to read ticket number. Try again, move closer, or use Manual mode.");
-        setScanStateLogged("ERROR", "live.timeout");
-        return;
-      }
-    } catch (e) {
-      console.error("live ocr failed", e);
-      cooldownUntilRef.current = Date.now() + 450;
-    } finally {
-      liveOcrInFlightRef.current = false;
-    }
-  }, [
-    cameraReady,
-    captureCropOnly,
-    captureFrame,
-    pauseCamera,
-    scanError,
-    scannerSlotId,
-    scannableSlots,
-    showCaptureFallback,
-    setResultFromParsed,
-    setScanStateLogged,
-  ]);
 
   const captureAndDetect = useCallback(async () => {
     // eslint-disable-next-line no-console
@@ -940,21 +714,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       return;
     const slotEntry = scannableSlots.find((entry) => entry.slot.id === scannerSlotId);
     if (!slotEntry) return;
-    captureModeActiveRef.current = true;
-    // eslint-disable-next-line no-console
-    console.log("CAPTURE_MODE_ENABLED");
-    if (scanLoopRef.current) {
-      cancelAnimationFrame(scanLoopRef.current);
-      scanLoopRef.current = null;
-    }
-    stableSinceRef.current = null;
-    lastSampleRef.current = null;
-    captureFlowLockedRef.current = true;
-    scanSessionRef.current += 1;
-    scanStartedAtRef.current = 0;
-    scanAttemptsRef.current = 0;
-    // eslint-disable-next-line no-console
-    console.log("CAPTURE_FLOW_LOCKED");
     captureInFlightRef.current = true;
     try {
       setScanError(null);
@@ -965,15 +724,51 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
         setScanStateLogged("ERROR", "capture.failed");
         return;
       }
-      // eslint-disable-next-line no-console
-      console.log("IMAGE_CAPTURED");
       try {
-        // Auto capture: freeze immediately and run OCR once on the still image.
+        // Freeze immediately and run OCR once on the still image.
         setCapturedImage(images.fullImage);
         capturedImageRef.current = images.fullImage;
         pauseCamera();
         setScanStateLogged("PROCESSING", "capture.frozen");
-        await performOcr(scannerSlotId, slotEntry.pack, images.cropImage);
+        showScanToast("Captured • Reading ticket...");
+        const result = await performOcr(slotEntry.pack, images.cropImage);
+        if (!result) return;
+
+        setEndValue(scannerSlotId, result.lastDigits);
+        setEndFullLine(scannerSlotId, result.fullLine, result.prefixMismatch);
+        if (result.prefixMismatch) {
+          console.warn("scratcher prefix mismatch", {
+            slotId: scannerSlotId,
+            fullLine: result.fullLine,
+          });
+        }
+
+        const currentIndex = scannableSlots.findIndex((entry) => entry.slot.id === scannerSlotId);
+        if (rapidModeRef.current && currentIndex >= 0) {
+          const hasValue = (slotId: string) =>
+            slotId === scannerSlotId ? result.lastDigits : endValues[slotId] ?? "";
+          const nextEntry = scannableSlots
+            .slice(currentIndex + 1)
+            .find((entry) => !hasValue(entry.slot.id));
+          if (nextEntry) {
+            // eslint-disable-next-line no-console
+            console.log("OCR_SUCCESS_NEXT_SLOT");
+            setScannerSlotId(nextEntry.slot.id);
+            clearScanData("capture.advance");
+            setScanStateLogged("PREVIEW", "capture.next");
+            void startCamera();
+            return;
+          }
+        }
+
+        setScannerOpen(false);
+        setScannerSlotId(null);
+        clearScanData("capture.done");
+        setScanStateLogged("PREVIEW", "capture.done");
+        setManualMode(false);
+        setManualScanValue("");
+        setManualScanLine("");
+        stopCamera();
       } catch (error) {
         console.error("ocr failed", error);
         setScanError("Unable to read ticket number. Try again.");
@@ -981,96 +776,27 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       }
     } finally {
       captureInFlightRef.current = false;
-      captureFlowLockedRef.current = false;
     }
-  }, [captureFrame, pauseCamera, performOcr, scannerSlotId, scannableSlots, setScanStateLogged]);
-
-  const startStabilityLoop = useCallback(() => {
-    if (captureModeActiveRef.current) return;
-    if (scanLoopRef.current) {
-      cancelAnimationFrame(scanLoopRef.current);
-      scanLoopRef.current = null;
-    }
-    // Reset stability state so we don't instantly trigger after Retake/slot advance.
-    stableSinceRef.current = null;
-    lastSampleRef.current = null;
-    const sampleCanvas =
-      sampleCanvasRef.current ?? document.createElement("canvas");
-    sampleCanvasRef.current = sampleCanvas;
-    sampleCanvas.width = 96;
-    sampleCanvas.height = 54;
-    const ctx = sampleCanvas.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return;
-
-    const tick = () => {
-      const currentState = scanStateRef.current;
-      const currentManual = manualModeRef.current;
-      const currentImage = capturedImageRef.current;
-      if (!scannerOpen || currentState !== "PREVIEW" || currentManual || currentImage) {
-        scanLoopRef.current = requestAnimationFrame(tick);
-        return;
-      }
-      if (Date.now() < cooldownUntilRef.current) {
-        stableSinceRef.current = null;
-        scanLoopRef.current = requestAnimationFrame(tick);
-        return;
-      }
-      const roi = computeRoiFromOverlay();
-      const video = videoRef.current;
-      if (!roi || !video || video.readyState < 2) {
-        scanLoopRef.current = requestAnimationFrame(tick);
-        return;
-      }
-      ctx.drawImage(
-        video,
-        roi.sx,
-        roi.sy,
-        roi.sw,
-        roi.sh,
-        0,
-        0,
-        sampleCanvas.width,
-        sampleCanvas.height,
-      );
-      const imageData = ctx.getImageData(
-        0,
-        0,
-        sampleCanvas.width,
-        sampleCanvas.height,
-      ).data;
-      let diff = 0;
-      const last = lastSampleRef.current;
-      if (last) {
-        for (let i = 0; i < imageData.length; i += 4) {
-          diff += Math.abs(imageData[i] - last[i]);
-        }
-        diff /= sampleCanvas.width * sampleCanvas.height;
-      }
-      lastSampleRef.current = new Uint8ClampedArray(imageData);
-      const now = Date.now();
-      if (diff < 6) {
-        if (!stableSinceRef.current) {
-          stableSinceRef.current = now;
-        }
-        if (stableSinceRef.current && now - stableSinceRef.current >= 260) {
-          stableSinceRef.current = null;
-          void attemptLiveDetect();
-          scanLoopRef.current = requestAnimationFrame(tick);
-          return;
-        }
-      } else {
-        stableSinceRef.current = null;
-      }
-      scanLoopRef.current = requestAnimationFrame(tick);
-    };
-    scanLoopRef.current = requestAnimationFrame(tick);
-  }, [attemptLiveDetect, computeRoiFromOverlay, scannerOpen]);
+  }, [
+    captureFrame,
+    clearScanData,
+    endValues,
+    pauseCamera,
+    performOcr,
+    scannerSlotId,
+    scannableSlots,
+    setEndFullLine,
+    setEndValue,
+    setScanStateLogged,
+    showScanToast,
+    startCamera,
+    stopCamera,
+  ]);
 
   const openScannerForSlot = useCallback(
     async (slotId: string) => {
-      scanSessionRef.current += 1;
-      captureFlowLockedRef.current = false;
-      captureModeActiveRef.current = false;
+      // eslint-disable-next-line no-console
+      console.log("MANUAL_CAPTURE_MODE");
       setScannerSlotId(slotId);
       setScannerOpen(true);
       clearScanData("open");
@@ -1078,19 +804,12 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       setManualMode(false);
       setManualScanValue("");
       setManualScanLine("");
-      cooldownUntilRef.current = 0;
-      scanStartedAtRef.current = 0;
-      scanAttemptsRef.current = 0;
       await startCamera();
-      startStabilityLoop();
     },
-    [clearScanData, setScanStateLogged, startCamera, startStabilityLoop],
+    [clearScanData, setScanStateLogged, startCamera],
   );
 
   const closeScanner = useCallback(() => {
-    scanSessionRef.current += 1;
-    captureFlowLockedRef.current = false;
-    captureModeActiveRef.current = false;
     setScannerOpen(false);
     setScannerSlotId(null);
     clearScanData("close");
@@ -1102,20 +821,13 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   }, [clearScanData, setScanStateLogged, stopCamera]);
 
   const rescan = useCallback(async () => {
-    scanSessionRef.current += 1;
-    captureFlowLockedRef.current = false;
-    captureModeActiveRef.current = false;
     clearScanData("rescan");
     setScanStateLogged("PREVIEW", "rescan.preview");
     setManualMode(false);
     setManualScanValue("");
     setManualScanLine("");
-    cooldownUntilRef.current = Date.now() + 1000;
-    scanStartedAtRef.current = 0;
-    scanAttemptsRef.current = 0;
     await startCamera();
-    startStabilityLoop();
-  }, [clearScanData, setScanStateLogged, startCamera, startStabilityLoop]);
+  }, [clearScanData, setScanStateLogged, startCamera]);
 
   const confirmScan = useCallback(() => {
     if (!scannerSlotId || !ocrResult) return;
@@ -1139,15 +851,10 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
         .slice(currentIndex + 1)
         .find((entry) => !hasValue(entry.slot.id));
       if (nextEntry) {
-        scanSessionRef.current += 1;
-        captureFlowLockedRef.current = false;
-        scanStartedAtRef.current = 0;
-        scanAttemptsRef.current = 0;
         setScannerSlotId(nextEntry.slot.id);
         clearScanData("confirm.advance");
         setScanStateLogged("PREVIEW", "confirm.next");
         void startCamera();
-        startStabilityLoop();
         return;
       }
     }
@@ -1164,7 +871,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     setEndValue,
     setScanStateLogged,
     startCamera,
-    startStabilityLoop,
   ]);
 
   const applyManualScan = useCallback(() => {
@@ -1190,17 +896,12 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
         .slice(currentIndex + 1)
         .find((entry) => !hasValue(entry.slot.id));
       if (nextEntry) {
-        scanSessionRef.current += 1;
-        captureFlowLockedRef.current = false;
-        scanStartedAtRef.current = 0;
-        scanAttemptsRef.current = 0;
         setScannerSlotId(nextEntry.slot.id);
         clearScanData("manual.advance");
         setScanStateLogged("PREVIEW", "manual.next");
         setManualScanValue("");
         setManualScanLine("");
         void startCamera();
-        startStabilityLoop();
         return;
       }
     }
@@ -1218,14 +919,12 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     setEndValue,
     setScanStateLogged,
     startCamera,
-    startStabilityLoop,
   ]);
 
   useEffect(() => {
     if (!scannerOpen) return;
     startCamera();
-    startStabilityLoop();
-  }, [scannerOpen, startCamera, startStabilityLoop]);
+  }, [scannerOpen, startCamera]);
 
   useEffect(() => {
     scanStateRef.current = scanState;
@@ -1252,23 +951,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     // If we already captured a still, keep camera paused until user hits Retake.
     if (capturedImageRef.current) return;
     void startCamera();
-    startStabilityLoop();
-  }, [manualMode, scannerOpen, startCamera, startStabilityLoop, stopCamera]);
-
-  useEffect(() => {
-    if (
-      !scannerOpen ||
-      scanState !== "PREVIEW" ||
-      manualMode ||
-      !cameraReady ||
-      capturedImage
-    ) {
-      setShowCaptureFallback(false);
-      return;
-    }
-    const timer = window.setTimeout(() => setShowCaptureFallback(true), 1500);
-    return () => window.clearTimeout(timer);
-  }, [scannerOpen, scanState, manualMode, scannerSlotId, cameraReady, capturedImage]);
+  }, [manualMode, scannerOpen, startCamera, stopCamera]);
 
   const packSizeForPrice = (price?: number | null) => {
     if (!Number.isFinite(price)) return null;
@@ -1538,7 +1221,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
                   checked={rapidMode}
                   onChange={(event) => setRapidMode(event.target.checked)}
                 />
-                Rapid scan
+                Auto-advance
               </label>
               <label className="inline-flex items-center gap-2">
                 <input
@@ -1586,15 +1269,14 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
               )}
             </div>
 
-            {((scanState === "PREVIEW" ||
-              scanState === "CAPTURING" ||
-              scanState === "PROCESSING") &&
-              !manualMode &&
-              !ocrResult &&
-              !scanToast &&
-              !scanError) && (
-              <div className="scratcher-scan-status">Reading ticket…</div>
+            {scanState === "PREVIEW" && !manualMode && !scanToast && !scanError && (
+              <div className="scratcher-scan-status">Ready • Tap Capture</div>
             )}
+
+            {(scanState === "CAPTURING" || scanState === "PROCESSING") &&
+              !manualMode &&
+              !scanToast &&
+              !scanError && <div className="scratcher-scan-status">Reading ticket…</div>}
 
             {scanToast && <div className="scratcher-scan-status">{scanToast}</div>}
 
@@ -1689,7 +1371,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
               </div>
             )}
 
-            {!manualMode && scanState === "PREVIEW" && showCaptureFallback && (
+            {!manualMode && scanState === "PREVIEW" && (
               <div className="scratcher-scan-actions">
                 <button type="button" className="ui-button" onClick={captureAndDetect}>
                   Capture
