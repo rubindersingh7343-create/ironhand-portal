@@ -14,6 +14,7 @@ import { OwnerPortalStoreProvider, useOwnerPortalStore } from "@/components/clie
 import TopBarNav from "@/components/TopBarNav";
 import EmployeeUploadForm from "@/components/employee/EmployeeUploadForm";
 import OwnerHoursSection from "@/components/client/OwnerHoursSection";
+import OwnerInventorySection from "@/components/inventory/OwnerInventorySection";
 import SettingsButton from "@/components/SettingsButton";
 import LogoutButton from "@/components/LogoutButton";
 
@@ -246,6 +247,7 @@ function OwnerPortalDashboardContent({
         label: "Invoices",
         badgeCounts: navBadges.invoices,
       },
+      { id: "owner-inventory-page", label: "Inventory" },
       { id: "owner-invoice-upload-page", label: "Upload" },
       { id: "owner-orders-page", label: "Orders", badgeCounts: navBadges.orders },
       { id: "owner-hours-page", label: "Hours" },
@@ -365,6 +367,15 @@ function OwnerPortalDashboardContent({
             {renderOwnerHeader()}
             <div className="owner-portal-section" id="owner-invoices">
               <OwnerInvoicesSection user={user} />
+            </div>
+          </div>
+        </section>
+
+        <section className="owner-portal-page" id="owner-inventory-page">
+          <div className="owner-portal-page__content space-y-5 sm:space-y-6">
+            {renderOwnerHeader()}
+            <div className="owner-portal-section" id="owner-inventory">
+              <OwnerInventorySection />
             </div>
           </div>
         </section>
