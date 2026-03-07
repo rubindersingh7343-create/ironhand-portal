@@ -52,6 +52,7 @@ async function detectScratcherLineFromDataUrl(
   dataUrl: string,
 ): Promise<ReturnType<typeof parseScratcherLine> | null> {
   if (typeof window === "undefined") return null;
+  const base64Image = dataUrlToBase64(dataUrl);
   try {
     type CapWindow = Window & {
       Capacitor?: {
@@ -60,27 +61,55 @@ async function detectScratcherLineFromDataUrl(
       };
     };
     const Cap = (window as unknown as CapWindow).Capacitor;
-    if (!Cap?.isNativePlatform?.()) return null;
-    const plugin = (Cap.Plugins as Record<string, unknown> | undefined)
-      ?.CapacitorPluginMlKitTextRecognition as
-      | {
-          detectText?: (args: {
-            base64Image: string;
-            rotation: number;
-          }) => Promise<{ text?: unknown }>;
-        }
-      | undefined;
-    const detectText = plugin?.detectText;
-    if (typeof detectText !== "function") return null;
+    if (Cap?.isNativePlatform?.()) {
+      const plugin = (Cap.Plugins as Record<string, unknown> | undefined)
+        ?.CapacitorPluginMlKitTextRecognition as
+        | {
+            detectText?: (args: {
+              base64Image: string;
+              rotation: number;
+            }) => Promise<{ text?: unknown }>;
+          }
+        | undefined;
+      const detectText = plugin?.detectText;
+      if (typeof detectText === "function") {
+        const result = (await withTimeout(
+          detectText({ base64Image, rotation: 0 }),
+          2200,
+        )) as { text?: unknown };
+        const text = typeof result?.text === "string" ? result.text.trim() : "";
+        if (!text) return null;
+        return extractScratcherTicketIdFromOcrText(text);
+      }
+    }
+  } catch {
+  }
 
-    const base64Image = dataUrlToBase64(dataUrl);
-    const result = (await withTimeout(
-      detectText({ base64Image, rotation: 0 }),
-      2200,
-    )) as { text?: unknown };
-    const text = typeof result?.text === "string" ? result.text.trim() : "";
-    if (!text) return null;
-    return extractScratcherTicketIdFromOcrText(text);
+  // Web fallback: server-side OCR for the captured still image.
+  try {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 12_000);
+    const res = await fetch("/api/scratchers/ocr", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ image_base64: base64Image }),
+      signal: controller.signal,
+    });
+    window.clearTimeout(timeoutId);
+    if (!res.ok) return null;
+    const body = (await res.json().catch(() => null)) as any;
+    const parsed = body?.parsed;
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      typeof parsed.game === "string" &&
+      typeof parsed.pack === "string" &&
+      typeof parsed.roll === "string"
+    ) {
+      return parsed as ReturnType<typeof parseScratcherLine>;
+    }
+    const ocrText = typeof body?.ocrText === "string" ? body.ocrText : "";
+    return ocrText ? extractScratcherTicketIdFromOcrText(ocrText) : null;
   } catch {
     return null;
   }
