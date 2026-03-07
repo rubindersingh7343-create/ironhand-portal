@@ -77,8 +77,8 @@ async function uploadInvoiceFile(args: {
   supabase: ReturnType<typeof getSupabaseAdmin>;
   storeId: string;
   file: File;
+  buffer: Buffer;
 }) {
-  const buf = Buffer.from(await args.file.arrayBuffer());
   const ext = (() => {
     const name = args.file.name || "";
     const m = name.toLowerCase().match(/\.(jpg|jpeg|png|webp)$/);
@@ -87,7 +87,7 @@ async function uploadInvoiceFile(args: {
   const id = crypto.randomUUID();
   const key = `inventory/invoices/${args.storeId}/${id}.${ext}`;
   const mime = args.file.type || "application/octet-stream";
-  const { error } = await args.supabase!.storage.from(SUPABASE_BUCKET).upload(key, buf, {
+  const { error } = await args.supabase!.storage.from(SUPABASE_BUCKET).upload(key, args.buffer, {
     contentType: mime,
     upsert: true,
   });
@@ -269,27 +269,40 @@ export async function POST(request: Request) {
   }
 
   const startedAt = Date.now();
+  const requestId = crypto.randomUUID();
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  let stage = "start";
 
   try {
-    const uploaded = await uploadInvoiceFile({ supabase, storeId, file });
+    stage = "read_file";
     const rawBuffer = Buffer.from(await file.arrayBuffer());
+
+    stage = "upload";
+    const uploaded = await uploadInvoiceFile({ supabase, storeId, file, buffer: rawBuffer });
+
+    stage = "preprocess";
     const prepared = await preprocessImageForVision(rawBuffer);
     const dataUrl = `data:${prepared.mime};base64,${prepared.buffer.toString("base64")}`;
 
     // Fast pass then reliability pass.
+    stage = "openai.low";
     const low = await runInventoryInvoiceVision({ client, model: MODEL, dataUrl, detail: "low" });
     const lowHasLines = Array.isArray(low.parsed.line_items) && low.parsed.line_items.length > 0;
     const lowHasVendor = Boolean(low.parsed.vendor?.name);
-    const vision = lowHasLines && lowHasVendor
-      ? { ...low, detail: "low" as const }
-      : { ...(await runInventoryInvoiceVision({ client, model: MODEL, dataUrl, detail: "high" })), detail: "high" as const };
+    const vision = await (async () => {
+      if (lowHasLines && lowHasVendor) return { ...low, detail: "low" as const };
+      stage = "openai.high";
+      const high = await runInventoryInvoiceVision({ client, model: MODEL, dataUrl, detail: "high" });
+      return { ...high, detail: "high" as const };
+    })();
 
+    stage = "vendor.ensure";
     const vendorRaw = String(vision.parsed.vendor?.name ?? "").trim() || null;
     const vendorDebug = vendorRaw
       ? await ensureVendor({ supabase, storeId, vendorName: vendorRaw })
       : null;
 
+    stage = "products.load";
     const products = await listProducts({ supabase, storeId });
 
     const lineDebug: any[] = [];
@@ -439,15 +452,17 @@ export async function POST(request: Request) {
 
     const finalLineRows = lineRows.map((row) => ({ ...row, invoice_id: invoiceId }));
     if (finalLineRows.length) {
+      stage = "lines.insert";
       const { error: linesErr } = await supabase.from("inventory_invoice_line_items").insert(finalLineRows as any);
       if (linesErr) throw new Error(`Failed to insert line items: ${linesErr.message}`);
     }
 
     const ms = Date.now() - startedAt;
-    console.log("[inventory-invoice-parse]", { user_id: user.id, store_id: storeId, ms, lines: finalLineRows.length });
+    console.log("[inventory-invoice-parse]", { request_id: requestId, user_id: user.id, store_id: storeId, ms, lines: finalLineRows.length });
 
     return NextResponse.json({
       invoice_id: invoiceId,
+      request_id: requestId,
       store_id: storeId,
       vendor_id: vendorDebug?.id ?? null,
       vendor_raw: vendorRaw,
@@ -468,16 +483,22 @@ export async function POST(request: Request) {
   } catch (error) {
     const err = error as any;
     console.error("[inventory-invoice-parse] failed", {
+      request_id: requestId,
       user_id: user.id,
       store_id: user.storeNumber,
       ms: Date.now() - startedAt,
+      stage,
       message: err?.message ?? "Unknown error",
       status: err?.status,
       code: err?.code,
       type: err?.type,
     });
     return NextResponse.json(
-      { error: "Inventory invoice parsing failed. Please try again." },
+      {
+        error: "Inventory invoice parsing failed. Please try again.",
+        request_id: requestId,
+        stage,
+      },
       { status: 502 },
     );
   }

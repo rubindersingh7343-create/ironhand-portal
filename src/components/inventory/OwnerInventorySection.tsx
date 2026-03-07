@@ -131,11 +131,14 @@ export default function OwnerInventorySection() {
       })();
       if (!res.ok) {
         const serverError = typeof data?.error === "string" ? data.error : "";
+        const requestId =
+          typeof data?.request_id === "string" ? data.request_id : "";
+        const stage = typeof data?.stage === "string" ? data.stage : "";
         const snippet = !serverError && text ? text.slice(0, 180) : "";
-        setError(
-          serverError ||
-            `Parse failed (HTTP ${res.status}).${snippet ? ` ${snippet}` : ""}`,
-        );
+        const message = serverError
+          ? `${serverError}${stage ? ` (stage: ${stage})` : ""}${requestId ? ` (id: ${requestId})` : ""}`
+          : `Parse failed (HTTP ${res.status}).${snippet ? ` ${snippet}` : ""}`;
+        setError(message);
         return;
       }
       setParsed(data as ParseResponse);
