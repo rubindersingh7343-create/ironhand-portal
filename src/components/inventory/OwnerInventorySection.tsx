@@ -327,10 +327,10 @@ export default function OwnerInventorySection() {
             type="button"
             onClick={() => setTab(t.id)}
             className={clsx(
-              "ui-pill-primary px-3 py-2 text-[11px] uppercase tracking-[0.18em] transition",
+              "rounded-md border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] shadow-sm backdrop-blur transition-colors",
               tab === t.id
-                ? "border-white/45 bg-white/10 text-white"
-                : "border-white/15 bg-transparent text-slate-200 hover:border-white/35",
+                ? "border-slate-900/25 bg-white/85 text-slate-900"
+                : "border-slate-900/15 bg-white/50 text-slate-900/90 hover:border-slate-900/20 hover:bg-white/65",
             )}
           >
             {t.label}
