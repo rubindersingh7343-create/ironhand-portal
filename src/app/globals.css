@@ -1579,8 +1579,9 @@ select.ui-field--slim {
   opacity: calc(0.72 + (var(--section-focus) * 0.28));
   filter: saturate(calc(0.82 + (var(--section-focus) * 0.38)))
     brightness(calc(0.96 + (var(--section-focus) * 0.1)));
-  box-shadow: 0 12px calc(18px + (var(--section-focus) * 18px))
-    rgba(5, 12, 28, calc(0.22 + (var(--section-focus) * 0.2)));
+  box-shadow:
+    0 10px calc(18px + (var(--section-focus) * 16px)) rgba(15, 23, 42, calc(0.08 + (var(--section-focus) * 0.05))),
+    0 2px 8px rgba(15, 23, 42, 0.05);
 }
 
 #app-root .owner-portal-pager {
@@ -1628,7 +1629,9 @@ select.ui-field--slim {
     opacity: 1;
     filter: none;
     transition: none;
-    box-shadow: 0 12px 28px rgba(5, 12, 28, 0.32);
+    box-shadow:
+      0 10px 26px rgba(15, 23, 42, 0.1),
+      0 2px 8px rgba(15, 23, 42, 0.05);
   }
 }
 
