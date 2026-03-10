@@ -1166,7 +1166,6 @@ body:has(.portal-shell) {
   box-shadow:
     0 8px 24px rgba(15, 23, 42, 0.08),
     0 2px 8px rgba(15, 23, 42, 0.06);
-  backdrop-filter: blur(10px) saturate(130%);
   animation: ih-fade-up 160ms ease;
 }
 
@@ -1572,13 +1571,10 @@ select.ui-field--slim {
   border-radius: 24px;
   transition: opacity 520ms cubic-bezier(0.22, 1, 0.36, 1),
     box-shadow 520ms cubic-bezier(0.22, 1, 0.36, 1),
-    filter 520ms cubic-bezier(0.22, 1, 0.36, 1),
     transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
   transform: translateY(calc((1 - var(--section-focus)) * 3px))
     scale(calc(0.985 + (var(--section-focus) * 0.02)));
   opacity: calc(0.72 + (var(--section-focus) * 0.28));
-  filter: saturate(calc(0.82 + (var(--section-focus) * 0.38)))
-    brightness(calc(0.96 + (var(--section-focus) * 0.1)));
   /* Wrapper should not cast its own shadow; child `.ui-card` provides elevation. */
   box-shadow: none;
 }
