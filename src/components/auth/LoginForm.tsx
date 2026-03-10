@@ -183,7 +183,7 @@ export default function LoginForm({ redirectTo = "/" }: LoginFormProps) {
         autoComplete="on"
       >
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-slate-200" htmlFor="email">
+          <label className="block text-sm font-medium text-slate-700" htmlFor="email">
             Email
           </label>
           <input
@@ -193,7 +193,7 @@ export default function LoginForm({ redirectTo = "/" }: LoginFormProps) {
             spellCheck={false}
             name="username"
             autoComplete="username"
-            className="w-full rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-slate-100 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+            className="w-full rounded-2xl border border-black/5 bg-white px-4 py-3 text-slate-900 placeholder:text-slate-500 shadow-[0_2px_8px_rgba(15,23,42,0.08)] focus:border-[#223a70] focus:outline-none focus:ring-4 focus:ring-[rgba(34,58,112,0.10)]"
             placeholder="you@hiremote.com"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
@@ -206,16 +206,16 @@ export default function LoginForm({ redirectTo = "/" }: LoginFormProps) {
             type="checkbox"
             checked={rememberMe}
             onChange={(event) => setRememberMe(event.target.checked)}
-            className="h-4 w-4 rounded border-white/30 bg-[#111a32] text-blue-500 focus:ring-blue-400"
+            className="h-4 w-4 rounded border-black/10 bg-white text-[#223a70] focus:ring-[#223a70]/30"
           />
-          <label htmlFor="rememberMe" className="text-sm text-slate-300">
+          <label htmlFor="rememberMe" className="text-sm text-slate-600">
             Keep me signed in
           </label>
         </div>
 
         <div className="space-y-2">
           <label
-            className="block text-sm font-medium text-slate-200"
+            className="block text-sm font-medium text-slate-700"
             htmlFor="password"
           >
             Password
@@ -226,7 +226,7 @@ export default function LoginForm({ redirectTo = "/" }: LoginFormProps) {
             required
             name="password"
             autoComplete="current-password"
-            className="w-full rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-slate-100 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+            className="w-full rounded-2xl border border-black/5 bg-white px-4 py-3 text-slate-900 placeholder:text-slate-500 shadow-[0_2px_8px_rgba(15,23,42,0.08)] focus:border-[#223a70] focus:outline-none focus:ring-4 focus:ring-[rgba(34,58,112,0.10)]"
             placeholder="••••••••"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
@@ -237,10 +237,10 @@ export default function LoginForm({ redirectTo = "/" }: LoginFormProps) {
           <p
             className={`rounded-xl px-4 py-2 text-sm ${
               feedback.tone === "error"
-                ? "bg-red-500/15 text-red-200"
+                ? "border border-red-900/10 bg-red-500/10 text-red-900"
                 : feedback.tone === "success"
-                  ? "bg-emerald-500/15 text-emerald-200"
-                  : "bg-blue-500/15 text-blue-200"
+                  ? "border border-emerald-900/10 bg-emerald-500/10 text-emerald-900"
+                  : "border border-[#223a70]/15 bg-[#223a70]/10 text-slate-800"
             }`}
           >
             {feedback.text}
@@ -250,15 +250,15 @@ export default function LoginForm({ redirectTo = "/" }: LoginFormProps) {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full rounded-xl bg-blue-600 px-6 py-3 text-center text-base font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
+          className="w-full rounded-xl bg-[#223a70] px-6 py-3 text-center text-base font-semibold text-white shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition hover:bg-[#1a2c56] disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? "Signing in..." : "Access Portal"}
         </button>
 
-        <div className="text-center text-sm text-slate-300">
+        <div className="text-center text-sm text-slate-600">
           <a
             href="/auth/forgot"
-            className="text-blue-300 hover:text-blue-200 underline underline-offset-4"
+            className="text-[#223a70] hover:text-[#1a2c56] underline underline-offset-4"
           >
             Forgot your password?
           </a>

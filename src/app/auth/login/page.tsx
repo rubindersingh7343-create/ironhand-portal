@@ -30,7 +30,7 @@ export default async function LoginPage({
   const externalLoginUrl = `https://ironhand.net/auth/login?redirect=${encodeURIComponent(appCallback)}`;
 
   return (
-    <div className="login-lock flex items-center justify-center bg-[radial-gradient(circle_at_top,#0f1f3d,#050914_60%,#01030a_95%)] px-4 py-12">
+    <div className="login-lock flex items-center justify-center bg-[radial-gradient(circle_at_top,rgba(34,58,112,0.12),transparent_58%),linear-gradient(180deg,#f5f2eb_0%,#f3f4f6_70%,#f2f4f7_100%)] px-4 py-12 text-slate-900">
       <div className="w-full max-w-5xl space-y-6">
         <div className="flex justify-center">
           <Image
@@ -44,24 +44,24 @@ export default async function LoginPage({
           />
         </div>
 
-        <section className="space-y-6 rounded-[62px] border border-white/10 bg-[rgba(10,18,38,0.85)] px-10 py-10 text-center text-white shadow-2xl shadow-slate-950/30 backdrop-blur">
-        <div className="space-y-2 text-white">
-          <h2 className="text-xl font-light uppercase tracking-[0.4em]">
-            Portal
-          </h2>
-        </div>
-
-        <div className="mx-auto max-w-md space-y-6">
-          <LoginForm redirectTo={redirectTo} />
-          <div className="text-center text-sm text-slate-300">
-            <a
-              href="/signup"
-              className="font-semibold text-blue-200 underline decoration-dotted underline-offset-4 hover:text-white"
-            >
-              Create an account
-            </a>
+        <section className="space-y-6 rounded-[32px] border border-black/5 bg-white/80 px-10 py-10 text-center shadow-[0_8px_24px_rgba(15,23,42,0.08)] backdrop-blur">
+          <div className="space-y-2">
+            <h2 className="text-xl font-light uppercase tracking-[0.4em] text-slate-800">
+              Portal
+            </h2>
           </div>
-        </div>
+
+          <div className="mx-auto max-w-md space-y-6">
+            <LoginForm redirectTo={redirectTo} />
+            <div className="text-center text-sm text-slate-600">
+              <a
+                href="/signup"
+                className="font-semibold text-[#223a70] underline decoration-dotted underline-offset-4 hover:text-[#1a2c56]"
+              >
+                Create an account
+              </a>
+            </div>
+          </div>
         </section>
       </div>
     </div>
