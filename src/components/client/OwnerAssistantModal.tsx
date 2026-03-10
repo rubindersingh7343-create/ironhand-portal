@@ -142,14 +142,14 @@ export default function OwnerAssistantModal({
   return (
     <IHModal isOpen onClose={onClose} allowOutsideClose panelClassName="assistant-modal">
       <div className="assistant-shell flex h-[82vh] max-h-[700px] w-[min(720px,92vw)] flex-col overflow-hidden">
-        <div className="assistant-header border-b border-white/10 px-6 py-5">
-          <p className="text-xs uppercase tracking-[0.32em] text-slate-400">
+        <div className="assistant-header border-b border-black/5 px-6 py-5">
+          <p className="text-xs uppercase tracking-[0.32em] text-slate-600">
             {title}
           </p>
           <div className="mt-2 flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-xl font-semibold text-white">{storeName}</h2>
-              <p className="text-xs text-slate-400">
+              <h2 className="text-xl font-semibold text-slate-900">{storeName}</h2>
+              <p className="text-xs text-slate-600">
                 Tap the mic to speak, or type it in.
               </p>
             </div>
@@ -167,12 +167,12 @@ export default function OwnerAssistantModal({
 
         <div className="flex-1 overflow-y-auto px-6 py-4">
           {error && (
-            <p className="rounded-2xl bg-red-500/10 px-4 py-3 text-sm text-red-100">
+            <p className="rounded-2xl border border-red-900/10 bg-red-500/10 px-4 py-3 text-sm text-red-900">
               {error}
             </p>
           )}
           {realtimeError && (
-            <p className="mt-3 rounded-2xl bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            <p className="mt-3 rounded-2xl border border-amber-900/10 bg-amber-500/10 px-4 py-3 text-sm text-amber-900">
               Voice: {realtimeError}
             </p>
           )}
@@ -187,8 +187,8 @@ export default function OwnerAssistantModal({
                   <div
                     className={`max-w-[78%] rounded-2xl px-4 py-2 text-sm ${
                       mine
-                        ? "bg-blue-500/20 text-slate-100"
-                        : "bg-white/5 text-slate-200"
+                        ? "bg-[#223a70] text-white shadow-[0_2px_8px_rgba(15,23,42,0.10)]"
+                        : "bg-black/5 text-slate-800"
                     }`}
                   >
                     <p className="whitespace-pre-wrap">{msg.content}</p>
@@ -200,19 +200,19 @@ export default function OwnerAssistantModal({
           </div>
         </div>
 
-        <div className="assistant-input border-t border-white/10 px-4 py-3">
+        <div className="assistant-input border-t border-black/5 px-4 py-3">
           <div className="flex flex-wrap items-center gap-2">
             <input
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               placeholder="Ask a question..."
-              className="ui-field flex-1 bg-white/5 text-sm"
+              className="ui-field flex-1 bg-white text-sm"
             />
             <button
               type="button"
               onClick={() => void sendMessage(draft.trim())}
               disabled={sending || !draft.trim()}
-              className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold text-white transition hover:border-white/60 disabled:border-white/10 disabled:text-slate-500"
+              className="rounded-full bg-[#223a70] px-4 py-2 text-xs font-semibold text-white shadow-[0_2px_8px_rgba(15,23,42,0.10)] transition hover:bg-[#1a2c56] disabled:cursor-not-allowed disabled:opacity-50"
             >
               Send
             </button>
@@ -238,14 +238,14 @@ export default function OwnerAssistantModal({
               </svg>
             </button>
           </div>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-400">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-600">
             <span>Voice uses realtime AI audio. Microphone access is required.</span>
-            <label className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-slate-300">
+            <label className="flex items-center gap-2 rounded-full border border-black/5 bg-black/5 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-slate-700">
               Voice
               <select
                 value={voice ?? DEFAULT_ASSISTANT_VOICE}
                 onChange={(event) => handleVoiceSelect(event.target.value)}
-                className="bg-transparent text-slate-100 outline-none"
+                className="bg-transparent text-slate-900 outline-none"
               >
                 {ASSISTANT_VOICES.map((option) => (
                   <option key={option} value={option} className="text-slate-900">
@@ -255,9 +255,9 @@ export default function OwnerAssistantModal({
               </select>
             </label>
           </div>
-          <div className="mt-3 grid gap-2 text-[11px] text-slate-400 sm:grid-cols-2">
+          <div className="mt-3 grid gap-2 text-[11px] text-slate-600 sm:grid-cols-2">
             <label className="flex flex-col gap-2">
-              <span className="text-[10px] uppercase tracking-[0.18em] text-slate-400">
+              <span className="text-[10px] uppercase tracking-[0.18em] text-slate-600">
                 Primary language
               </span>
               <input
@@ -265,11 +265,11 @@ export default function OwnerAssistantModal({
                 value={primaryLanguage}
                 onChange={(event) => handlePrimaryLanguageChange(event.target.value)}
                 placeholder={DEFAULT_ASSISTANT_LANGUAGE_PRIMARY}
-                className="ui-field bg-white/5 text-xs"
+                className="ui-field bg-white text-xs"
               />
             </label>
             <label className="flex flex-col gap-2">
-              <span className="text-[10px] uppercase tracking-[0.18em] text-slate-400">
+              <span className="text-[10px] uppercase tracking-[0.18em] text-slate-600">
                 Secondary language
               </span>
               <input
@@ -277,7 +277,7 @@ export default function OwnerAssistantModal({
                 value={secondaryLanguage}
                 onChange={(event) => handleSecondaryLanguageChange(event.target.value)}
                 placeholder="Optional"
-                className="ui-field bg-white/5 text-xs"
+                className="ui-field bg-white text-xs"
               />
             </label>
             <datalist id="assistant-language-list">

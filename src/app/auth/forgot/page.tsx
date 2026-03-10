@@ -34,14 +34,14 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="mx-auto max-w-md px-4 py-10 text-white">
+    <div className="mx-auto max-w-md px-4 py-10 text-slate-900">
       <h1 className="text-2xl font-semibold">Reset password with a code</h1>
-      <p className="mt-2 text-sm text-slate-300">
+      <p className="mt-2 text-sm text-slate-600">
         Enter your email, the one-time code provided by HQ, and your new password.
       </p>
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
         <div className="space-y-1">
-          <label className="text-sm text-slate-200" htmlFor="email">
+          <label className="text-sm text-slate-700" htmlFor="email">
             Email
           </label>
           <input
@@ -50,12 +50,12 @@ export default function ForgotPasswordPage() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-slate-100 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+            className="w-full rounded-2xl border border-black/5 bg-white px-4 py-3 text-slate-900 placeholder:text-slate-500 shadow-[0_2px_8px_rgba(15,23,42,0.08)] focus:border-[#223a70] focus:outline-none focus:ring-4 focus:ring-[rgba(34,58,112,0.10)]"
             placeholder="you@hiremote.com"
           />
         </div>
         <div className="space-y-1">
-          <label className="text-sm text-slate-200" htmlFor="code">
+          <label className="text-sm text-slate-700" htmlFor="code">
             Reset code
           </label>
           <input
@@ -64,12 +64,12 @@ export default function ForgotPasswordPage() {
             required
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            className="w-full rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-slate-100 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+            className="w-full rounded-2xl border border-black/5 bg-white px-4 py-3 text-slate-900 placeholder:text-slate-500 shadow-[0_2px_8px_rgba(15,23,42,0.08)] focus:border-[#223a70] focus:outline-none focus:ring-4 focus:ring-[rgba(34,58,112,0.10)]"
             placeholder="E.g. ABCD1234"
           />
         </div>
         <div className="space-y-1">
-          <label className="text-sm text-slate-200" htmlFor="newPassword">
+          <label className="text-sm text-slate-700" htmlFor="newPassword">
             New password
           </label>
           <input
@@ -78,12 +78,12 @@ export default function ForgotPasswordPage() {
             required
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
-            className="w-full rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-slate-100 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+            className="w-full rounded-2xl border border-black/5 bg-white px-4 py-3 text-slate-900 placeholder:text-slate-500 shadow-[0_2px_8px_rgba(15,23,42,0.08)] focus:border-[#223a70] focus:outline-none focus:ring-4 focus:ring-[rgba(34,58,112,0.10)]"
             placeholder="Enter new password"
           />
         </div>
         <div className="space-y-1">
-          <label className="text-sm text-slate-200" htmlFor="confirmPassword">
+          <label className="text-sm text-slate-700" htmlFor="confirmPassword">
             Confirm new password
           </label>
           <input
@@ -92,7 +92,7 @@ export default function ForgotPasswordPage() {
             required
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            className="w-full rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-slate-100 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+            className="w-full rounded-2xl border border-black/5 bg-white px-4 py-3 text-slate-900 placeholder:text-slate-500 shadow-[0_2px_8px_rgba(15,23,42,0.08)] focus:border-[#223a70] focus:outline-none focus:ring-4 focus:ring-[rgba(34,58,112,0.10)]"
             placeholder="Re-enter new password"
           />
         </div>
@@ -100,8 +100,8 @@ export default function ForgotPasswordPage() {
           <p
             className={`rounded-xl px-4 py-2 text-sm ${
               status === "error"
-                ? "bg-red-500/15 text-red-200"
-                : "bg-blue-500/15 text-blue-200"
+                ? "border border-red-900/10 bg-red-500/10 text-red-900"
+                : "border border-[#223a70]/15 bg-[#223a70]/10 text-slate-800"
             }`}
           >
             {message}
@@ -110,7 +110,7 @@ export default function ForgotPasswordPage() {
         <button
           type="submit"
           disabled={status === "sending"}
-          className="w-full rounded-xl bg-blue-600 px-6 py-3 text-center text-base font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
+          className="w-full rounded-xl bg-[#223a70] px-6 py-3 text-center text-base font-semibold text-white shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition hover:bg-[#1a2c56] disabled:cursor-not-allowed disabled:opacity-70"
         >
           {status === "sending" ? "Updating..." : "Reset password"}
         </button>
@@ -118,7 +118,7 @@ export default function ForgotPasswordPage() {
       <div className="mt-4 text-sm">
         <a
           href="/auth/login"
-          className="text-blue-300 underline underline-offset-4 hover:text-blue-200"
+          className="text-[#223a70] underline underline-offset-4 hover:text-[#1a2c56]"
         >
           Go back to sign in
         </a>

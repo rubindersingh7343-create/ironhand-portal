@@ -20,7 +20,7 @@ export default async function MasterPage() {
 
 function MasterAccessCard() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,#0f1f3d,#050914_60%,#01030a_95%)] px-4 py-16">
+    <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,rgba(34,58,112,0.12),transparent_58%),linear-gradient(180deg,#f5f2eb_0%,#f3f4f6_70%,#f2f4f7_100%)] px-4 py-16 text-slate-900">
       <div className="w-full max-w-4xl space-y-6">
         <div className="flex justify-center">
           <Image
@@ -32,15 +32,15 @@ function MasterAccessCard() {
             priority
           />
         </div>
-        <section className="space-y-6 rounded-[62px] border border-white/10 bg-[rgba(10,18,38,0.9)] px-8 py-10 text-white shadow-2xl shadow-slate-950/30 backdrop-blur">
+        <section className="space-y-6 rounded-[32px] border border-black/5 bg-white/80 px-8 py-10 shadow-[0_8px_24px_rgba(15,23,42,0.08)] backdrop-blur">
           <div className="space-y-2 text-center">
-            <p className="text-xs uppercase tracking-[0.3em] text-slate-300">
+            <p className="text-xs uppercase tracking-[0.3em] text-slate-600">
               HQ access only
             </p>
-            <h1 className="text-2xl font-semibold text-white">
+            <h1 className="text-2xl font-semibold text-slate-900">
               Sign in to Master Control
             </h1>
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-slate-600">
               Use your Iron Hand HQ credentials to open the manager invite
               console.
             </p>
