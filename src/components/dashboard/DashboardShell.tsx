@@ -50,7 +50,7 @@ export default async function DashboardShell({ user }: { user: SessionUser }) {
 
   const shellPadding =
     user.role === "client"
-      ? "px-5 pt-0 pb-0 text-white sm:px-6 sm:pt-0"
+      ? "px-2 pt-0 pb-0 text-white sm:px-6 sm:pt-0"
       : "px-4 pt-6 pb-10 text-white sm:px-8 sm:pt-8";
 
   const shellClassName =

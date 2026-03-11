@@ -1617,6 +1617,14 @@ select.ui-field--slim {
   padding-bottom: var(--owner-page-bottom-padding, 0px);
 }
 
+/* Give card shadows room to feather; owner pages are scroll containers that clip overflow. */
+@media (max-width: 640px) {
+  #app-root .owner-portal-page__content {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
 @supports (-webkit-touch-callout: none) {
   #app-root .owner-portal-section {
     --section-focus: 1;
