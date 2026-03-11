@@ -678,7 +678,7 @@ body[data-top-nav="true"] .scroll-top-bar__nav {
   padding: 16px;
   border-color: rgba(17, 24, 39, 0.06);
   box-shadow:
-    0 10px 26px rgba(15, 23, 42, 0.09),
+    0 10px 26px -6px rgba(15, 23, 42, 0.09),
     0 2px 8px rgba(15, 23, 42, 0.05);
 }
 
@@ -1164,7 +1164,7 @@ body:has(.portal-shell) {
   padding: 24px;
   color: var(--text-on-card);
   box-shadow:
-    0 8px 24px rgba(15, 23, 42, 0.08),
+    0 8px 24px -6px rgba(15, 23, 42, 0.08),
     0 2px 8px rgba(15, 23, 42, 0.06);
   animation: ih-fade-up 160ms ease;
 }
