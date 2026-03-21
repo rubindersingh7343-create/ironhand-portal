@@ -1236,6 +1236,42 @@ body:has(.portal-shell) {
   color: #f7f9ff !important;
 }
 
+/* Dark navy inputs/panels inside light cards need light ink (Scratchers, Upload Invoices, etc.). */
+.owner-portal-shell .ui-card :is(
+  .bg-\[\#111a32\],
+  .bg-\[\#0f1b3a\],
+  .bg-\[\#0f1a33\],
+  .bg-\[\#0b1429\]
+) {
+  color: rgba(247, 249, 255, 0.96) !important;
+}
+
+.owner-portal-shell .ui-card :is(
+  .bg-\[\#111a32\],
+  .bg-\[\#0f1b3a\],
+  .bg-\[\#0f1a33\],
+  .bg-\[\#0b1429\]
+) :is(
+  .text-white,
+  .text-slate-50,
+  .text-slate-100,
+  .text-slate-200,
+  .text-slate-300,
+  .text-slate-400,
+  .text-slate-500
+) {
+  color: rgba(247, 249, 255, 0.96) !important;
+}
+
+.owner-portal-shell .ui-card :is(
+  .bg-\[\#111a32\],
+  .bg-\[\#0f1b3a\],
+  .bg-\[\#0f1a33\],
+  .bg-\[\#0b1429\]
+) :is(.text-slate-400, .text-slate-500) {
+  color: rgba(226, 232, 240, 0.78) !important;
+}
+
 /* Allow profit/Net highlights to stay green inside owner portal cards. */
 .owner-portal-shell .ui-card .ui-ink-inverse .text-emerald-300,
 .owner-portal-shell .ui-card .ui-ink-inverse .text-emerald-200,
@@ -1795,13 +1831,13 @@ body:has(.owner-portal-shell) {
   background-color: var(--card-soft) !important;
 }
 
-.portal-shell .bg-\[\#0f1b3a\] {
+.portal-shell:not(.owner-portal-shell) .bg-\[\#0f1b3a\] {
   background-color: var(--card-soft) !important;
 }
 
-.portal-shell .bg-\[\#111a32\],
-.portal-shell .bg-\[\#0f1a33\],
-.portal-shell .bg-\[\#0b1429\] {
+.portal-shell:not(.owner-portal-shell) .bg-\[\#111a32\],
+.portal-shell:not(.owner-portal-shell) .bg-\[\#0f1a33\],
+.portal-shell:not(.owner-portal-shell) .bg-\[\#0b1429\] {
   background-color: var(--card-soft) !important;
 }
 
