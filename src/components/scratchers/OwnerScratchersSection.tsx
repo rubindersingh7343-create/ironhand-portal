@@ -437,7 +437,7 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
           </div>
           <button
             type="button"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/20 text-white transition hover:border-white/60"
+            className="ui-icon-btn"
             onClick={loadData}
             aria-label="Refresh scratcher data"
           >
@@ -457,7 +457,7 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
           <button
             type="button"
             onClick={() => setLogbookOpen(true)}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/20 text-white transition hover:border-white/60"
+            className="ui-icon-btn"
             aria-label="Open scratcher logbook"
           >
             <svg
@@ -475,7 +475,7 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
           </button>
           <button
             type="button"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/20 text-white transition hover:border-white/60"
+            className="ui-icon-btn ui-icon-btn--primary"
             onClick={() => setSetupOpen(true)}
             aria-label="Manage scratchers"
           >

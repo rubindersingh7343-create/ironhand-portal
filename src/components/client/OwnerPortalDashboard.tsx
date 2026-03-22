@@ -275,8 +275,8 @@ function OwnerPortalDashboardContent({
             <p className="text-xs text-slate-400">Owner</p>
           </div>
           <div className="flex items-center gap-2">
-            <SettingsButton user={user} className="ui-pill-primary" />
-            <LogoutButton className="ui-pill-primary" />
+            <SettingsButton user={user} className="ui-pill-secondary" />
+            <LogoutButton className="ui-pill-danger" />
           </div>
         </div>
       </div>
