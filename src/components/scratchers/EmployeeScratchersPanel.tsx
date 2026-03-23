@@ -159,6 +159,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   } | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanToast, setScanToast] = useState<string | null>(null);
+  const [backgroundReading, setBackgroundReading] = useState(false);
   const [manualMode, setManualMode] = useState(false);
   const [manualScanValue, setManualScanValue] = useState("");
   const [manualScanLine, setManualScanLine] = useState("");
@@ -176,6 +177,24 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   const manualModeRef = useRef(manualMode);
   const rapidModeRef = useRef(rapidMode);
   const capturedImageRef = useRef<string | null>(capturedImage);
+  const scannerOpenRef = useRef(scannerOpen);
+  const backgroundReadingRef = useRef(backgroundReading);
+  const keepCaptureLockRef = useRef(false);
+  const pendingCaptureSlotRef = useRef<{
+    slotId: string;
+    slotNumber: number;
+    pack: { id?: string; packCode?: string | null } | null;
+    fullImage: string;
+    cropImage: string;
+  } | null>(null);
+
+  useEffect(() => {
+    scannerOpenRef.current = scannerOpen;
+  }, [scannerOpen]);
+
+  useEffect(() => {
+    backgroundReadingRef.current = backgroundReading;
+  }, [backgroundReading]);
 
   const logScan = useCallback(
     (reason: string, nextState?: string) => {
@@ -705,14 +724,8 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     return { fullImage, cropImage };
   }, [computeRoiFromOverlay]);
 
-  const performOcr = useCallback(
-    async (
-      pack: { id?: string; packCode?: string | null } | null,
-      imageBase64: string,
-    ) => {
-      setScanStateLogged("PROCESSING", "ocr.start");
-      setScanError(null);
-
+  const runOcr = useCallback(
+    async (pack: { id?: string; packCode?: string | null } | null, imageBase64: string) => {
       // eslint-disable-next-line no-console
       console.log("OCR_STARTED");
       const expectedPackPrefix = getExpectedPackPrefix(pack);
@@ -722,18 +735,35 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       if (!parsed?.end) {
         // eslint-disable-next-line no-console
         console.log("OCR_FAILED");
-        setScanError("Unable to read ticket number. Try again, move closer, or use Manual mode.");
-        setScanStateLogged("ERROR", "ocr.no_match");
         return null;
       }
       const rawEnd = parsed.end;
       const lastDigits = rawEnd.padStart(3, "0");
       const fullLine = `${parsed.game}-${parsed.pack}-${parsed.roll}-${lastDigits}`;
-
       const prefixMismatch = Boolean(expectedPackPrefix && expectedPackPrefix !== parsed.prefix);
       return { fullLine, lastDigits, prefixMismatch };
     },
-    [getExpectedPackPrefix, setScanStateLogged],
+    [getExpectedPackPrefix],
+  );
+
+  const performOcr = useCallback(
+    async (
+      pack: { id?: string; packCode?: string | null } | null,
+      imageBase64: string,
+      options?: { suppressUi?: boolean },
+    ) => {
+      if (!options?.suppressUi) {
+        setScanStateLogged("PROCESSING", "ocr.start");
+        setScanError(null);
+      }
+      const result = await runOcr(pack, imageBase64);
+      if (!result && !options?.suppressUi) {
+        setScanError("Unable to read ticket number. Try again, move closer, or use Manual mode.");
+        setScanStateLogged("ERROR", "ocr.no_match");
+      }
+      return result;
+    },
+    [runOcr, setScanStateLogged],
   );
 
   const captureAndDetect = useCallback(async () => {
@@ -747,8 +777,11 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
       return;
     const slotEntry = scannableSlots.find((entry) => entry.slot.id === scannerSlotId);
     if (!slotEntry) return;
+    if (backgroundReadingRef.current) return;
     captureInFlightRef.current = true;
+    keepCaptureLockRef.current = false;
     try {
+      clearScanData("capture.tap_or_auto");
       setScanError(null);
       setScanStateLogged("CAPTURING", "capture.tap_or_auto");
       const images = captureFrame();
@@ -757,6 +790,73 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
         setScanStateLogged("ERROR", "capture.failed");
         return;
       }
+
+      const currentIndex = scannableSlots.findIndex((entry) => entry.slot.id === scannerSlotId);
+      const nextEntry =
+        rapidModeRef.current && currentIndex >= 0
+          ? scannableSlots
+              .slice(currentIndex + 1)
+              .find((entry) => !(endValues[entry.slot.id] ?? ""))
+          : null;
+
+      if (nextEntry) {
+        // Let the employee move to the next slot immediately while OCR runs in the background.
+        keepCaptureLockRef.current = true;
+        pendingCaptureSlotRef.current = {
+          slotId: scannerSlotId,
+          slotNumber: slotEntry.slot.slotNumber,
+          pack: slotEntry.pack,
+          fullImage: images.fullImage,
+          cropImage: images.cropImage,
+        };
+        setBackgroundReading(true);
+        showScanToast(`Captured • Slot ${nextEntry.slot.slotNumber} ready`);
+        setScannerSlotId(nextEntry.slot.id);
+        setScanStateLogged("PREVIEW", "capture.next.optimistic");
+
+        void (async () => {
+          const pending = pendingCaptureSlotRef.current;
+          if (!pending) return;
+          try {
+            const result = await performOcr(pending.pack, pending.cropImage, {
+              suppressUi: true,
+            });
+            if (!result) {
+              if (!scannerOpenRef.current) return;
+              setScannerSlotId(pending.slotId);
+              setScanError(
+                "Unable to read ticket number. Try again, move closer, or use Manual mode.",
+              );
+              setScanStateLogged("ERROR", "ocr.no_match_bg");
+              return;
+            }
+            setEndValue(pending.slotId, result.lastDigits);
+            setEndFullLine(pending.slotId, result.fullLine, result.prefixMismatch);
+            if (result.prefixMismatch) {
+              console.warn("scratcher prefix mismatch", {
+                slotId: pending.slotId,
+                fullLine: result.fullLine,
+              });
+            }
+            // eslint-disable-next-line no-console
+            console.log("OCR_SUCCESS_NEXT_SLOT");
+            showScanToast("Saved • Scan next slot");
+          } catch (error) {
+            console.error("ocr failed", error);
+            if (!scannerOpenRef.current) return;
+            setScannerSlotId(pending.slotId);
+            setScanError("Unable to read ticket number. Try again.");
+            setScanStateLogged("ERROR", "ocr.throw_bg");
+          } finally {
+            pendingCaptureSlotRef.current = null;
+            setBackgroundReading(false);
+            keepCaptureLockRef.current = false;
+            captureInFlightRef.current = false;
+          }
+        })();
+        return;
+      }
+
       try {
         // Freeze immediately and run OCR once on the still image.
         setCapturedImage(images.fullImage);
@@ -776,7 +876,6 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
           });
         }
 
-        const currentIndex = scannableSlots.findIndex((entry) => entry.slot.id === scannerSlotId);
         if (rapidModeRef.current && currentIndex >= 0) {
           const hasValue = (slotId: string) =>
             slotId === scannerSlotId ? result.lastDigits : endValues[slotId] ?? "";
@@ -808,7 +907,9 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
         setScanStateLogged("ERROR", "ocr.throw");
       }
     } finally {
-      captureInFlightRef.current = false;
+      if (!keepCaptureLockRef.current) {
+        captureInFlightRef.current = false;
+      }
     }
   }, [
     captureFrame,
@@ -816,6 +917,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     endValues,
     pauseCamera,
     performOcr,
+    rapidModeRef,
     scannerSlotId,
     scannableSlots,
     setEndFullLine,
@@ -850,6 +952,10 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     setManualMode(false);
     setManualScanValue("");
     setManualScanLine("");
+    pendingCaptureSlotRef.current = null;
+    keepCaptureLockRef.current = false;
+    setBackgroundReading(false);
+    captureInFlightRef.current = false;
     stopCamera();
   }, [clearScanData, setScanStateLogged, stopCamera]);
 
@@ -859,6 +965,10 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     setManualMode(false);
     setManualScanValue("");
     setManualScanLine("");
+    pendingCaptureSlotRef.current = null;
+    keepCaptureLockRef.current = false;
+    setBackgroundReading(false);
+    captureInFlightRef.current = false;
     await startCamera();
   }, [clearScanData, setScanStateLogged, startCamera]);
 
@@ -1302,9 +1412,21 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
               )}
             </div>
 
-            {scanState === "PREVIEW" && !manualMode && !scanToast && !scanError && (
+            {scanState === "PREVIEW" &&
+              !manualMode &&
+              !backgroundReading &&
+              !scanToast &&
+              !scanError && (
               <div className="scratcher-scan-status">Ready • Tap Capture</div>
             )}
+
+            {scanState === "PREVIEW" &&
+              !manualMode &&
+              backgroundReading &&
+              !scanToast &&
+              !scanError && (
+                <div className="scratcher-scan-status">Reading ticket…</div>
+              )}
 
             {(scanState === "CAPTURING" || scanState === "PROCESSING") &&
               !manualMode &&
@@ -1406,8 +1528,13 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
 
             {!manualMode && scanState === "PREVIEW" && (
               <div className="scratcher-scan-actions">
-                <button type="button" className="ui-button" onClick={captureAndDetect}>
-                  Capture
+                <button
+                  type="button"
+                  className="ui-button disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={captureAndDetect}
+                  disabled={backgroundReading}
+                >
+                  {backgroundReading ? "Reading…" : "Capture"}
                 </button>
                 <button
                   type="button"
