@@ -229,6 +229,77 @@ function OwnerPortalDashboardContent({
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const body = document.body;
+    const pager = document.getElementById("owner-portal-pager");
+    if (!pager) return;
+
+    const pages = Array.from(
+      pager.querySelectorAll<HTMLElement>(".owner-portal-page"),
+    );
+    if (!pages.length) return;
+
+    let activePage: HTMLElement | null = null;
+    let raf = 0;
+
+    const setScrolled = (value: boolean) => {
+      if (value) {
+        body.dataset.ownerScrolled = "true";
+      } else {
+        delete body.dataset.ownerScrolled;
+      }
+    };
+
+    const getActivePage = () => {
+      const width = pager.clientWidth || 1;
+      const index = Math.min(
+        pages.length - 1,
+        Math.max(0, Math.round(pager.scrollLeft / width)),
+      );
+      return pages[index] ?? null;
+    };
+
+    const compute = () => {
+      raf = 0;
+      const scrollTop = activePage?.scrollTop ?? 0;
+      setScrolled(scrollTop > 6);
+    };
+
+    const schedule = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(compute);
+    };
+
+    const attach = () => {
+      const next = getActivePage();
+      if (next === activePage) {
+        schedule();
+        return;
+      }
+      if (activePage) {
+        activePage.removeEventListener("scroll", schedule);
+      }
+      activePage = next;
+      if (activePage) {
+        activePage.addEventListener("scroll", schedule, { passive: true });
+      }
+      schedule();
+    };
+
+    pager.addEventListener("scroll", attach, { passive: true });
+    window.addEventListener("resize", attach);
+    attach();
+
+    return () => {
+      pager.removeEventListener("scroll", attach);
+      window.removeEventListener("resize", attach);
+      if (activePage) activePage.removeEventListener("scroll", schedule);
+      if (raf) window.cancelAnimationFrame(raf);
+      delete body.dataset.ownerScrolled;
+    };
+  }, []);
+
   const pages = useMemo(
     () => [
       {

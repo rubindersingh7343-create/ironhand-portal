@@ -1151,6 +1151,12 @@ body:has(.portal-shell) {
 .owner-portal-shell.portal-shell {
   padding-top: calc(env(safe-area-inset-top) + 78px) !important;
   --owner-shell-top: calc(env(safe-area-inset-top) + 78px);
+  transition: padding-top 160ms ease;
+}
+
+body[data-owner-scrolled="true"] .owner-portal-shell.portal-shell {
+  padding-top: calc(env(safe-area-inset-top) + 60px) !important;
+  --owner-shell-top: calc(env(safe-area-inset-top) + 60px);
 }
 
 .safe-area-top {
@@ -1702,6 +1708,7 @@ select.ui-field--slim {
   height: calc(100dvh - var(--owner-shell-top, 0px));
   column-gap: 16px;
   background: transparent;
+  transition: height 160ms ease;
 }
 
 #app-root .owner-portal-pager::-webkit-scrollbar {
