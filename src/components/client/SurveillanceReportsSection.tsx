@@ -5,6 +5,7 @@ import type { CombinedRecord, SessionUser } from "@/lib/types";
 import SurveillanceInvestigateModal from "@/components/client/SurveillanceInvestigateModal";
 import { useOwnerPortalStore } from "@/components/client/OwnerPortalStoreContext";
 import IHModal from "@/components/ui/IHModal";
+import { useRef } from "react";
 
 type StoreSummary = {
   storeId: string;
@@ -46,6 +47,259 @@ const buildAttachmentSrc = (path?: string) => {
   if (path.startsWith("http")) return path;
   return `/api/uploads/proxy?path=${encodeURIComponent(path)}`;
 };
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
+const touchDistance = (a: Touch, b: Touch) =>
+  Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+
+const touchCenter = (a: Touch, b: Touch) => ({
+  x: (a.clientX + b.clientX) / 2,
+  y: (a.clientY + b.clientY) / 2,
+});
+
+function ZoomableImage({
+  src,
+  alt,
+}: {
+  src: string;
+  alt: string;
+}) {
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+
+  const [fitSize, setFitSize] = useState<{ w: number; h: number } | null>(null);
+  const [zoomScale, setZoomScale] = useState(1);
+  const [translate, setTranslate] = useState({ x: 0, y: 0 });
+
+  const zoomScaleRef = useRef(1);
+  const translateRef = useRef({ x: 0, y: 0 });
+  const fitSizeRef = useRef<{ w: number; h: number } | null>(null);
+  const stageSizeRef = useRef<{ w: number; h: number } | null>(null);
+
+  useEffect(() => {
+    zoomScaleRef.current = zoomScale;
+  }, [zoomScale]);
+
+  useEffect(() => {
+    translateRef.current = translate;
+  }, [translate]);
+
+  useEffect(() => {
+    fitSizeRef.current = fitSize;
+  }, [fitSize]);
+
+  const recalcFit = useCallback(() => {
+    const stage = stageRef.current;
+    const img = imgRef.current;
+    if (!stage || !img) return;
+    const rect = stage.getBoundingClientRect();
+    const stageW = rect.width;
+    const stageH = rect.height;
+    if (!stageW || !stageH) return;
+    stageSizeRef.current = { w: stageW, h: stageH };
+    const naturalW = img.naturalWidth;
+    const naturalH = img.naturalHeight;
+    if (!naturalW || !naturalH) return;
+    const fit = Math.min(stageW / naturalW, stageH / naturalH);
+    const next = { w: naturalW * fit, h: naturalH * fit };
+    setFitSize(next);
+    // Reset zoom/pan whenever the fit box changes (rotation/orientation, etc.).
+    setZoomScale(1);
+    setTranslate({ x: 0, y: 0 });
+  }, []);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const observer =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => recalcFit())
+        : null;
+    observer?.observe(stage);
+    const onResize = () => recalcFit();
+    window.addEventListener("resize", onResize);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", onResize);
+    };
+  }, [recalcFit]);
+
+  // Reset when src changes.
+  useEffect(() => {
+    setFitSize(null);
+    setZoomScale(1);
+    setTranslate({ x: 0, y: 0 });
+  }, [src]);
+
+  const clampTranslate = useCallback((x: number, y: number, scale: number) => {
+    const stage = stageSizeRef.current;
+    const fit = fitSizeRef.current;
+    if (!stage || !fit) return { x: 0, y: 0 };
+    const scaledW = fit.w * scale;
+    const scaledH = fit.h * scale;
+    const maxX = Math.max(0, (scaledW - stage.w) / 2);
+    const maxY = Math.max(0, (scaledH - stage.h) / 2);
+    return { x: clamp(x, -maxX, maxX), y: clamp(y, -maxY, maxY) };
+  }, []);
+
+  const gestureRef = useRef<
+    | { type: "none" }
+    | {
+        type: "pan";
+        startX: number;
+        startY: number;
+        startTx: number;
+        startTy: number;
+      }
+    | {
+        type: "pinch";
+        startDist: number;
+        startScale: number;
+        startTx: number;
+        startTy: number;
+        pX: number;
+        pY: number;
+      }
+  >({ type: "none" });
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+
+    const onTouchStart = (event: TouchEvent) => {
+      if (!fitSizeRef.current) return;
+      if (event.touches.length === 2) {
+        event.preventDefault();
+        const [a, b] = [event.touches[0], event.touches[1]];
+        const dist = touchDistance(a, b);
+        const center = touchCenter(a, b);
+        const rect = stage.getBoundingClientRect();
+        const cx = center.x - rect.left - rect.width / 2;
+        const cy = center.y - rect.top - rect.height / 2;
+        const startScale = zoomScaleRef.current;
+        const startTx = translateRef.current.x;
+        const startTy = translateRef.current.y;
+        const pX = (cx - startTx) / startScale;
+        const pY = (cy - startTy) / startScale;
+        gestureRef.current = {
+          type: "pinch",
+          startDist: dist,
+          startScale,
+          startTx,
+          startTy,
+          pX,
+          pY,
+        };
+      } else if (event.touches.length === 1 && zoomScaleRef.current > 1) {
+        event.preventDefault();
+        const t = event.touches[0];
+        gestureRef.current = {
+          type: "pan",
+          startX: t.clientX,
+          startY: t.clientY,
+          startTx: translateRef.current.x,
+          startTy: translateRef.current.y,
+        };
+      }
+    };
+
+    const onTouchMove = (event: TouchEvent) => {
+      if (!fitSizeRef.current) return;
+      const gesture = gestureRef.current;
+      if (gesture.type === "pinch" && event.touches.length === 2) {
+        event.preventDefault();
+        const [a, b] = [event.touches[0], event.touches[1]];
+        const dist = touchDistance(a, b);
+        const center = touchCenter(a, b);
+        const rect = stage.getBoundingClientRect();
+        const cx = center.x - rect.left - rect.width / 2;
+        const cy = center.y - rect.top - rect.height / 2;
+
+        const rawScale = gesture.startScale * (dist / gesture.startDist);
+        const nextScale = clamp(rawScale, 1, 4);
+        const nextTx = cx - gesture.pX * nextScale;
+        const nextTy = cy - gesture.pY * nextScale;
+        const clamped = clampTranslate(nextTx, nextTy, nextScale);
+        setZoomScale(nextScale);
+        setTranslate(clamped);
+        return;
+      }
+      if (gesture.type === "pan" && event.touches.length === 1) {
+        event.preventDefault();
+        const t = event.touches[0];
+        const dx = t.clientX - gesture.startX;
+        const dy = t.clientY - gesture.startY;
+        const nextScale = zoomScaleRef.current;
+        const nextTx = gesture.startTx + dx;
+        const nextTy = gesture.startTy + dy;
+        const clamped = clampTranslate(nextTx, nextTy, nextScale);
+        setTranslate(clamped);
+      }
+    };
+
+    const onTouchEnd = (event: TouchEvent) => {
+      if (event.touches.length === 0) {
+        gestureRef.current = { type: "none" };
+        if (zoomScaleRef.current <= 1) {
+          setTranslate({ x: 0, y: 0 });
+        }
+        return;
+      }
+      if (event.touches.length === 1 && zoomScaleRef.current > 1) {
+        const t = event.touches[0];
+        gestureRef.current = {
+          type: "pan",
+          startX: t.clientX,
+          startY: t.clientY,
+          startTx: translateRef.current.x,
+          startTy: translateRef.current.y,
+        };
+        return;
+      }
+      gestureRef.current = { type: "none" };
+    };
+
+    stage.addEventListener("touchstart", onTouchStart, { passive: false });
+    stage.addEventListener("touchmove", onTouchMove, { passive: false });
+    stage.addEventListener("touchend", onTouchEnd);
+    stage.addEventListener("touchcancel", onTouchEnd);
+    return () => {
+      stage.removeEventListener("touchstart", onTouchStart as EventListener);
+      stage.removeEventListener("touchmove", onTouchMove as EventListener);
+      stage.removeEventListener("touchend", onTouchEnd as EventListener);
+      stage.removeEventListener("touchcancel", onTouchEnd as EventListener);
+    };
+  }, [clampTranslate]);
+
+  return (
+    <div
+      ref={stageRef}
+      className="relative flex max-h-[70vh] w-full items-center justify-center overflow-hidden rounded-xl bg-black/10"
+      style={{
+        touchAction: "none",
+      }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        ref={imgRef}
+        src={src}
+        alt={alt}
+        onLoad={() => recalcFit()}
+        className="select-none"
+        draggable={false}
+        style={{
+          width: fitSize?.w ? `${fitSize.w}px` : "auto",
+          height: fitSize?.h ? `${fitSize.h}px` : "auto",
+          transform: `translate3d(${translate.x}px, ${translate.y}px, 0) scale(${zoomScale})`,
+          transformOrigin: "center center",
+          willChange: "transform",
+        }}
+      />
+    </div>
+  );
+}
 
 type SurveillanceIncident = {
   id: string;
@@ -977,11 +1231,9 @@ export default function SurveillanceReportsSection({
                   src={buildAttachmentSrc(attachmentViewerFile.path)}
                 />
               ) : attachmentViewerFile.kind === "image" ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <ZoomableImage
                   src={buildAttachmentSrc(attachmentViewerFile.path)}
                   alt={attachmentViewerFile.originalName ?? "Attachment preview"}
-                  className="max-h-[68vh] w-full rounded-xl object-contain"
                 />
               ) : (
                 <iframe
