@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CombinedRecord, SessionUser } from "@/lib/types";
-import SurveillanceSummaryViewer from "@/components/client/SurveillanceSummaryViewer";
 import SurveillanceInvestigateModal from "@/components/client/SurveillanceInvestigateModal";
 import { useOwnerPortalStore } from "@/components/client/OwnerPortalStoreContext";
 
@@ -16,6 +15,36 @@ type StoreSummary = {
 type IncidentCategory = "critical" | "theft" | "incident";
 
 const incidentLabels: IncidentCategory[] = ["critical", "theft", "incident"];
+
+const formatTimestamp = (value: string) => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+};
+
+const formatBytes = (bytes?: number) => {
+  if (!bytes || Number.isNaN(bytes)) return "";
+  const units = ["B", "KB", "MB", "GB"];
+  let index = 0;
+  let value = bytes;
+  while (value >= 1024 && index < units.length - 1) {
+    value /= 1024;
+    index += 1;
+  }
+  return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
+};
+
+const buildAttachmentSrc = (path?: string) => {
+  if (!path) return "";
+  if (path.startsWith("http")) return path;
+  return `/api/uploads/proxy?path=${encodeURIComponent(path)}`;
+};
 
 type SurveillanceIncident = {
   id: string;
@@ -31,26 +60,26 @@ const statusStyles = {
 } as const;
 
 const categoryStyles: Record<IncidentCategory, string> = {
-  critical: "border-red-400/40 bg-red-500/15 text-red-200",
-  theft: "border-orange-400/40 bg-orange-500/15 text-orange-200",
-  incident: "border-blue-400/40 bg-blue-500/15 text-blue-200",
+  critical: "border-red-200 bg-red-50 text-red-800",
+  theft: "border-orange-200 bg-orange-50 text-orange-800",
+  incident: "border-blue-200 bg-blue-50 text-blue-800",
 };
 
 const gradePillClass = (grade?: string) => {
   const key = (grade ?? "").toUpperCase();
   if (key.startsWith("A")) {
-    return "border-emerald-400/40 bg-emerald-500/15 text-emerald-200";
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
   }
   if (key.startsWith("B")) {
-    return "border-lime-400/40 bg-lime-500/15 text-lime-200";
+    return "border-lime-200 bg-lime-50 text-lime-800";
   }
   if (key.startsWith("C")) {
-    return "border-amber-400/40 bg-amber-500/15 text-amber-200";
+    return "border-amber-200 bg-amber-50 text-amber-800";
   }
   if (key.startsWith("D") || key.startsWith("F")) {
-    return "border-red-400/40 bg-red-500/15 text-red-200";
+    return "border-red-200 bg-red-50 text-red-800";
   }
-  return "border-white/20 bg-white/5 text-slate-200";
+  return "border-slate-200 bg-white text-slate-700";
 };
 
 const gradeScale = [
@@ -106,10 +135,6 @@ export default function SurveillanceReportsSection({
   const [records, setRecords] = useState<CombinedRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
-  const [activeRecord, setActiveRecord] = useState<CombinedRecord | null>(null);
-  const [activeRecordMode, setActiveRecordMode] = useState<"routine" | "incident">(
-    "routine",
-  );
   const [activeInvestigate, setActiveInvestigate] = useState<CombinedRecord | null>(
     null,
   );
@@ -421,32 +446,47 @@ export default function SurveillanceReportsSection({
       .filter((entry) => incidentLabels.includes(entry.category));
   });
 
-  const recordForIncident = (
-    incident: (typeof incidents)[number],
-    mode: "review" | "investigate",
-  ) => {
-    const base = {
-      ...incident.record,
-      surveillanceLabel: incident.category,
-      attachments: [incident.file],
-    };
-    if (mode === "review") {
-      setActiveRecordMode("incident");
-      setActiveRecord(base);
-    } else {
-      setActiveInvestigate(base);
-    }
-  };
-
   const hasReports = recordsForDate.length > 0;
   const activeStoreName =
     storeOptions.find((store) => store.storeId === selectedStore)?.storeName ??
     `Store ${selectedStore}`;
 
+  const [selectedRoutineRecordId, setSelectedRoutineRecordId] = useState<string | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!routineEmployees.length) {
+      setSelectedRoutineRecordId(null);
+      return;
+    }
+    if (
+      selectedRoutineRecordId &&
+      routineEmployees.some((entry) => entry.record.id === selectedRoutineRecordId)
+    ) {
+      return;
+    }
+    setSelectedRoutineRecordId(routineEmployees[0]?.record.id ?? null);
+  }, [routineEmployees, selectedRoutineRecordId]);
+
+  const selectedRoutineEntry = useMemo(() => {
+    if (!selectedRoutineRecordId) return null;
+    return (
+      routineEmployees.find((entry) => entry.record.id === selectedRoutineRecordId) ??
+      null
+    );
+  }, [routineEmployees, selectedRoutineRecordId]);
+
+  const routineSummaryLines = useMemo(() => {
+    const record = selectedRoutineEntry?.record;
+    const summary = record?.surveillanceSummary ?? record?.notes ?? "";
+    return summary ? summary.split("\n") : [];
+  }, [selectedRoutineEntry]);
+
   return (
-    <section className="ui-card text-white">
+    <section className="ui-card">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-sm uppercase tracking-[0.3em] text-slate-300">
+        <h2 className="text-sm uppercase tracking-[0.3em] text-slate-700">
           Surveillance
         </h2>
       </div>
@@ -473,7 +513,7 @@ export default function SurveillanceReportsSection({
                 );
               })}
             </select>
-            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-300">
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">
               ▾
             </span>
             {unseenCountForSelectedDate > 0 ? (
@@ -523,217 +563,348 @@ export default function SurveillanceReportsSection({
       </div>
 
       {showUpgrade ? (
-        <div className="mt-6 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-4 text-sm text-amber-100">
+        <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
           Upgrade to premium to access this feature.
         </div>
       ) : (
         <div className="mt-6">
-          <div className="scroll-clip rounded-2xl border border-white/10 bg-[#0f1a33]">
-            <div className="space-y-3 px-4 py-3 md:px-5">
+          <div className="space-y-4">
               {loading ? (
                 <div className="space-y-4">
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-[0_2px_10px_rgba(15,23,42,0.06)]">
                     <div className="ui-skeleton h-4 w-44" />
                     <div className="mt-2 ui-skeleton h-3 w-32" />
                   </div>
                 <div className="space-y-2">
                   <div className="ui-skeleton h-3 w-20" />
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-[0_2px_10px_rgba(15,23,42,0.06)]">
                     <div className="ui-skeleton h-4 w-40" />
                     <div className="mt-2 ui-skeleton h-3 w-28" />
                   </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-[0_2px_10px_rgba(15,23,42,0.06)]">
                     <div className="ui-skeleton h-4 w-40" />
                     <div className="mt-2 ui-skeleton h-3 w-28" />
                   </div>
                 </div>
               </div>
             ) : !hasReports ? (
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-slate-600">
                 {message ?? "No uploads today."}
               </p>
             ) : (
               <>
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 md:px-4 md:py-3">
-                  <div className="mb-2">
-                    <p className="text-sm font-semibold leading-snug text-white">
-                      Routine Surveillance Report
+                <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
+                      Summary
                     </p>
-                  </div>
-                  {routineEmployees.length ? (
-                    <div className="space-y-2">
-                      {routineEmployees.map((entry) => (
-                        <div
-                          key={entry.name}
-                          className="flex flex-wrap items-center justify-between gap-2"
+                    {selectedRoutineEntry?.record ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          markSurveillanceSeen(selectedRoutineEntry.record);
+                          setActiveInvestigate(selectedRoutineEntry.record);
+                        }}
+                        className="ui-icon-btn ui-icon-btn--primary"
+                        aria-label="Investigate"
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          className="h-4 w-4"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
                         >
-                          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-sm text-slate-100">
-                            <span className="truncate font-medium">{entry.name}</span>
-                            {unseenSet.has(entry.record.id) ? (
-                              <span className="h-2 w-2 rounded-full bg-blue-400" />
-                            ) : null}
-                            {entry.grade && (
-                              <span
-                                className={`surv-chip rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${gradePillClass(
-                                  entry.grade,
-                                )}`}
-                              >
-                                {entry.grade}
-                              </span>
-                            )}
-                            {entry.avgGrade && (
-                              <span className="flex items-center gap-1.5">
-                                <span className="text-[11px] font-medium text-slate-300">
-                                  Avg
-                                </span>
+                          <circle cx="11" cy="11" r="6" />
+                          <path d="m20 20-3.5-3.5" />
+                        </svg>
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {routineEmployees.length ? (
+                    <>
+                      <div className="flex flex-wrap gap-2">
+                        {routineEmployees.map((entry) => {
+                          const isActive = entry.record.id === selectedRoutineRecordId;
+                          return (
+                            <button
+                              key={entry.record.id}
+                              type="button"
+                              onClick={() => {
+                                markSurveillanceSeen(entry.record);
+                                setSelectedRoutineRecordId(entry.record.id);
+                              }}
+                              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-left text-xs font-semibold transition ${
+                                isActive
+                                  ? "border-blue-200 bg-blue-50 text-blue-900"
+                                  : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50"
+                              }`}
+                            >
+                              <span className="max-w-[14ch] truncate">{entry.name}</span>
+                              {unseenSet.has(entry.record.id) ? (
+                                <span className="h-2 w-2 rounded-full bg-blue-400" />
+                              ) : null}
+                              {entry.grade ? (
                                 <span
-                                  className={`surv-chip rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${gradePillClass(
-                                    entry.avgGrade,
+                                  className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${gradePillClass(
+                                    entry.grade,
                                   )}`}
                                 >
-                                  {entry.avgGrade}
+                                  {entry.grade}
                                 </span>
-                              </span>
-                            )}
-                          </div>
-                          <div className="surv-actions-buttons">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                markSurveillanceSeen(entry.record);
-                                setActiveRecordMode("routine");
-                                setActiveRecord(entry.record);
-                              }}
-                              className="surv-btn rounded-full border border-white/20 text-slate-200 transition hover:border-white/40"
-                            >
-                              View summary
+                              ) : null}
+                              {entry.avgGrade ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                                    Avg
+                                  </span>
+                                  <span
+                                    className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${gradePillClass(
+                                      entry.avgGrade,
+                                    )}`}
+                                  >
+                                    {entry.avgGrade}
+                                  </span>
+                                </span>
+                              ) : null}
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                markSurveillanceSeen(entry.record);
-                                setActiveInvestigate(entry.record);
-                              }}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/20 text-slate-200 transition hover:border-white/40"
-                              aria-label="Investigate"
-                            >
-                              <svg
-                                viewBox="0 0 24 24"
-                                className="h-4 w-4"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="1.6"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              >
-                                <circle cx="11" cy="11" r="6" />
-                                <path d="m20 20-3.5-3.5" />
-                              </svg>
-                            </button>
-                          </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="mt-4 rounded-2xl border border-slate-200 bg-[rgba(17,24,39,0.02)] px-4 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
+                          Routine Surveillance Report
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {activeStoreName} · {selectedStore} · {formatTimestamp(
+                            selectedRoutineEntry?.record?.createdAt ?? selectedDate,
+                          )}
+                        </p>
+
+                        <div className="mt-3 space-y-2 text-sm text-slate-800">
+                          {routineSummaryLines.length ? (
+                            routineSummaryLines.map((line, index) => (
+                              <p key={`${line}-${index}`} className={index ? "mt-2" : ""}>
+                                {line || "\u00a0"}
+                              </p>
+                            ))
+                          ) : (
+                            <p className="text-slate-600">No summary provided.</p>
+                          )}
                         </div>
-                      ))}
-                    </div>
+
+                        {(selectedRoutineEntry?.record?.surveillanceGrade ||
+                          selectedRoutineEntry?.record?.surveillanceGradeReason) && (
+                          <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
+                              Behavior Grade
+                            </p>
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              {selectedRoutineEntry?.record?.surveillanceGrade ? (
+                                <span
+                                  className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${gradePillClass(
+                                    selectedRoutineEntry.record.surveillanceGrade,
+                                  )}`}
+                                >
+                                  {selectedRoutineEntry.record.surveillanceGrade}
+                                </span>
+                              ) : null}
+                              {selectedRoutineEntry?.record?.surveillanceGradeReason ? (
+                                <span className="text-sm text-slate-700">
+                                  {selectedRoutineEntry.record.surveillanceGradeReason}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        )}
+
+                        {selectedRoutineEntry?.record?.attachments?.length ? (
+                          <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
+                              Attachments
+                            </p>
+                            <div className="mt-2 space-y-2">
+                              {(selectedRoutineEntry.record.attachments ?? []).map((file) => {
+                                const src = buildAttachmentSrc(file.path);
+                                return (
+                                  <div
+                                    key={file.id}
+                                    className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate font-semibold text-slate-900">
+                                        {file.originalName ?? "Attachment"}
+                                      </p>
+                                      <p className="mt-0.5 text-xs text-slate-500">
+                                        {(file.kind ?? "file").toUpperCase()}{" "}
+                                        {formatBytes(file.size)}
+                                      </p>
+                                    </div>
+                                    {src ? (
+                                      <a
+                                        className="ui-pill-secondary inline-flex items-center justify-center px-3 py-1 text-xs"
+                                        href={src}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                      >
+                                        Open
+                                      </a>
+                                    ) : (
+                                      <span className="text-xs text-slate-500">No file</span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    </>
                   ) : (
-                    <p className="text-sm text-slate-400">
+                    <p className="text-sm text-slate-600">
                       No routine reports submitted for this date yet.
                     </p>
                   )}
                 </div>
 
                 {incidents.length ? (
-                  <div className="space-y-3">
-                    <p className="text-xs uppercase tracking-[0.24em] text-slate-300">
-                      Incidents
-                    </p>
-                    <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
-                      {incidents.map((incident, index) => (
-                        <div
-                          key={incident.id}
-                          className={`flex items-center justify-between gap-3 px-3 py-2 md:px-4 ${
-                            index === 0 ? "" : "border-t border-white/10"
-                          }`}
-                        >
-                          <div className="surv-incident-left flex min-w-0 flex-1 items-center gap-2 text-sm text-slate-200">
-                            <span
-                              className={`surv-chip rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${categoryStyles[incident.category]}`}
-                            >
-                              {incident.category}
-                            </span>
-                            {unseenSet.has(incident.record.id) ? (
-                              <span className="h-2 w-2 rounded-full bg-blue-400" />
-                            ) : null}
-                          </div>
-                          <div className="surv-actions-buttons">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                markSurveillanceSeen(incident.record);
-                                recordForIncident(incident, "review");
-                              }}
-                              className="surv-btn rounded-full border border-white/20 text-slate-200 transition hover:border-white/40"
-                            >
-                              Review
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                markSurveillanceSeen(incident.record);
-                                recordForIncident(incident, "investigate");
-                              }}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/20 text-slate-200 transition hover:border-white/40"
-                              aria-label="Investigate"
-                            >
-                              <svg
-                                viewBox="0 0 24 24"
-                                className="h-4 w-4"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="1.6"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
+                  <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
+                        Incidents
+                      </p>
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                        {incidents.length}
+                      </span>
+                    </div>
+
+                    <div className="space-y-3">
+                      {incidents.map((incident) => {
+                        const src = buildAttachmentSrc(incident.file.path);
+                        const headline =
+                          incident.file.summary ??
+                          incident.record.surveillanceSummary ??
+                          incident.record.notes ??
+                          "";
+                        const detailsLines = headline ? headline.split("\n") : [];
+                        return (
+                          <div
+                            key={incident.id}
+                            className="rounded-2xl border border-slate-200 bg-[rgba(17,24,39,0.02)] px-4 py-3"
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span
+                                    className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${categoryStyles[incident.category]}`}
+                                  >
+                                    {incident.category}
+                                  </span>
+                                  {unseenSet.has(incident.record.id) ? (
+                                    <span className="h-2 w-2 rounded-full bg-blue-400" />
+                                  ) : null}
+                                  <span className="text-xs text-slate-500">
+                                    {incident.timestamp}
+                                  </span>
+                                </div>
+                                {incident.record.employeeName ? (
+                                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                                    {incident.record.employeeName}
+                                  </p>
+                                ) : null}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  markSurveillanceSeen(incident.record);
+                                  setActiveInvestigate({
+                                    ...incident.record,
+                                    surveillanceLabel: incident.category,
+                                    attachments: [incident.file],
+                                  });
+                                }}
+                                className="ui-icon-btn ui-icon-btn--primary"
+                                aria-label="Investigate"
                               >
-                                <circle cx="11" cy="11" r="6" />
-                                <path d="m20 20-3.5-3.5" />
-                              </svg>
-                            </button>
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  className="h-4 w-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="1.6"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <circle cx="11" cy="11" r="6" />
+                                  <path d="m20 20-3.5-3.5" />
+                                </svg>
+                              </button>
+                            </div>
+
+                            {detailsLines.length ? (
+                              <div className="mt-3 space-y-2 text-sm text-slate-800">
+                                {detailsLines.map((line, index) => (
+                                  <p key={`${incident.id}-line-${index}`}>
+                                    {line || "\u00a0"}
+                                  </p>
+                                ))}
+                              </div>
+                            ) : null}
+
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate font-semibold text-slate-900">
+                                  {incident.file.originalName ?? "Attachment"}
+                                </p>
+                                <p className="mt-0.5 text-xs text-slate-500">
+                                  {(incident.file.kind ?? "file").toUpperCase()}{" "}
+                                  {formatBytes(incident.file.size)}
+                                </p>
+                              </div>
+                              {src ? (
+                                <a
+                                  className="ui-pill-secondary inline-flex items-center justify-center px-3 py-1 text-xs"
+                                  href={src}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  Open
+                                </a>
+                              ) : (
+                                <span className="text-xs text-slate-500">No file</span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 ) : (
-                  <p className="text-sm text-slate-400">
+                  <div className="rounded-3xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
                     No incidents reported for this date.
-                  </p>
+                  </div>
                 )}
               </>
               )}
-            </div>
           </div>
         </div>
       )}
 
-      {activeRecord && (
-        <SurveillanceSummaryViewer
-          report={activeRecord}
-          storeName={activeStoreName}
-          mode={activeRecordMode}
-          onClose={() => setActiveRecord(null)}
-          onInvestigate={() => {
-            setActiveRecord(null);
-            setActiveInvestigate(activeRecord);
-          }}
-        />
-      )}
       {activeInvestigate && (
         <SurveillanceInvestigateModal
           report={activeInvestigate}
           storeName={activeStoreName}
           hasInvestigationAPI={hasSurveillanceInvestigationAPI}
           onPreview={() => {
-            setActiveInvestigate(null);
-            setActiveRecord(activeInvestigate);
+            const file = activeInvestigate.attachments?.[0];
+            const src = buildAttachmentSrc(file?.path);
+            if (src && typeof window !== "undefined") {
+              window.open(src, "_blank", "noopener,noreferrer");
+            }
           }}
           onClose={() => setActiveInvestigate(null)}
         />
