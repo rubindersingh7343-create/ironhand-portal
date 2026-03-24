@@ -556,27 +556,27 @@ body[data-top-nav="true"] .scroll-top-bar__nav {
 
 .owner-bottom-bar__label--ai {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: repeat(5, 1fr);
   align-items: center;
-  gap: 10px;
+  justify-items: center;
+  gap: 0;
+  overflow: visible;
   /* Match iOS "native" bottom bars (YouTube-style): short bar + safe area only. */
   height: calc(48px + env(safe-area-inset-bottom));
-  padding: 6px 12px env(safe-area-inset-bottom);
+  padding: 6px 18px env(safe-area-inset-bottom);
 }
 
 .owner-bottom-bar__slot {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  display: contents;
 }
 
 .owner-bottom-bar__slot--right {
-  justify-content: flex-end;
+  display: contents;
 }
 
 .owner-bottom-bar__ai {
   display: grid;
-  grid-template-rows: 34px 12px;
+  grid-template-rows: 52px 12px;
   align-items: center;
   justify-items: center;
   gap: 4px;
@@ -586,7 +586,11 @@ body[data-top-nav="true"] .scroll-top-bar__nav {
   font-size: 8px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  height: 48px;
+  height: 72px;
+  align-self: end;
+  transform: translateY(-16px);
+  position: relative;
+  z-index: 1;
   padding: 0;
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
@@ -602,16 +606,18 @@ body[data-top-nav="true"] .scroll-top-bar__nav {
 }
 
 .owner-bottom-bar__ai-core {
-  width: 34px;
-  height: 34px;
+  width: 52px;
+  height: 52px;
   border-radius: 999px;
-  border: 1px solid rgba(34, 58, 112, 0.22);
+  border: 3px solid rgba(255, 255, 255, 0.95);
   background: var(--ai-surface-grad);
+  color: rgba(255, 255, 255, 0.96);
   display: grid;
   place-items: center;
   box-shadow:
-    0 10px 22px rgba(15, 23, 42, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    0 16px 30px rgba(15, 23, 42, 0.18),
+    0 6px 14px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
@@ -620,8 +626,8 @@ body[data-top-nav="true"] .scroll-top-bar__nav {
 }
 
 .owner-bottom-bar__ai-core svg {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
 }
 
 .owner-bottom-bar__icon svg,
@@ -632,19 +638,19 @@ body[data-top-nav="true"] .scroll-top-bar__nav {
 
 
 .owner-bottom-bar__ai[data-state="connected"] .owner-bottom-bar__ai-core {
-  border-color: rgba(34, 58, 112, 0.35);
+  border-color: rgba(255, 255, 255, 0.95);
   box-shadow:
-    0 10px 22px rgba(15, 23, 42, 0.16),
+    0 16px 30px rgba(15, 23, 42, 0.2),
     0 0 14px rgba(34, 58, 112, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    inset 0 1px 0 rgba(255, 255, 255, 0.26);
 }
 
 .owner-bottom-bar__ai[data-listening="true"] .owner-bottom-bar__ai-core {
-  border-color: rgba(34, 58, 112, 0.45);
+  border-color: rgba(255, 255, 255, 0.95);
   box-shadow:
-    0 10px 22px rgba(15, 23, 42, 0.18),
+    0 16px 30px rgba(15, 23, 42, 0.22),
     0 0 18px rgba(34, 58, 112, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    inset 0 1px 0 rgba(255, 255, 255, 0.26);
 }
 
 .owner-bottom-bar__ai-label {
