@@ -8,7 +8,7 @@
   --card-strong: #ffffff;
   --card-soft: #f7f7f5;
   --card-light: rgba(17, 24, 39, 0.03);
-  --nav-surface: rgba(245, 242, 235, 0.9);
+  --nav-surface: rgba(255, 255, 255, 0.82);
   --text-primary: #111827;
   --text-muted: #6b7280;
   --text-on-card: #111827;
@@ -48,9 +48,9 @@ body {
   min-height: 100dvh;
   background-color: var(--background);
   background-image:
-    radial-gradient(circle at 20% 0%, rgba(34, 58, 112, 0.09), transparent 52%),
-    radial-gradient(circle at 85% 18%, rgba(17, 24, 39, 0.05), transparent 54%),
-    linear-gradient(180deg, #f5f2eb 0%, #f3f4f6 70%, #f2f4f7 100%);
+    radial-gradient(circle at 20% 0%, rgba(34, 58, 112, 0.07), transparent 56%),
+    radial-gradient(circle at 85% 18%, rgba(17, 24, 39, 0.04), transparent 58%),
+    linear-gradient(180deg, var(--background) 0%, var(--background) 100%);
   background-attachment: scroll;
   color: var(--text-primary);
   font-family: var(--font-geist-sans), system-ui, -apple-system,
@@ -378,7 +378,8 @@ body.ui-modal-open {
   height: calc(env(safe-area-inset-top) + 56px);
   padding: 0;
   background: var(--nav-surface);
-  border-bottom: none;
+  border-bottom: 1px solid rgba(17, 24, 39, 0.06);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
   backdrop-filter: blur(14px) saturate(120%);
   z-index: 50;
   transition: none;
