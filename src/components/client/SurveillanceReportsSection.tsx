@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CombinedRecord, SessionUser } from "@/lib/types";
 import SurveillanceInvestigateModal from "@/components/client/SurveillanceInvestigateModal";
 import { useOwnerPortalStore } from "@/components/client/OwnerPortalStoreContext";
+import IHModal from "@/components/ui/IHModal";
 
 type StoreSummary = {
   storeId: string;
@@ -451,6 +452,19 @@ export default function SurveillanceReportsSection({
     storeOptions.find((store) => store.storeId === selectedStore)?.storeName ??
     `Store ${selectedStore}`;
 
+  const [attachmentViewerOpen, setAttachmentViewerOpen] = useState(false);
+  const [attachmentViewerFile, setAttachmentViewerFile] = useState<
+    CombinedRecord["attachments"][number] | null
+  >(null);
+
+  const openAttachmentViewer = (
+    file?: CombinedRecord["attachments"][number] | null,
+  ) => {
+    if (!file) return;
+    setAttachmentViewerFile(file);
+    setAttachmentViewerOpen(true);
+  };
+
   const [selectedRoutineRecordId, setSelectedRoutineRecordId] = useState<string | null>(
     null,
   );
@@ -745,14 +759,13 @@ export default function SurveillanceReportsSection({
                                       </p>
                                     </div>
                                     {src ? (
-                                      <a
+                                      <button
+                                        type="button"
                                         className="ui-pill-secondary inline-flex items-center justify-center px-3 py-1 text-xs"
-                                        href={src}
-                                        target="_blank"
-                                        rel="noreferrer"
+                                        onClick={() => openAttachmentViewer(file)}
                                       >
                                         Open
-                                      </a>
+                                      </button>
                                     ) : (
                                       <span className="text-xs text-slate-500">No file</span>
                                     )}
@@ -866,14 +879,13 @@ export default function SurveillanceReportsSection({
                                 </p>
                               </div>
                               {src ? (
-                                <a
+                                <button
+                                  type="button"
                                   className="ui-pill-secondary inline-flex items-center justify-center px-3 py-1 text-xs"
-                                  href={src}
-                                  target="_blank"
-                                  rel="noreferrer"
+                                  onClick={() => openAttachmentViewer(incident.file)}
                                 >
                                   Open
-                                </a>
+                                </button>
                               ) : (
                                 <span className="text-xs text-slate-500">No file</span>
                               )}
@@ -901,14 +913,87 @@ export default function SurveillanceReportsSection({
           hasInvestigationAPI={hasSurveillanceInvestigationAPI}
           onPreview={() => {
             const file = activeInvestigate.attachments?.[0];
-            const src = buildAttachmentSrc(file?.path);
-            if (src && typeof window !== "undefined") {
-              window.open(src, "_blank", "noopener,noreferrer");
-            }
+            openAttachmentViewer(file);
           }}
           onClose={() => setActiveInvestigate(null)}
         />
       )}
+
+      <IHModal
+        isOpen={attachmentViewerOpen}
+        onClose={() => setAttachmentViewerOpen(false)}
+        allowOutsideClose
+        panelClassName="media-modal max-w-6xl"
+      >
+        <div className="media-shell flex max-h-[82vh] flex-col overflow-hidden">
+          <div className="media-header border-b border-white/10 px-6 py-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-xs uppercase tracking-[0.26em] text-slate-300">
+                  Attachment
+                </p>
+                <h2 className="mt-2 truncate text-lg font-semibold text-white">
+                  {attachmentViewerFile?.originalName ?? "Viewer"}
+                </h2>
+                <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-300">
+                  {attachmentViewerFile?.kind ? (
+                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-slate-200">
+                      {attachmentViewerFile.kind.toUpperCase()}
+                    </span>
+                  ) : null}
+                  {formatBytes(attachmentViewerFile?.size) ? (
+                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-slate-200">
+                      {formatBytes(attachmentViewerFile?.size)}
+                    </span>
+                  ) : null}
+                </p>
+              </div>
+
+              {attachmentViewerFile?.path ? (
+                <a
+                  className="media-chip"
+                  href={buildAttachmentSrc(attachmentViewerFile.path)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open in new tab
+                </a>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+            <div className="media-stage flex max-h-[70vh] items-center justify-center p-2">
+              {!attachmentViewerFile?.path ? (
+                <div className="px-4 py-10 text-sm text-slate-300">
+                  No attachment selected.
+                </div>
+              ) : attachmentViewerFile.kind === "video" ? (
+                <video
+                  controls
+                  playsInline
+                  autoPlay
+                  className="max-h-[68vh] w-full rounded-xl bg-black object-contain"
+                  src={buildAttachmentSrc(attachmentViewerFile.path)}
+                />
+              ) : attachmentViewerFile.kind === "image" ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={buildAttachmentSrc(attachmentViewerFile.path)}
+                  alt={attachmentViewerFile.originalName ?? "Attachment preview"}
+                  className="max-h-[68vh] w-full rounded-xl object-contain"
+                />
+              ) : (
+                <iframe
+                  src={buildAttachmentSrc(attachmentViewerFile.path)}
+                  title={attachmentViewerFile.originalName ?? "Attachment preview"}
+                  className="h-[68vh] w-full rounded-xl bg-white"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      </IHModal>
     </section>
   );
 }
