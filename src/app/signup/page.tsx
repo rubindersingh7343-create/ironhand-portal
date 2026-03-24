@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 export default function SignupPage() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,rgba(34,58,112,0.12),transparent_58%),linear-gradient(180deg,#f5f2eb_0%,#f3f4f6_70%,#f2f4f7_100%)] px-4 py-16 text-slate-900">
+    <div className="flex min-h-screen items-center justify-center px-4 py-16 text-slate-100">
       <div className="w-full max-w-4xl space-y-8 rounded-[32px] border border-black/5 bg-white/80 px-8 py-10 shadow-[0_8px_24px_rgba(15,23,42,0.08)] backdrop-blur">
         <div className="space-y-2 text-center">
           <p className="text-xs uppercase tracking-[0.3em] text-slate-600">

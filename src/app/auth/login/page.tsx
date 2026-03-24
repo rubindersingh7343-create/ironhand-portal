@@ -30,7 +30,7 @@ export default async function LoginPage({
   const externalLoginUrl = `https://ironhand.net/auth/login?redirect=${encodeURIComponent(appCallback)}`;
 
   return (
-    <div className="login-lock flex items-center justify-center bg-[radial-gradient(circle_at_top,rgba(34,58,112,0.12),transparent_58%),linear-gradient(180deg,#f5f2eb_0%,#f3f4f6_70%,#f2f4f7_100%)] px-4 py-12 text-slate-900">
+    <div className="login-lock flex items-center justify-center px-4 py-12 text-slate-100">
       <div className="w-full max-w-5xl space-y-6">
         <div className="flex justify-center">
           <Image
