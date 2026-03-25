@@ -303,25 +303,25 @@ function OwnerPortalDashboardContent({
   const pages = useMemo(
     () => [
       {
+        id: "owner-surveillance-page",
+        label: "Surveillance",
+        badgeCounts: navBadges.surveillance,
+      },
+      {
         id: "owner-shift-reports",
         label: "Shift + Reports",
         badgeCounts: navBadges.reports,
       },
       {
-        id: "owner-surveillance-page",
-        label: "Surveillance",
-        badgeCounts: navBadges.surveillance,
-      },
-      { id: "owner-scratchers-page", label: "Scratchers" },
-      {
         id: "owner-invoices-page",
         label: "Invoices",
         badgeCounts: navBadges.invoices,
       },
+      { id: "owner-scratchers-page", label: "Scratchers" },
+      { id: "owner-hours-page", label: "Hours" },
       { id: "owner-inventory-page", label: "Inventory" },
       { id: "owner-invoice-upload-page", label: "Upload" },
       { id: "owner-orders-page", label: "Orders", badgeCounts: navBadges.orders },
-      { id: "owner-hours-page", label: "Hours" },
       { id: "owner-cases-page", label: "Cases" },
       { id: "owner-advanced-page", label: "Advanced" },
     ],
@@ -368,6 +368,15 @@ function OwnerPortalDashboardContent({
         role="region"
         aria-label="Owner portal pages"
       >
+        <section className="owner-portal-page" id="owner-surveillance-page">
+          <div className="owner-portal-page__content space-y-5 sm:space-y-6">
+            {renderOwnerHeader()}
+            <div className="owner-portal-section" id="owner-surveillance">
+              <SurveillanceReportsSection user={user} />
+            </div>
+          </div>
+        </section>
+
         <section className="owner-portal-page" id="owner-shift-reports">
           <div className="owner-portal-page__content space-y-4 sm:space-y-5">
             {renderOwnerHeader()}
@@ -415,11 +424,11 @@ function OwnerPortalDashboardContent({
           </div>
         </section>
 
-        <section className="owner-portal-page" id="owner-surveillance-page">
+        <section className="owner-portal-page" id="owner-invoices-page">
           <div className="owner-portal-page__content space-y-5 sm:space-y-6">
             {renderOwnerHeader()}
-            <div className="owner-portal-section" id="owner-surveillance">
-              <SurveillanceReportsSection user={user} />
+            <div className="owner-portal-section" id="owner-invoices">
+              <OwnerInvoicesSection user={user} />
             </div>
           </div>
         </section>
@@ -433,11 +442,11 @@ function OwnerPortalDashboardContent({
           </div>
         </section>
 
-        <section className="owner-portal-page" id="owner-invoices-page">
+        <section className="owner-portal-page" id="owner-hours-page">
           <div className="owner-portal-page__content space-y-5 sm:space-y-6">
             {renderOwnerHeader()}
-            <div className="owner-portal-section" id="owner-invoices">
-              <OwnerInvoicesSection user={user} />
+            <div className="owner-portal-section" id="owner-hours">
+              <OwnerHoursSection user={user} />
             </div>
           </div>
         </section>
@@ -465,15 +474,6 @@ function OwnerPortalDashboardContent({
             {renderOwnerHeader()}
             <div className="owner-portal-section" id="owner-orders">
               <WeeklyOrdersSection user={user} />
-            </div>
-          </div>
-        </section>
-
-        <section className="owner-portal-page" id="owner-hours-page">
-          <div className="owner-portal-page__content space-y-5 sm:space-y-6">
-            {renderOwnerHeader()}
-            <div className="owner-portal-section" id="owner-hours">
-              <OwnerHoursSection user={user} />
             </div>
           </div>
         </section>
