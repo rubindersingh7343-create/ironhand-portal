@@ -320,7 +320,6 @@ function OwnerPortalDashboardContent({
       { id: "owner-scratchers-page", label: "Scratchers" },
       { id: "owner-hours-page", label: "Hours" },
       { id: "owner-inventory-page", label: "Inventory" },
-      { id: "owner-invoice-upload-page", label: "Upload" },
       { id: "owner-orders-page", label: "Orders", badgeCounts: navBadges.orders },
       { id: "owner-cases-page", label: "Cases" },
       { id: "owner-advanced-page", label: "Advanced" },
@@ -430,6 +429,9 @@ function OwnerPortalDashboardContent({
             <div className="owner-portal-section" id="owner-invoices">
               <OwnerInvoicesSection user={user} />
             </div>
+            <div className="owner-portal-section" id="owner-invoice-upload">
+              <OwnerInvoiceUploadSection user={user} />
+            </div>
           </div>
         </section>
 
@@ -456,15 +458,6 @@ function OwnerPortalDashboardContent({
             {renderOwnerHeader()}
             <div className="owner-portal-section" id="owner-inventory">
               <OwnerInventorySection />
-            </div>
-          </div>
-        </section>
-
-        <section className="owner-portal-page" id="owner-invoice-upload-page">
-          <div className="owner-portal-page__content space-y-5 sm:space-y-6">
-            {renderOwnerHeader()}
-            <div className="owner-portal-section" id="owner-invoice-upload">
-              <OwnerInvoiceUploadSection user={user} />
             </div>
           </div>
         </section>
