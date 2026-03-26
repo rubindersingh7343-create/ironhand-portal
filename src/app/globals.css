@@ -564,8 +564,8 @@ body[data-top-nav="true"] .scroll-top-bar__nav {
   gap: 0;
   overflow: visible;
   /* Match iOS "native" bottom bars (YouTube-style): short bar + safe area only. */
-  height: calc(48px + env(safe-area-inset-bottom));
-  padding: 6px 18px env(safe-area-inset-bottom);
+  height: calc(56px + env(safe-area-inset-bottom));
+  padding: 6px 18px calc(16px + env(safe-area-inset-bottom));
 }
 
 .owner-bottom-bar__slot {
