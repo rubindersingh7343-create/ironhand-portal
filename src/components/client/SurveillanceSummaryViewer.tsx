@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import IHModal from "@/components/ui/IHModal";
-import type { CombinedRecord } from "@/lib/types";
+import type { CombinedRecord, StoredFile } from "@/lib/types";
 
 type Props = {
   report: CombinedRecord;
@@ -43,6 +43,52 @@ const buildAttachmentSrc = (path?: string) => {
 };
 
 const isPreviewable = (kind?: string) => kind === "image" || kind === "video";
+
+const isImageAttachment = (file?: Partial<StoredFile> | null) => {
+  if (!file) return false;
+  if (file.kind === "image") return true;
+  const mime = (file.mimeType ?? "").toLowerCase();
+  if (mime.startsWith("image/")) return true;
+  const name = (file.originalName ?? file.path ?? "").toLowerCase();
+  return /\.(png|jpe?g|webp|gif|avif|heic|heif|bmp|tiff?)$/.test(name);
+};
+
+function AttachmentThumb({ file }: { file: StoredFile }) {
+  const [failed, setFailed] = useState(false);
+  const src = buildAttachmentSrc(file.path || file.id);
+  const showImage = Boolean(src) && isImageAttachment(file) && !failed;
+
+  return (
+    <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl border border-white/15 bg-white/10">
+      {showImage ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt={file.originalName ?? "Attachment preview"}
+          loading="lazy"
+          className="h-full w-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center text-slate-200/80">
+          <svg
+            viewBox="0 0 24 24"
+            className="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <path d="M14 2v6h6" />
+          </svg>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const labelDisplay = (label?: string) => {
   if (!label) return "Routine Surveillance Report";
@@ -224,27 +270,30 @@ export default function SurveillanceSummaryViewer({
                           : "border-white/10 bg-white/5 text-slate-200"
                       }`}
                     >
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold break-words text-wrap">
-                          {file.originalName ?? "Attachment"}
-                        </p>
-                        {file.summary && (
-                          <p className="mt-1 text-xs text-slate-400">
-                            {file.summary}
+                      <div className="flex min-w-0 flex-1 items-start gap-3">
+                        <AttachmentThumb file={file} />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold break-words text-wrap">
+                            {file.originalName ?? "Attachment"}
                           </p>
-                        )}
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                          <span>
-                            {(file.kind ?? "file").toUpperCase()}{" "}
-                            {formatBytes(file.size)}
-                          </span>
-                          <span
-                            className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${labelChipStyle(
-                              file.label ?? report.surveillanceLabel,
-                            )}`}
-                          >
-                            {(file.label ?? report.surveillanceLabel ?? "routine").toUpperCase()}
-                          </span>
+                          {file.summary && (
+                            <p className="mt-1 text-xs text-slate-400">
+                              {file.summary}
+                            </p>
+                          )}
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                            <span>
+                              {(file.kind ?? "file").toUpperCase()}{" "}
+                              {formatBytes(file.size)}
+                            </span>
+                            <span
+                              className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${labelChipStyle(
+                                file.label ?? report.surveillanceLabel,
+                              )}`}
+                            >
+                              {(file.label ?? report.surveillanceLabel ?? "routine").toUpperCase()}
+                            </span>
+                          </div>
                         </div>
                       </div>
                       <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/20 text-slate-200">

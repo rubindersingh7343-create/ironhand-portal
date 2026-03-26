@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { CombinedRecord, SessionUser } from "@/lib/types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CombinedRecord, SessionUser, StoredFile } from "@/lib/types";
 import SurveillanceInvestigateModal from "@/components/client/SurveillanceInvestigateModal";
 import { useOwnerPortalStore } from "@/components/client/OwnerPortalStoreContext";
 import IHModal from "@/components/ui/IHModal";
-import { useRef } from "react";
 
 type StoreSummary = {
   storeId: string;
@@ -47,6 +46,64 @@ const buildAttachmentSrc = (path?: string) => {
   if (path.startsWith("http")) return path;
   return `/api/uploads/proxy?path=${encodeURIComponent(path)}`;
 };
+
+const isImageAttachment = (file?: Partial<StoredFile> | null) => {
+  if (!file) return false;
+  if (file.kind === "image") return true;
+  const mime = (file.mimeType ?? "").toLowerCase();
+  if (mime.startsWith("image/")) return true;
+  const name = (file.originalName ?? file.path ?? "").toLowerCase();
+  return /\.(png|jpe?g|webp|gif|avif|heic|heif|bmp|tiff?)$/.test(name);
+};
+
+function AttachmentThumb({
+  file,
+  onOpen,
+}: {
+  file: StoredFile;
+  onOpen: () => void;
+}) {
+  const [failed, setFailed] = useState(false);
+  const src = buildAttachmentSrc(file.path || file.id);
+  const showImage = Boolean(src) && isImageAttachment(file) && !failed;
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group relative h-14 w-14 shrink-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm"
+      aria-label={`Preview ${file.originalName ?? "attachment"}`}
+      title="Open preview"
+    >
+      {showImage ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt={file.originalName ?? "Attachment preview"}
+          loading="lazy"
+          className="h-full w-full object-cover transition group-hover:scale-[1.03]"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center text-slate-500">
+          <svg
+            viewBox="0 0 24 24"
+            className="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <path d="M14 2v6h6" />
+          </svg>
+        </div>
+      )}
+    </button>
+  );
+}
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -997,20 +1054,26 @@ export default function SurveillanceReportsSection({
                             </p>
                             <div className="mt-2 space-y-2">
                               {(selectedRoutineEntry.record.attachments ?? []).map((file) => {
-                                const src = buildAttachmentSrc(file.path);
+                                const src = buildAttachmentSrc(file.path || file.id);
                                 return (
                                   <div
                                     key={file.id}
-                                    className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                                    className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
                                   >
-                                    <div className="min-w-0 flex-1">
-                                      <p className="truncate font-semibold text-slate-900">
-                                        {file.originalName ?? "Attachment"}
-                                      </p>
-                                      <p className="mt-0.5 text-xs text-slate-500">
-                                        {(file.kind ?? "file").toUpperCase()}{" "}
-                                        {formatBytes(file.size)}
-                                      </p>
+                                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                                      <AttachmentThumb
+                                        file={file}
+                                        onOpen={() => openAttachmentViewer(file)}
+                                      />
+                                      <div className="min-w-0 flex-1">
+                                        <p className="truncate font-semibold text-slate-900">
+                                          {file.originalName ?? "Attachment"}
+                                        </p>
+                                        <p className="mt-0.5 text-xs text-slate-500">
+                                          {(file.kind ?? "file").toUpperCase()}{" "}
+                                          {formatBytes(file.size)}
+                                        </p>
+                                      </div>
                                     </div>
                                     {src ? (
                                       <button
@@ -1051,7 +1114,7 @@ export default function SurveillanceReportsSection({
 
                     <div className="space-y-3">
                       {incidents.map((incident) => {
-                        const src = buildAttachmentSrc(incident.file.path);
+                        const src = buildAttachmentSrc(incident.file.path || incident.file.id);
                         const headline =
                           incident.file.summary ??
                           incident.record.surveillanceSummary ??
@@ -1122,15 +1185,21 @@ export default function SurveillanceReportsSection({
                               </div>
                             ) : null}
 
-                            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate font-semibold text-slate-900">
-                                  {incident.file.originalName ?? "Attachment"}
-                                </p>
-                                <p className="mt-0.5 text-xs text-slate-500">
-                                  {(incident.file.kind ?? "file").toUpperCase()}{" "}
-                                  {formatBytes(incident.file.size)}
-                                </p>
+                            <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                              <div className="flex min-w-0 flex-1 items-center gap-3">
+                                <AttachmentThumb
+                                  file={incident.file}
+                                  onOpen={() => openAttachmentViewer(incident.file)}
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate font-semibold text-slate-900">
+                                    {incident.file.originalName ?? "Attachment"}
+                                  </p>
+                                  <p className="mt-0.5 text-xs text-slate-500">
+                                    {(incident.file.kind ?? "file").toUpperCase()}{" "}
+                                    {formatBytes(incident.file.size)}
+                                  </p>
+                                </div>
                               </div>
                               {src ? (
                                 <button
