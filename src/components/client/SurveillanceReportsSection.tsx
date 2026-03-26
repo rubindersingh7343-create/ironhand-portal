@@ -71,7 +71,7 @@ function AttachmentPreview({
     <button
       type="button"
       onClick={onOpen}
-      className="group relative block h-44 w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm"
+      className="group relative block h-52 w-full overflow-hidden bg-slate-50"
       aria-label={`Open ${file.originalName ?? "attachment"}`}
       title="Open"
     >
@@ -1061,13 +1061,13 @@ export default function SurveillanceReportsSection({
                                 return (
                                   <div
                                     key={file.id}
-                                    className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-sm"
+                                    className="overflow-hidden rounded-2xl border border-slate-200 bg-white text-sm shadow-sm"
                                   >
                                     <AttachmentPreview
                                       file={file}
                                       onOpen={() => openAttachmentViewer(file)}
                                     />
-                                    <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
+                                    <div className="flex flex-wrap items-start justify-between gap-3 px-4 pb-4 pt-3">
                                       <div className="min-w-0 flex-1">
                                         <p className="font-semibold text-slate-900 break-words text-wrap">
                                           {file.originalName ?? "Attachment"}
@@ -1188,12 +1188,12 @@ export default function SurveillanceReportsSection({
                               </div>
                             ) : null}
 
-                            <div className="mt-3 w-full rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-sm">
+                            <div className="mt-3 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white text-sm shadow-sm">
                               <AttachmentPreview
                                 file={incident.file}
                                 onOpen={() => openAttachmentViewer(incident.file)}
                               />
-                              <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
+                              <div className="flex flex-wrap items-start justify-between gap-3 px-4 pb-4 pt-3">
                                 <div className="min-w-0 flex-1">
                                   <p className="font-semibold text-slate-900 break-words text-wrap">
                                     {incident.file.originalName ?? "Attachment"}
