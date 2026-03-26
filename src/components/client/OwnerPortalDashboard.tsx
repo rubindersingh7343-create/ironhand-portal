@@ -7,14 +7,12 @@ import SurveillanceReportsSection from "@/components/client/SurveillanceReportsS
 import OwnerInvoicesSection from "@/components/client/OwnerInvoicesSection";
 import OwnerInvoiceUploadSection from "@/components/client/OwnerInvoiceUploadSection";
 import OpenInvestigationsSection from "@/components/client/OpenInvestigationsSection";
-import WeeklyOrdersSection from "@/components/client/WeeklyOrdersSection";
 import RecordsPanel from "@/components/records/RecordsPanel";
 import OwnerScratchersSection from "@/components/scratchers/OwnerScratchersSection";
 import { OwnerPortalStoreProvider, useOwnerPortalStore } from "@/components/client/OwnerPortalStoreContext";
 import TopBarNav from "@/components/TopBarNav";
 import EmployeeUploadForm from "@/components/employee/EmployeeUploadForm";
 import OwnerHoursSection from "@/components/client/OwnerHoursSection";
-import OwnerInventorySection from "@/components/inventory/OwnerInventorySection";
 import SettingsButton from "@/components/SettingsButton";
 import LogoutButton from "@/components/LogoutButton";
 
@@ -39,7 +37,6 @@ function OwnerPortalDashboardContent({
     reports: { today: 0, yesterday: 0 },
     surveillance: { today: 0, yesterday: 0 },
     invoices: { today: 0, yesterday: 0 },
-    orders: { today: 0, yesterday: 0 },
   });
   const activeStore = ownerStore?.activeStore;
   const selectedStoreId = ownerStore?.selectedStoreId ?? user.storeNumber;
@@ -57,7 +54,6 @@ function OwnerPortalDashboardContent({
         reports: { today: 0, yesterday: 0 },
         surveillance: { today: 0, yesterday: 0 },
         invoices: { today: 0, yesterday: 0 },
-        orders: { today: 0, yesterday: 0 },
       });
       return;
     }
@@ -92,10 +88,6 @@ function OwnerPortalDashboardContent({
               today: Number(counts?.invoices?.today ?? 0) || 0,
               yesterday: Number(counts?.invoices?.yesterday ?? 0) || 0,
             },
-            orders: {
-              today: Number(counts?.orders?.today ?? 0) || 0,
-              yesterday: Number(counts?.orders?.yesterday ?? 0) || 0,
-            },
           });
         }
       } catch (error) {
@@ -104,7 +96,6 @@ function OwnerPortalDashboardContent({
             reports: { today: 0, yesterday: 0 },
             surveillance: { today: 0, yesterday: 0 },
             invoices: { today: 0, yesterday: 0 },
-            orders: { today: 0, yesterday: 0 },
           });
         }
         console.error("Failed to load nav badges", error);
@@ -348,8 +339,6 @@ function OwnerPortalDashboardContent({
       },
       { id: "owner-scratchers-page", label: "Scratchers" },
       { id: "owner-hours-page", label: "Hours" },
-      { id: "owner-inventory-page", label: "Inventory" },
-      { id: "owner-orders-page", label: "Orders", badgeCounts: navBadges.orders },
       { id: "owner-cases-page", label: "Cases" },
       { id: "owner-advanced-page", label: "Advanced" },
     ],
@@ -478,24 +467,6 @@ function OwnerPortalDashboardContent({
             {renderOwnerHeader()}
             <div className="owner-portal-section" id="owner-hours">
               <OwnerHoursSection user={user} />
-            </div>
-          </div>
-        </section>
-
-        <section className="owner-portal-page" id="owner-inventory-page">
-          <div className="owner-portal-page__content space-y-5 sm:space-y-6">
-            {renderOwnerHeader()}
-            <div className="owner-portal-section" id="owner-inventory">
-              <OwnerInventorySection />
-            </div>
-          </div>
-        </section>
-
-        <section className="owner-portal-page" id="owner-orders-page">
-          <div className="owner-portal-page__content space-y-5 sm:space-y-6">
-            {renderOwnerHeader()}
-            <div className="owner-portal-section" id="owner-orders">
-              <WeeklyOrdersSection user={user} />
             </div>
           </div>
         </section>
