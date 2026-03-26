@@ -9,6 +9,31 @@ type InvoiceUploadCardProps = {
   className?: string;
 };
 
+type InvoiceDuePreset = "custom" | "1w" | "2w" | "3w" | "1m";
+
+const pad2 = (value: number) => String(value).padStart(2, "0");
+
+const formatLocalDateInput = (date: Date) =>
+  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+
+const addDays = (date: Date, days: number) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+};
+
+const addMonthsClamped = (date: Date, months: number) => {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const day = date.getDate();
+  const nextMonthIndex = month + months;
+  const targetYear = year + Math.floor(nextMonthIndex / 12);
+  const targetMonth = ((nextMonthIndex % 12) + 12) % 12;
+  const daysInTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+  const clampedDay = Math.min(day, daysInTargetMonth);
+  return new Date(targetYear, targetMonth, clampedDay);
+};
+
 export default function InvoiceUploadCard({
   storeId,
   storeLabel,
@@ -20,6 +45,8 @@ export default function InvoiceUploadCard({
   const [invoiceMessage, setInvoiceMessage] = useState<string | null>(null);
   const [invoicePaid, setInvoicePaid] = useState(false);
   const [invoiceDueDate, setInvoiceDueDate] = useState("");
+  const [invoiceDuePreset, setInvoiceDuePreset] =
+    useState<InvoiceDuePreset>("custom");
   const [invoicePaymentMethod, setInvoicePaymentMethod] = useState("");
   const [invoicePaymentAmount, setInvoicePaymentAmount] = useState("");
   const [invoiceCardLast4, setInvoiceCardLast4] = useState("");
@@ -50,6 +77,8 @@ export default function InvoiceUploadCard({
       setInvoiceCheckNumber("");
       setInvoiceAchLast4("");
       setInvoiceOtherDetails("");
+    } else {
+      setInvoiceDuePreset("custom");
     }
   }, [invoicePaid]);
 
@@ -62,6 +91,21 @@ export default function InvoiceUploadCard({
     }
     return null;
   }, [invoiceMessage, invoiceStatus]);
+
+  const applyDuePreset = (preset: InvoiceDuePreset) => {
+    setInvoiceDuePreset(preset);
+    if (preset === "custom") return;
+    const today = new Date();
+    const target =
+      preset === "1w"
+        ? addDays(today, 7)
+        : preset === "2w"
+          ? addDays(today, 14)
+          : preset === "3w"
+            ? addDays(today, 21)
+            : addMonthsClamped(today, 1);
+    setInvoiceDueDate(formatLocalDateInput(target));
+  };
 
   return (
     <div
@@ -246,13 +290,41 @@ export default function InvoiceUploadCard({
                   <label htmlFor="invoiceDueDate" className="ui-label">
                     Payment due date
                   </label>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {(
+                      [
+                        { id: "1w", label: "1 week" },
+                        { id: "2w", label: "2 weeks" },
+                        { id: "3w", label: "3 weeks" },
+                        { id: "1m", label: "1 month" },
+                        { id: "custom", label: "Custom" },
+                      ] as const
+                    ).map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => applyDuePreset(preset.id)}
+                        className={clsx(
+                          "rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]",
+                          invoiceDuePreset === preset.id
+                            ? "border-blue-400/60 text-blue-100"
+                            : "border-white/10 text-slate-400",
+                        )}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
                   <input
                     id="invoiceDueDate"
                     name="invoiceDueDate"
                     type="date"
                     required={!invoicePaid}
                     value={invoiceDueDate}
-                    onChange={(event) => setInvoiceDueDate(event.target.value)}
+                    onChange={(event) => {
+                      setInvoiceDueDate(event.target.value);
+                      setInvoiceDuePreset("custom");
+                    }}
                     className="invoice-date w-full rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-sm text-slate-100 focus:border-blue-400 focus:outline-none"
                   />
                 </div>
