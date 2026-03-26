@@ -151,6 +151,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     "PREVIEW" | "CAPTURING" | "PROCESSING" | "RESULT" | "ERROR"
   >("PREVIEW");
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [captureFlash, setCaptureFlash] = useState(false);
   const [ocrResult, setOcrResult] = useState<{
     fullLine: string;
     lastDigits: string;
@@ -172,6 +173,7 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   const streamRef = useRef<MediaStream | null>(null);
   const captureInFlightRef = useRef(false);
   const cameraStartingRef = useRef(false);
+  const flashTimeoutRef = useRef<number | null>(null);
   const scanToastTimeoutRef = useRef<number | null>(null);
   const scanStateRef = useRef(scanState);
   const manualModeRef = useRef(manualMode);
@@ -195,6 +197,15 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
   useEffect(() => {
     backgroundReadingRef.current = backgroundReading;
   }, [backgroundReading]);
+
+  useEffect(() => {
+    return () => {
+      if (flashTimeoutRef.current) {
+        window.clearTimeout(flashTimeoutRef.current);
+        flashTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const logScan = useCallback(
     (reason: string, nextState?: string) => {
@@ -778,6 +789,14 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
     const slotEntry = scannableSlots.find((entry) => entry.slot.id === scannerSlotId);
     if (!slotEntry) return;
     if (backgroundReadingRef.current) return;
+    setCaptureFlash(true);
+    if (flashTimeoutRef.current) {
+      window.clearTimeout(flashTimeoutRef.current);
+    }
+    flashTimeoutRef.current = window.setTimeout(() => {
+      setCaptureFlash(false);
+      flashTimeoutRef.current = null;
+    }, 90);
     captureInFlightRef.current = true;
     keepCaptureLockRef.current = false;
     try {
@@ -1410,6 +1429,14 @@ export default function EmployeeScratchersPanel({ user }: { user: SessionUser })
               {(scanState === "PREVIEW" || scanState === "PROCESSING") && !capturedImage && (
                 <div ref={targetRef} className="scratcher-scan-target" />
               )}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 bg-black transition-opacity duration-150"
+                style={{
+                  opacity: captureFlash ? 0.8 : 0,
+                  zIndex: 3,
+                }}
+              />
             </div>
 
             {scanState === "PREVIEW" &&

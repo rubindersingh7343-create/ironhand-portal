@@ -140,6 +140,7 @@ export default function ShiftReceiptMultiPageScanModal({
   const [stage, setStage] = useState<CaptureStage>("CAPTURE");
   const [pages, setPages] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [captureFlash, setCaptureFlash] = useState(false);
   const [guide, setGuide] = useState<GuideState>({
     tone: "gray",
     message: "Line up the receipt with the frame.",
@@ -164,10 +165,31 @@ export default function ShiftReceiptMultiPageScanModal({
   const stableSinceRef = useRef<number | null>(null);
   const analysisTimerRef = useRef<number | null>(null);
   const captureInFlightRef = useRef(false);
+  const flashTimeoutRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const fileCaptureTimeoutRef = useRef<number | null>(null);
   const greenHistoryRef = useRef<number[]>([]);
   const toneRef = useRef<GuideState["tone"]>("gray");
+
+  const triggerCaptureFlash = useCallback(() => {
+    setCaptureFlash(true);
+    if (flashTimeoutRef.current) {
+      window.clearTimeout(flashTimeoutRef.current);
+    }
+    flashTimeoutRef.current = window.setTimeout(() => {
+      setCaptureFlash(false);
+      flashTimeoutRef.current = null;
+    }, 90);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (flashTimeoutRef.current) {
+        window.clearTimeout(flashTimeoutRef.current);
+        flashTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const categoryOptions = useMemo(
     () =>
@@ -534,6 +556,7 @@ export default function ShiftReceiptMultiPageScanModal({
 
     if (receiptDistanceGuideEnabled && guide.tone !== "green" && !force) return;
 
+    triggerCaptureFlash();
     captureInFlightRef.current = true;
     try {
       const roi = computeRoi();
@@ -567,7 +590,7 @@ export default function ShiftReceiptMultiPageScanModal({
     } finally {
       captureInFlightRef.current = false;
     }
-  }, [captureMode, computeRoi, guide.tone, openFileCapture, pages.length, startLivePreview]);
+  }, [captureMode, computeRoi, guide.tone, openFileCapture, pages.length, startLivePreview, triggerCaptureFlash]);
 
   const onFileSelected = useCallback(
     async (file: File | null) => {
@@ -883,7 +906,7 @@ export default function ShiftReceiptMultiPageScanModal({
               )}
             </div>
 
-            <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/40">
+        <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/40">
               {captureMode === "live" ? (
                 <video
                   ref={videoRef}
@@ -934,6 +957,12 @@ export default function ShiftReceiptMultiPageScanModal({
                   </div>
                 </div>
               </div>
+
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 bg-black transition-opacity duration-150"
+                style={{ opacity: captureFlash ? 0.85 : 0 }}
+              />
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-2">
