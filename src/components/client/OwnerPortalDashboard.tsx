@@ -242,6 +242,7 @@ function OwnerPortalDashboardContent({
 
     let activePage: HTMLElement | null = null;
     let raf = 0;
+    let settleTimer: number | null = null;
 
     const setScrolled = (value: boolean) => {
       if (value) {
@@ -251,13 +252,23 @@ function OwnerPortalDashboardContent({
       }
     };
 
-    const getActivePage = () => {
-      const width = pager.clientWidth || 1;
-      const index = Math.min(
-        pages.length - 1,
-        Math.max(0, Math.round(pager.scrollLeft / width)),
-      );
-      return pages[index] ?? null;
+    const findNearestPage = (): HTMLElement | null => {
+      const left = pager.scrollLeft;
+      let best: HTMLElement | null = null;
+      let bestDistance = Number.POSITIVE_INFINITY;
+      pages.forEach((page) => {
+        const distance = Math.abs(page.offsetLeft - left);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = page;
+        }
+      });
+      return best;
+    };
+
+    const isSnappedTo = (page: HTMLElement | null) => {
+      if (!page) return false;
+      return Math.abs(page.offsetLeft - pager.scrollLeft) <= 12;
     };
 
     const compute = () => {
@@ -271,8 +282,14 @@ function OwnerPortalDashboardContent({
       raf = window.requestAnimationFrame(compute);
     };
 
-    const attach = () => {
-      const next = getActivePage();
+    const attach = (force = false) => {
+      // Avoid toggling header padding while the pager is mid-swipe; only switch pages
+      // when the snap has settled (or when forced, e.g. on first render).
+      const next = findNearestPage() as HTMLElement | null;
+      if (!force && !isSnappedTo(next)) {
+        schedule();
+        return;
+      }
       if (next === activePage) {
         schedule();
         return;
@@ -287,15 +304,27 @@ function OwnerPortalDashboardContent({
       schedule();
     };
 
-    pager.addEventListener("scroll", attach, { passive: true });
-    window.addEventListener("resize", attach);
-    attach();
+    const onPagerScroll = () => {
+      // Defer switching active page until scrolling settles (prevents jumpy snap).
+      if (settleTimer) window.clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(() => {
+        settleTimer = null;
+        attach();
+      }, 140);
+    };
+
+    const onResize = () => attach(true);
+
+    pager.addEventListener("scroll", onPagerScroll, { passive: true });
+    window.addEventListener("resize", onResize);
+    attach(true);
 
     return () => {
-      pager.removeEventListener("scroll", attach);
-      window.removeEventListener("resize", attach);
+      pager.removeEventListener("scroll", onPagerScroll);
+      window.removeEventListener("resize", onResize);
       if (activePage) activePage.removeEventListener("scroll", schedule);
       if (raf) window.cancelAnimationFrame(raf);
+      if (settleTimer) window.clearTimeout(settleTimer);
       delete body.dataset.ownerScrolled;
     };
   }, []);

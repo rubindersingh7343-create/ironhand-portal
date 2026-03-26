@@ -126,12 +126,17 @@ export default function TopBarNav({
         if (lock && Date.now() >= lock.until) {
           lockRef.current = null;
         }
-        const width = container.clientWidth || 1;
-        const index = Math.min(
-          sections.length - 1,
-          Math.max(0, Math.round(container.scrollLeft / width)),
-        );
-        const nextId = sections[index]?.id ?? sections[0]?.id ?? "";
+        const left = container.scrollLeft;
+        let bestIndex = 0;
+        let bestDistance = Number.POSITIVE_INFINITY;
+        sectionEls.forEach((section, index) => {
+          const distance = Math.abs(section.offsetLeft - left);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestIndex = index;
+          }
+        });
+        const nextId = sections[bestIndex]?.id ?? sections[0]?.id ?? "";
         if (nextId) commit(nextId);
 
         const containerRect = container.getBoundingClientRect();
@@ -269,12 +274,14 @@ export default function TopBarNav({
                   (item) => item.id === section.id,
                 );
                 if (container && index >= 0) {
+                  const target = document.getElementById(section.id);
+                  const left = target?.offsetLeft ?? index * container.clientWidth;
                   lockRef.current = {
                     id: section.id,
                     until: Date.now() + (prefersReducedMotion ? 0 : 520),
                   };
                   container.scrollTo({
-                    left: index * container.clientWidth,
+                    left,
                     behavior: prefersReducedMotion ? "auto" : "smooth",
                   });
                   setActiveSectionId(section.id);
