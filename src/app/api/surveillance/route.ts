@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser, requireRole } from "@/lib/auth";
 import { saveUploadedFile, addSurveillanceReport } from "@/lib/dataStore";
 import { getSurveillanceStoreIds } from "@/lib/userStore";
+import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 
 export async function POST(request: Request) {
   const user = await getSessionUser();
@@ -80,7 +81,15 @@ export async function POST(request: Request) {
   }
   if (
     (!isJson && !primaryFootageSummary) ||
-    (isJson && jsonFiles.some((file: any) => !String(file?.summary ?? "").trim()))
+    (isJson &&
+      jsonFiles.some((file: unknown) => {
+        const record =
+          file && typeof file === "object"
+            ? (file as Record<string, unknown>)
+            : null;
+        const summary = record?.summary;
+        return !String(summary ?? "").trim();
+      }))
   ) {
     return NextResponse.json(
       { error: "Add a short summary for each file." },
@@ -89,6 +98,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    const supabase = getSupabaseAdmin();
     const linkedStores = new Set([
       user.storeNumber,
       ...(Array.isArray(user.storeIds) ? user.storeIds : []),
@@ -98,18 +108,63 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Store access denied." }, { status: 403 });
     }
 
+    const uploadPaths =
+      isJson && jsonFiles.length
+        ? jsonFiles
+            .map((file: unknown) => {
+              const record =
+                file && typeof file === "object"
+                  ? (file as Record<string, unknown>)
+                  : null;
+              const value =
+                typeof record?.path === "string"
+                  ? record.path
+                  : typeof record?.id === "string"
+                    ? record.id
+                    : "";
+              return String(value).replace(/^\/+/, "").trim();
+            })
+            .filter(Boolean)
+        : [];
+
+    if (supabase && uploadPaths.length) {
+      try {
+        await supabase
+          .from("upload_items")
+          .update({ status: "processing", updated_at: new Date().toISOString() })
+          .in("storage_path", uploadPaths);
+      } catch (error) {
+        console.error("[surveillance] Unable to mark processing:", error);
+      }
+    }
+
     const storedFiles = isJson
-      ? jsonFiles.map((file: any) => ({
-          id: file?.id ?? "",
-          path: file?.path ?? "",
-          dataUrl: undefined,
-          originalName: file?.originalName ?? "upload",
-          mimeType: file?.mimeType ?? "application/octet-stream",
-          size: Number(file?.size ?? 0),
-          label: file?.label ?? label,
-          summary: file?.summary ?? undefined,
-          kind: file?.kind ?? "other",
-        }))
+      ? jsonFiles.map((file: unknown) => {
+          const record =
+            file && typeof file === "object"
+              ? (file as Record<string, unknown>)
+              : {};
+          const sizeRaw = record.size;
+          const size =
+            typeof sizeRaw === "number" && Number.isFinite(sizeRaw)
+              ? sizeRaw
+              : Number(sizeRaw ?? 0);
+          return {
+            id: typeof record.id === "string" ? record.id : "",
+            path: typeof record.path === "string" ? record.path : "",
+            dataUrl: undefined,
+            originalName:
+              typeof record.originalName === "string" ? record.originalName : "upload",
+            mimeType:
+              typeof record.mimeType === "string"
+                ? record.mimeType
+                : "application/octet-stream",
+            size: Number.isFinite(size) ? size : 0,
+            label: typeof record.label === "string" ? record.label : label,
+            summary: typeof record.summary === "string" ? record.summary : undefined,
+            kind: typeof record.kind === "string" ? record.kind : "other",
+          };
+        })
       : await Promise.all(
           (footageFiles.length ? footageFiles : [footage]).filter(Boolean).map(
             (file, index) =>
@@ -138,9 +193,53 @@ export async function POST(request: Request) {
       notes: notes ?? undefined,
       attachments: storedFiles,
     });
+
+    if (supabase && uploadPaths.length) {
+      try {
+        await supabase
+          .from("upload_items")
+          .update({ status: "complete", updated_at: new Date().toISOString() })
+          .in("storage_path", uploadPaths);
+      } catch (error) {
+        console.error("[surveillance] Unable to mark complete:", error);
+      }
+    }
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error(error);
+    const supabase = getSupabaseAdmin();
+    if (supabase && isJson && Array.isArray(payload?.files)) {
+      const rawFiles = payload.files as unknown[];
+      const uploadPaths = rawFiles
+        .map((file: unknown) => {
+          const record =
+            file && typeof file === "object"
+              ? (file as Record<string, unknown>)
+              : null;
+          const value =
+            typeof record?.path === "string"
+              ? record.path
+              : typeof record?.id === "string"
+                ? record.id
+                : "";
+          return String(value).replace(/^\/+/, "").trim();
+        })
+        .filter(Boolean);
+      if (uploadPaths.length) {
+        try {
+          await supabase
+            .from("upload_items")
+            .update({
+              status: "error",
+              error_message: "Unable to save surveillance report.",
+              updated_at: new Date().toISOString(),
+            })
+            .in("storage_path", uploadPaths);
+        } catch (updateError) {
+          console.error("[surveillance] Unable to mark error:", updateError);
+        }
+      }
+    }
     return NextResponse.json(
       { error: "Unable to save surveillance report." },
       { status: 500 },

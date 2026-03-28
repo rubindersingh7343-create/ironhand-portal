@@ -28,7 +28,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const results: Array<{ path: string; token: string }> = [];
+  const results: Array<{ path: string; token: string; signedUrl?: string }> =
+    [];
   for (const file of files) {
     const rawName =
       typeof file?.name === "string" && file.name.length
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
         { status: 500 },
       );
     }
-    results.push({ path, token: data.token });
+    results.push({ path, token: data.token, signedUrl: data.signedUrl });
   }
 
   return NextResponse.json({ uploads: results });

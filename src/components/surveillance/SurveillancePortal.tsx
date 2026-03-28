@@ -1,13 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import type { CombinedRecord, InvestigationStatus, SessionUser, StoredFile } from "@/lib/types";
 import LogoutButton from "@/components/LogoutButton";
 import SettingsButton from "@/components/SettingsButton";
 import TopBarNav, { type TopBarSection } from "@/components/TopBarNav";
-import { supabasePublic, publicBucket } from "@/lib/supabaseClient";
-import SurveillanceInvestigationModal from "@/components/surveillance/SurveillanceInvestigationModal";
-import FileViewer from "@/components/records/FileViewer";
+import { supabasePublic } from "@/lib/supabaseClient";
+import UploadQueue from "@/components/uploads/UploadQueue";
+import { useFileUpload } from "@/hooks/useFileUpload";
+
+const SurveillanceInvestigationModal = dynamic(
+  () => import("@/components/surveillance/SurveillanceInvestigationModal"),
+  { ssr: false },
+);
+const FileViewer = dynamic(() => import("@/components/records/FileViewer"), {
+  ssr: false,
+});
 
 const labels = [
   { value: "critical", label: "Critical" },
@@ -91,21 +100,59 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
   const [selectedEmployee, setSelectedEmployee] = useState("");
   const [recentReports, setRecentReports] = useState<RecentReport[]>([]);
   const [recentStatus, setRecentStatus] = useState<"idle" | "loading" | "error">(
-    "idle",
+    "loading",
   );
   const [recentMessage, setRecentMessage] = useState<string | null>(null);
   const [viewerFile, setViewerFile] = useState<StoredFile | null>(null);
   const [fileRows, setFileRows] = useState<number[]>([0]);
   const [formKey, setFormKey] = useState(0);
   const [fileNames, setFileNames] = useState<Record<number, string>>({});
+  const [rowUploadLocalIds, setRowUploadLocalIds] = useState<Record<number, string | null>>(
+    {},
+  );
   const photoInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
   const videoInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
   const [investigations, setInvestigations] = useState<InvestigationCase[]>([]);
   const [investigationStatus, setInvestigationStatus] = useState<
     "idle" | "loading" | "error"
-  >("idle");
+  >("loading");
   const [investigationMessage, setInvestigationMessage] = useState<string | null>(null);
   const [activeInvestigation, setActiveInvestigation] = useState<InvestigationCase | null>(null);
+  const [secondaryReady, setSecondaryReady] = useState(false);
+
+  const upload = useFileUpload({
+    folder: "surveillance",
+    category: "surveillance",
+    pollIntervalMs: 2500,
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const win = window as unknown as {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+
+    let cancelled = false;
+    const markReady = () => {
+      if (cancelled) return;
+      setSecondaryReady(true);
+    };
+
+    if (typeof win.requestIdleCallback === "function") {
+      const id = win.requestIdleCallback(markReady, { timeout: 900 });
+      return () => {
+        cancelled = true;
+        win.cancelIdleCallback?.(id);
+      };
+    }
+
+    const timeout = window.setTimeout(markReady, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, []);
 
   const loadStores = useCallback(async () => {
     setStoresLoading(true);
@@ -201,35 +248,69 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
     const response = await fetch(`/api/records?${params.toString()}`, {
       cache: "no-store",
     });
-    const payload = await response.json().catch(() => ({}));
+    const raw: unknown = await response.json().catch(() => ({}));
+    const payload =
+      raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
     if (!response.ok) {
-      throw new Error(payload?.error ?? "Unable to load submissions.");
+      const message =
+        typeof payload.error === "string" && payload.error.trim().length
+          ? payload.error
+          : "Unable to load submissions.";
+      throw new Error(message);
     }
     const storeMap = new Map<string, string>(
-      Array.isArray(payload?.stores)
-        ? payload.stores.map((store: any) => [
-            store.storeId ?? store.storeNumber,
-            store.storeName ?? store.storeId,
-          ])
+      Array.isArray(payload.stores)
+        ? payload.stores
+            .map((store) => {
+              const record =
+                store && typeof store === "object"
+                  ? (store as Record<string, unknown>)
+                  : {};
+              const storeId =
+                typeof record.storeId === "string"
+                  ? record.storeId
+                  : typeof record.storeNumber === "string"
+                    ? record.storeNumber
+                    : "";
+              if (!storeId) return null;
+              const storeName =
+                typeof record.storeName === "string" && record.storeName.length
+                  ? record.storeName
+                  : storeId;
+              return [storeId, storeName] as const;
+            })
+            .filter(Boolean)
         : [],
     );
-    const records = Array.isArray(payload?.records) ? payload.records : [];
-    return records.map((record: any) => ({
-      id: record.id,
-      label: record.surveillanceLabel ?? "surveillance",
-      storeNumber: record.storeNumber,
-      storeName:
-        storeMap.get(record.storeNumber) ?? `Store ${record.storeNumber}`,
-      summary:
-        record.surveillanceSummary ??
-        record.notes ??
-        "Surveillance submission",
-      notes: record.notes ?? null,
-      createdAt: record.createdAt,
-      attachments: Array.isArray(record.attachments)
-        ? record.attachments
-        : [],
-    }));
+    const records = Array.isArray(payload.records) ? payload.records : [];
+    return records.map((record) => {
+      const row =
+        record && typeof record === "object"
+          ? (record as Record<string, unknown>)
+          : {};
+      const storeNumber =
+        typeof row.storeNumber === "string" ? row.storeNumber : "";
+      return {
+        id: typeof row.id === "string" ? row.id : `${Date.now()}-${Math.random()}`,
+        label:
+          typeof row.surveillanceLabel === "string" && row.surveillanceLabel.length
+            ? row.surveillanceLabel
+            : "surveillance",
+        storeNumber,
+        storeName: storeMap.get(storeNumber) ?? (storeNumber ? `Store ${storeNumber}` : "Store"),
+        summary:
+          (typeof row.surveillanceSummary === "string" && row.surveillanceSummary.length
+            ? row.surveillanceSummary
+            : typeof row.notes === "string" && row.notes.length
+              ? row.notes
+              : "Surveillance submission"),
+        notes: typeof row.notes === "string" ? row.notes : null,
+        createdAt: typeof row.createdAt === "string" ? row.createdAt : new Date().toISOString(),
+        attachments: Array.isArray(row.attachments)
+          ? (row.attachments as StoredFile[])
+          : [],
+      };
+    });
   }, [selectedStore, user.storeNumber]);
 
   const loadRecentReports = useCallback(async () => {
@@ -251,8 +332,9 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
   }, [fetchRecentFromRecords]);
 
   useEffect(() => {
+    if (!secondaryReady) return;
     loadRecentReports();
-  }, [loadRecentReports]);
+  }, [loadRecentReports, secondaryReady]);
 
   const loadInvestigations = useCallback(async () => {
     setInvestigationStatus("loading");
@@ -279,8 +361,9 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
   }, []);
 
   useEffect(() => {
+    if (!secondaryReady) return;
     loadInvestigations();
-  }, [loadInvestigations]);
+  }, [loadInvestigations, secondaryReady]);
 
   const handleFootageChange =
     (rowId: number, kind: "photo" | "video") =>
@@ -293,6 +376,17 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
         ...prev,
         [rowId]: label,
       }));
+
+      if (file) {
+        const prevLocalId = rowUploadLocalIds[rowId];
+        if (prevLocalId) {
+          upload.removeItem(prevLocalId);
+        }
+        void upload.enqueueFiles([file]).then(({ localIds }) => {
+          const nextLocalId = localIds[0] ?? null;
+          setRowUploadLocalIds((prev) => ({ ...prev, [rowId]: nextLocalId }));
+        });
+      }
 
       if (kind === "photo") {
         const videoInput = videoInputRefs.current[rowId];
@@ -317,9 +411,6 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
       const grade = String(formData.get("grade") ?? "").trim();
       const gradeReason = String(formData.get("gradeReason") ?? "").trim();
       const notes = String(formData.get("notes") ?? "").trim();
-      const footageFiles = (formData.getAll("footage") as File[]).filter(
-        (file) => file && file.name,
-      );
       const footageLabels = formData.getAll("footageLabel").map((value) =>
         String(value ?? "").trim(),
       );
@@ -333,11 +424,15 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
         !summary ||
         !grade ||
         !gradeReason ||
-        footageFiles.length === 0
+        fileRows.length === 0
       ) {
         throw new Error(
           "Employee, summary, grade, reason, and footage are required.",
         );
+      }
+
+      if (upload.anyUploading) {
+        throw new Error("Uploads are still in progress. Please wait for them to finish.");
       }
 
       const primaryFootageLabel = footageLabels.find(Boolean) ?? "";
@@ -351,60 +446,70 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
 
       let response: Response;
       if (supabasePublic) {
-        const signResponse = await fetch("/api/uploads/signed-urls", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            files: footageFiles.map((file) => ({
-              name: file.name,
-              folder: "surveillance",
-            })),
-          }),
+        const rowItems = fileRows.map((rowId) => {
+          const localId = rowUploadLocalIds[rowId];
+          if (!localId) return null;
+          return upload.items.find((item) => item.localId === localId) ?? null;
         });
-        const signed = await signResponse.json().catch(() => ({}));
-        if (!signResponse.ok) {
-          throw new Error(
-            signed?.error ?? "Unable to get upload URLs. Try again shortly.",
-          );
+        if (rowItems.some((item) => !item)) {
+          throw new Error("Select a file in each row (or remove empty rows).");
         }
-        const uploads = Array.isArray(signed.uploads) ? signed.uploads : [];
-        if (!uploads.length || uploads.length !== footageFiles.length) {
-          throw new Error("Upload signing failed. Please retry.");
+        const resolvedRowItems = rowItems.filter(Boolean);
+        if (resolvedRowItems.length === 0) {
+          throw new Error("Add at least one file.");
         }
-        const uploadedFiles = await Promise.all(
-          uploads.map(async (upload: any, index: number) => {
-            if (!upload?.path || !upload?.token) {
-              throw new Error("Upload signing failed. Please retry.");
-            }
-            const file = footageFiles[index];
-            const resolvedLabel =
-              footageLabels[index] || primaryFootageLabel || primaryLabel;
-            const resolvedSummary =
-              footageSummaries[index] || primaryFootageSummary || "";
-            const { error: uploadError } = await supabasePublic!.storage
-              .from(publicBucket)
-              .uploadToSignedUrl(upload.path, upload.token, file, {
-                contentType: file.type || "application/octet-stream",
-              });
-            if (uploadError) {
-              throw new Error(uploadError.message);
-            }
-            return {
-              id: upload.path,
-              path: upload.path,
-              originalName: file.name,
-              mimeType: file.type,
-              size: file.size,
-              label: resolvedLabel,
-              summary: resolvedSummary,
-              kind: file.type.startsWith("video")
-                ? "video"
-                : file.type.startsWith("image")
-                  ? "image"
-                  : "other",
-            };
-          }),
+        const stillUploading = resolvedRowItems.some(
+          (item) => item.status === "preparing" || item.status === "uploading",
         );
+        if (stillUploading) {
+          throw new Error("Uploads are still in progress. Please wait.");
+        }
+        const hasError = resolvedRowItems.some((item) => item.status === "error");
+        if (hasError) {
+          throw new Error("One or more uploads failed. Retry the failed uploads and try again.");
+        }
+        const missingPaths = resolvedRowItems.some((item) => !item.storagePath);
+        if (missingPaths) {
+          throw new Error("Upload is missing a storage path. Please retry the file upload.");
+        }
+
+        const uploadedFiles = resolvedRowItems.map((item, index) => {
+          const resolvedLabel =
+            footageLabels[index] || primaryFootageLabel || primaryLabel;
+          const resolvedSummary =
+            footageSummaries[index] || primaryFootageSummary || "";
+          const mimeType = item.mimeType || "application/octet-stream";
+          return {
+            uploadItemId: item.serverId,
+            id: item.storagePath,
+            path: item.storagePath,
+            originalName: item.filename,
+            mimeType,
+            size: item.totalBytes,
+            label: resolvedLabel,
+            summary: resolvedSummary,
+            kind: mimeType.startsWith("video")
+              ? "video"
+              : mimeType.startsWith("image")
+                ? "image"
+                : "other",
+          };
+        });
+
+        setRecentReports((prev) => [
+          {
+            id: `optimistic-${Date.now()}`,
+            label: primaryLabel,
+            storeNumber: selectedStore,
+            storeName: storeNameFor(selectedStore),
+            summary,
+            notes: notes.length ? notes : null,
+            createdAt: new Date().toISOString(),
+            attachments: uploadedFiles,
+          },
+          ...prev,
+        ]);
+
         response = await fetch("/api/surveillance", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -434,6 +539,7 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
       formElement.reset();
       setFileRows([0]);
       setFileNames({});
+      setRowUploadLocalIds({});
       setFormKey((prev) => prev + 1);
       setStatus("success");
       setMessage("Surveillance report sent to client.");
@@ -693,9 +799,25 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
                       <div className="mt-2 flex justify-end">
                         <button
                           type="button"
-                          onClick={() =>
-                            setFileRows((prev) => prev.filter((id) => id !== rowId))
-                          }
+                          onClick={() => {
+                            const localId = rowUploadLocalIds[rowId];
+                            if (localId) {
+                              upload.removeItem(localId);
+                            }
+                            setRowUploadLocalIds((prev) => {
+                              const next = { ...prev };
+                              delete next[rowId];
+                              return next;
+                            });
+                            setFileNames((prev) => {
+                              const next = { ...prev };
+                              delete next[rowId];
+                              return next;
+                            });
+                            setFileRows((prev) =>
+                              prev.filter((id) => id !== rowId),
+                            );
+                          }}
                           className="rounded-full border border-white/20 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-white/50"
                         >
                           Remove
@@ -715,6 +837,14 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
                 >
                   Add another file
                 </button>
+              </div>
+
+              <div className="mt-4">
+                <UploadQueue
+                  items={upload.items}
+                  onRetry={upload.retryUpload}
+                  onRemove={upload.removeItem}
+                />
               </div>
             </div>
 
@@ -757,10 +887,16 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
 
             <button
               type="submit"
-              disabled={status === "sending" || stores.length === 0}
+              disabled={
+                status === "sending" || stores.length === 0 || (Boolean(supabasePublic) && upload.anyUploading)
+              }
               className="w-full rounded-2xl bg-blue-600 px-6 py-3 text-base font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {status === "sending" ? "Uploading…" : "Send surveillance report"}
+              {status === "sending"
+                ? "Sending…"
+                : upload.anyUploading
+                  ? "Uploading…"
+                  : "Send surveillance report"}
             </button>
           </form>
         </section>
