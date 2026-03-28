@@ -41,6 +41,16 @@ const formatBytes = (bytes?: number) => {
   return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
 };
 
+const shiftIsoDate = (value: string, delta: number) => {
+  if (!value) return value;
+  const date = new Date(`${value}T00:00:00`);
+  date.setDate(date.getDate() + delta);
+  return date.toISOString().slice(0, 10);
+};
+
+const localDateString = (value: string) =>
+  new Date(value).toLocaleDateString("en-CA");
+
 const buildAttachmentSrc = (path?: string) => {
   if (!path) return "";
   if (path.startsWith("http")) return path;
@@ -187,11 +197,7 @@ function ZoomableImage({
   }, [recalcFit]);
 
   // Reset when src changes.
-  useEffect(() => {
-    setFitSize(null);
-    setZoomScale(1);
-    setTranslate({ x: 0, y: 0 });
-  }, [src]);
+  // `src` changes remount the component via `key` at the callsite.
 
   const clampTranslate = useCallback((x: number, y: number, scale: number) => {
     const stage = stageSizeRef.current;
@@ -456,6 +462,18 @@ export default function SurveillanceReportsSection({
   const hasSurveillanceInvestigationAPI = true;
   const [unseenCounts, setUnseenCounts] = useState<Record<string, number>>({});
   const [unseenIds, setUnseenIds] = useState<string[]>([]);
+  const fetchRange = useMemo(() => {
+    const windowStart = shiftIsoDate(selectedDate, -7);
+    const windowEnd = shiftIsoDate(selectedDate, 1);
+    const startDate = manualDateRange?.startDate ?? windowStart;
+    const endDate = manualDateRange?.endDate ?? windowEnd;
+    return { startDate, endDate };
+  }, [selectedDate, manualDateRange?.startDate, manualDateRange?.endDate]);
+
+  const cacheKey = useMemo(() => {
+    const storeKey = selectedStore || user.storeNumber || "default";
+    return `ih-surveillance-records:${storeKey}:${fetchRange.startDate}:${fetchRange.endDate}`;
+  }, [selectedStore, user.storeNumber, fetchRange.startDate, fetchRange.endDate]);
   const selectedStoreMeta = useMemo(
     () => stores.find((store) => store.storeId === selectedStore),
     [stores, selectedStore],
@@ -541,6 +559,10 @@ export default function SurveillanceReportsSection({
           category: "surveillance",
           store: selectedStore,
         });
+        params.set("includeStores", "0");
+        if (fetchRange.startDate) params.set("startDate", fetchRange.startDate);
+        if (fetchRange.endDate) params.set("endDate", fetchRange.endDate);
+
         const response = await fetch(`/api/records?${params.toString()}`, {
           cache: "no-store",
         });
@@ -550,10 +572,19 @@ export default function SurveillanceReportsSection({
         }
         const nextRecords = Array.isArray(data.records) ? data.records : [];
         setRecords(nextRecords);
+        if (typeof window !== "undefined") {
+          try {
+            window.sessionStorage.setItem(
+              cacheKey,
+              JSON.stringify({ storedAt: Date.now(), records: nextRecords }),
+            );
+          } catch {
+            // ignore storage failures
+          }
+        }
         loadUnseen(selectedStore);
       } catch (error) {
         console.error("Failed to load surveillance reports", error);
-        setRecords([]);
         setMessage(
           error instanceof Error
             ? error.message
@@ -565,8 +596,31 @@ export default function SurveillanceReportsSection({
         }
       }
     },
-    [selectedStore, loadUnseen],
+    [
+      selectedStore,
+      fetchRange.startDate,
+      fetchRange.endDate,
+      cacheKey,
+      loadUnseen,
+    ],
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = window.sessionStorage.getItem(cacheKey);
+      if (!stored) return;
+      const parsed = JSON.parse(stored) as {
+        storedAt?: number;
+        records?: unknown;
+      };
+      if (!Array.isArray(parsed?.records)) return;
+      setRecords(parsed.records as CombinedRecord[]);
+      setLoading(false);
+    } catch {
+      // ignore invalid cache
+    }
+  }, [cacheKey]);
 
   useEffect(() => {
     loadReports(false);
@@ -576,7 +630,7 @@ export default function SurveillanceReportsSection({
     const interval = window.setInterval(() => {
       loadReports(true);
       loadUnseen();
-    }, 15000);
+    }, 20000);
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
         loadReports(true);
@@ -594,7 +648,7 @@ export default function SurveillanceReportsSection({
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("focus", handleFocus);
     };
-  }, [loadReports]);
+  }, [loadReports, loadUnseen]);
 
   useEffect(() => {
     loadUnseen();
@@ -624,16 +678,6 @@ export default function SurveillanceReportsSection({
       window.dispatchEvent(new Event("ih-nav-badges-refresh"));
     }
   };
-
-  const shiftDate = (value: string, delta: number) => {
-    if (!value) return value;
-    const date = new Date(`${value}T00:00:00`);
-    date.setDate(date.getDate() + delta);
-    return date.toISOString().slice(0, 10);
-  };
-
-  const localDateString = (value: string) =>
-    new Date(value).toLocaleDateString("en-CA");
 
   const sortedRecords = useMemo(() => {
     return [...records].sort(
@@ -762,6 +806,8 @@ export default function SurveillanceReportsSection({
   });
 
   const hasReports = recordsForDate.length > 0;
+  const showSkeleton = loading && records.length === 0;
+  const showRefreshing = loading && records.length > 0;
   const activeStoreName =
     storeOptions.find((store) => store.storeId === selectedStore)?.storeName ??
     `Store ${selectedStore}`;
@@ -853,7 +899,7 @@ export default function SurveillanceReportsSection({
           <button
             type="button"
             onClick={() => {
-              const next = shiftDate(selectedDate, -1);
+              const next = shiftIsoDate(selectedDate, -1);
               setDateTouched(true);
               setSelectedDate(next);
               setManualDateRange?.({ startDate: next, endDate: next });
@@ -877,7 +923,7 @@ export default function SurveillanceReportsSection({
           <button
             type="button"
             onClick={() => {
-              const next = shiftDate(selectedDate, 1);
+              const next = shiftIsoDate(selectedDate, 1);
               setDateTouched(true);
               setSelectedDate(next);
               setManualDateRange?.({ startDate: next, endDate: next });
@@ -897,7 +943,7 @@ export default function SurveillanceReportsSection({
       ) : (
         <div className="mt-6">
           <div className="space-y-4">
-              {loading ? (
+              {showSkeleton ? (
                 <div className="space-y-4">
                   <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-[0_2px_10px_rgba(15,23,42,0.06)]">
                     <div className="ui-skeleton h-4 w-44" />
@@ -921,6 +967,9 @@ export default function SurveillanceReportsSection({
               </p>
             ) : (
               <>
+                {showRefreshing ? (
+                  <p className="text-xs text-slate-500">Refreshing…</p>
+                ) : null}
                 <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
@@ -1304,6 +1353,7 @@ export default function SurveillanceReportsSection({
                 />
               ) : attachmentViewerFile.kind === "image" ? (
                 <ZoomableImage
+                  key={attachmentViewerFile.path}
                   src={buildAttachmentSrc(attachmentViewerFile.path)}
                   alt={attachmentViewerFile.originalName ?? "Attachment preview"}
                 />

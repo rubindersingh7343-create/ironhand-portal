@@ -33,6 +33,7 @@ export async function GET(request: Request) {
   const managedStoreIds = managedStores.map((store) => store.storeId);
 
   const { searchParams } = new URL(request.url);
+  const includeStores = searchParams.get("includeStores") !== "0";
   const category = searchParams.get("category") ?? undefined;
   const employee = searchParams.get("employee") ?? undefined;
   const startDate = searchParams.get("startDate") ?? undefined;
@@ -66,14 +67,19 @@ export async function GET(request: Request) {
     endDate,
   };
 
-  const [records, storeIds] = await Promise.all([
-    getCombinedRecords(filters),
-    listStoreNumbers(),
-  ]);
+  const records = await getCombinedRecords(filters);
 
-  const availableStores = isManager
-    ? managedStores
-    : await buildStorePayload(storeIds);
+  const storeIds =
+    !includeStores || user.role === "client" || isManager ? [] : await listStoreNumbers();
+
+  const availableStores =
+    !includeStores
+      ? []
+      : user.role === "client"
+        ? []
+        : isManager
+          ? managedStores
+          : await buildStorePayload(storeIds);
 
   const filteredRecords = isManager
     ? records.filter((record) => managedStoreIds.includes(record.storeNumber))
@@ -90,7 +96,7 @@ export async function GET(request: Request) {
     user.role === "client"
       ? (user.storeIds?.length ? user.storeIds : [user.storeNumber]).filter(Boolean)
       : [];
-  const clientStores = allowedStoreIds.length
+  const clientStores = includeStores && allowedStoreIds.length
     ? await buildStorePayload(allowedStoreIds)
     : [];
 
