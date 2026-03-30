@@ -19,9 +19,14 @@ export async function GET(request: Request) {
     [
       surveillance.storeNumber,
       ...(Array.isArray(surveillance.storeIds) ? surveillance.storeIds : []),
-      ...(await getSurveillanceStoreIds(surveillance.id)),
     ].filter(Boolean),
   );
+
+  if (!allowedStores.has(requestedStore)) {
+    (await getSurveillanceStoreIds(surveillance.id)).forEach((id: string) => {
+      if (id) allowedStores.add(id);
+    });
+  }
 
   if (!allowedStores.has(requestedStore)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
