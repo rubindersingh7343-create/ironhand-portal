@@ -95,26 +95,23 @@ export default async function RootLayout({
             flex-direction: column;
             align-items: center;
             text-align: center;
-            gap: 12px;
+            gap: 14px;
           }
 
           #ih-boot .ih-boot-logo {
-            height: 80px;
-            width: 80px;
-            border-radius: 9999px;
-            border: 1px solid rgba(255,255,255,0.10);
-            background: rgba(255,255,255,0.06);
+            width: 220px;
+            max-width: 70vw;
             box-shadow: 0 20px 60px rgba(0,0,0,0.45);
-            overflow: hidden;
-            display: grid;
-            place-items: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
           }
 
           #ih-boot .ih-boot-logo img {
-            height: 100%;
             width: 100%;
+            height: auto;
             object-fit: contain;
-            padding: 12px;
+            padding: 0;
           }
 
           #ih-boot .ih-boot-name {
@@ -157,7 +154,7 @@ export default async function RootLayout({
           <div className="ih-boot-inner">
             <div className="ih-boot-logo">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/ironhand-logo.png" alt="Iron Hand" />
+              <img src="/logowriting2.png" alt="Iron Hand" />
             </div>
             <div className="ih-boot-name">{bootName || "\u00A0"}</div>
             <div className="ih-boot-label">

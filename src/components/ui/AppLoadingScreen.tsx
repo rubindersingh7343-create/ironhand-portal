@@ -28,14 +28,12 @@ export default function AppLoadingScreen({
       )}
     >
       <div className="flex w-full max-w-sm flex-col items-center text-center">
-        <div className="h-20 w-20 overflow-hidden rounded-full border border-white/10 bg-white/5 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/ironhand-logo.png"
-            alt="Iron Hand"
-            className="h-full w-full object-contain p-3"
-          />
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/logowriting2.png"
+          alt="Iron Hand"
+          className="h-32 w-auto object-contain drop-shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
+        />
 
         <p className="mt-6 text-3xl font-semibold tracking-tight">
           {displayName || " "}
