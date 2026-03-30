@@ -221,103 +221,10 @@ function OwnerPortalDashboardContent({
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const body = document.body;
-    const pager = document.getElementById("owner-portal-pager");
-    if (!pager) return;
-
-    const pages = Array.from(
-      pager.querySelectorAll<HTMLElement>(".owner-portal-page"),
-    );
-    if (!pages.length) return;
-
-    let activePage: HTMLElement | null = null;
-    let raf = 0;
-    let settleTimer: number | null = null;
-
-    const setScrolled = (value: boolean) => {
-      if (value) {
-        body.dataset.ownerScrolled = "true";
-      } else {
-        delete body.dataset.ownerScrolled;
-      }
-    };
-
-    const findNearestPage = (): HTMLElement | null => {
-      const left = pager.scrollLeft;
-      let best: HTMLElement | null = null;
-      let bestDistance = Number.POSITIVE_INFINITY;
-      pages.forEach((page) => {
-        const distance = Math.abs(page.offsetLeft - left);
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          best = page;
-        }
-      });
-      return best;
-    };
-
-    const isSnappedTo = (page: HTMLElement | null) => {
-      if (!page) return false;
-      return Math.abs(page.offsetLeft - pager.scrollLeft) <= 12;
-    };
-
-    const compute = () => {
-      raf = 0;
-      const scrollTop = activePage?.scrollTop ?? 0;
-      setScrolled(scrollTop > 6);
-    };
-
-    const schedule = () => {
-      if (raf) return;
-      raf = window.requestAnimationFrame(compute);
-    };
-
-    const attach = (force = false) => {
-      // Avoid toggling header padding while the pager is mid-swipe; only switch pages
-      // when the snap has settled (or when forced, e.g. on first render).
-      const next = findNearestPage() as HTMLElement | null;
-      if (!force && !isSnappedTo(next)) {
-        schedule();
-        return;
-      }
-      if (next === activePage) {
-        schedule();
-        return;
-      }
-      if (activePage) {
-        activePage.removeEventListener("scroll", schedule);
-      }
-      activePage = next;
-      if (activePage) {
-        activePage.addEventListener("scroll", schedule, { passive: true });
-      }
-      schedule();
-    };
-
-    const onPagerScroll = () => {
-      // Defer switching active page until scrolling settles (prevents jumpy snap).
-      if (settleTimer) window.clearTimeout(settleTimer);
-      settleTimer = window.setTimeout(() => {
-        settleTimer = null;
-        attach();
-      }, 140);
-    };
-
-    const onResize = () => attach(true);
-
-    pager.addEventListener("scroll", onPagerScroll, { passive: true });
-    window.addEventListener("resize", onResize);
-    attach(true);
-
-    return () => {
-      pager.removeEventListener("scroll", onPagerScroll);
-      window.removeEventListener("resize", onResize);
-      if (activePage) activePage.removeEventListener("scroll", schedule);
-      if (raf) window.cancelAnimationFrame(raf);
-      if (settleTimer) window.clearTimeout(settleTimer);
-      delete body.dataset.ownerScrolled;
-    };
+    // Previously used to toggle `body[data-owner-scrolled]` to animate header spacing.
+    // That animation caused scroll jank on iOS; spacing is now constant, so we skip the
+    // scroll listeners entirely for smoother scrolling.
+    return;
   }, []);
 
   const pages = useMemo(
