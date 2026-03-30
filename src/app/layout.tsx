@@ -68,6 +68,7 @@ export default async function RootLayout({
             z-index: 2147483647;
             background: #071327;
             color: #fff;
+            --ih-logo-h: min(34vh, 300px);
             -webkit-font-smoothing: antialiased;
             text-rendering: optimizeLegibility;
             transition: opacity 180ms ease;
@@ -88,13 +89,12 @@ export default async function RootLayout({
             left: 50%;
             top: 50%;
             transform: translate(-50%, -50%);
-            width: clamp(220px, 68vw, 320px);
-            max-width: 86vw;
           }
 
           #ih-boot .ih-boot-logo img {
-            width: 100%;
-            height: auto;
+            height: var(--ih-logo-h);
+            width: auto;
+            max-width: min(86vw, 420px);
             object-fit: contain;
             padding: 0;
           }
@@ -102,8 +102,8 @@ export default async function RootLayout({
           #ih-boot .ih-boot-text {
             position: absolute;
             left: 50%;
-            top: 50%;
-            transform: translate(-50%, calc(-50% + clamp(138px, 17vh, 178px)));
+            top: calc(50% + (var(--ih-logo-h) / 2) + 28px);
+            transform: translate(-50%, 0);
             width: 100%;
             max-width: 420px;
             padding: 0 24px;
@@ -153,7 +153,7 @@ export default async function RootLayout({
           </div>
           <div className="ih-boot-text">
             <div className="ih-boot-name">
-              {bootName ? `Welcome ${bootName}` : "\u00A0"}
+              {bootName || "\u00A0"}
             </div>
             <div className="ih-boot-label">
               <span>Loading…</span>

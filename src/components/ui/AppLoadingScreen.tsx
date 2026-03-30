@@ -26,23 +26,28 @@ export default function AppLoadingScreen({
         "relative min-h-screen bg-[#071327] text-white",
         className,
       )}
+      style={{ ["--ih-logo-h" as any]: "min(34vh, 300px)" }}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src="/logowriting2.png"
         alt="Iron Hand"
-        className="absolute left-1/2 top-1/2 w-[clamp(220px,68vw,320px)] max-w-[86vw] -translate-x-1/2 -translate-y-1/2 object-contain"
+        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 object-contain"
+        style={{
+          height: "var(--ih-logo-h)",
+          width: "auto",
+          maxWidth: "min(86vw, 420px)",
+        }}
       />
 
       <div
-        className="absolute left-1/2 top-1/2 w-full max-w-[420px] -translate-x-1/2 px-6 text-center"
+        className="absolute left-1/2 w-full max-w-[420px] -translate-x-1/2 px-6 text-center"
         style={{
-          transform:
-            "translate(-50%, calc(-50% + clamp(138px, 17vh, 178px)))",
+          top: "calc(50% + (var(--ih-logo-h) / 2) + 28px)",
         }}
       >
         <p className="text-3xl font-semibold tracking-tight">
-          {displayName ? `Welcome ${displayName}` : " "}
+          {displayName || " "}
         </p>
 
         <div className="mt-3 flex items-center justify-center gap-3 text-lg text-white/80">
