@@ -983,8 +983,8 @@ export default function SurveillanceReportsSection({
                     className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-blue-500/20 to-transparent"
                     aria-hidden="true"
                   />
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
+                  <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-[#111a32] px-4 py-3 ui-ink-inverse shadow-[0_8px_18px_rgba(34,58,112,0.16)]">
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/85">
                       Summary
                     </p>
                     {selectedRoutineEntry?.record ? (
@@ -994,7 +994,7 @@ export default function SurveillanceReportsSection({
                           markSurveillanceSeen(selectedRoutineEntry.record);
                           setActiveInvestigate(selectedRoutineEntry.record);
                         }}
-                        className="ui-icon-btn ui-icon-btn--primary"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white shadow-[0_10px_22px_rgba(2,6,23,0.32)] transition active:scale-95"
                         aria-label="Investigate"
                       >
                         <svg
@@ -1027,9 +1027,7 @@ export default function SurveillanceReportsSection({
                                 setSelectedRoutineRecordId(entry.record.id);
                               }}
                               className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-left text-xs font-semibold transition ${
-                                isActive
-                                  ? "border-blue-200 bg-blue-50 text-blue-900"
-                                  : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50"
+                                isActive ? "ui-pill-primary" : "ui-pill-secondary"
                               }`}
                             >
                               <span className="max-w-[14ch] truncate">{entry.name}</span>
@@ -1167,11 +1165,11 @@ export default function SurveillanceReportsSection({
 
                 {incidents.length ? (
                   <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
-                    <div className="mb-3 flex items-center justify-between gap-2">
-                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
+                    <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-[#111a32] px-4 py-3 ui-ink-inverse shadow-[0_8px_18px_rgba(34,58,112,0.16)]">
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/85">
                         Incidents
                       </p>
-                      <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                      <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-white/90">
                         {incidents.length}
                       </span>
                     </div>
@@ -1283,8 +1281,15 @@ export default function SurveillanceReportsSection({
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-3xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
-                    No incidents reported for this date.
+                  <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
+                    <div className="rounded-2xl bg-[#111a32] px-4 py-3 ui-ink-inverse shadow-[0_8px_18px_rgba(34,58,112,0.16)]">
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/85">
+                        Incidents
+                      </p>
+                    </div>
+                    <p className="mt-4 text-sm text-slate-600">
+                      No incidents reported for this date.
+                    </p>
                   </div>
                 )}
               </>
