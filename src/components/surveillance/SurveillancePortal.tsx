@@ -10,6 +10,7 @@ import { supabasePublic } from "@/lib/supabaseClient";
 import UploadQueue from "@/components/uploads/UploadQueue";
 import { useFileUpload } from "@/hooks/useFileUpload";
 import RememberUserName from "@/components/auth/RememberUserName";
+import AppLoadingScreen from "@/components/ui/AppLoadingScreen";
 
 const SurveillanceInvestigationModal = dynamic(
   () => import("@/components/surveillance/SurveillanceInvestigationModal"),
@@ -96,12 +97,12 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
   const [employees, setEmployees] = useState<StoreEmployee[]>([]);
   const [employeeStatus, setEmployeeStatus] = useState<
     "idle" | "loading" | "error"
-  >("idle");
+  >("loading");
   const [employeeMessage, setEmployeeMessage] = useState<string | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState("");
   const [recentReports, setRecentReports] = useState<RecentReport[]>([]);
   const [recentStatus, setRecentStatus] = useState<"idle" | "loading" | "error">(
-    "loading",
+    "idle",
   );
   const [recentMessage, setRecentMessage] = useState<string | null>(null);
   const [viewerFile, setViewerFile] = useState<StoredFile | null>(null);
@@ -120,6 +121,8 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
   const [investigationMessage, setInvestigationMessage] = useState<string | null>(null);
   const [activeInvestigation, setActiveInvestigation] = useState<InvestigationCase | null>(null);
   const [secondaryReady, setSecondaryReady] = useState(false);
+  const [bootReady, setBootReady] = useState(false);
+  const [bootVisible, setBootVisible] = useState(false);
 
   const upload = useFileUpload({
     folder: "surveillance",
@@ -197,10 +200,29 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
   }, [loadStores]);
 
   useEffect(() => {
+    if (bootReady) return;
+    if (!storesLoading && employeeStatus !== "loading") {
+      setBootReady(true);
+    }
+  }, [bootReady, employeeStatus, storesLoading]);
+
+  const bootPending = !bootReady && (storesLoading || employeeStatus === "loading");
+
+  useEffect(() => {
+    if (!bootPending) {
+      setBootVisible(false);
+      return;
+    }
+    const timeout = window.setTimeout(() => setBootVisible(true), 180);
+    return () => window.clearTimeout(timeout);
+  }, [bootPending]);
+
+  useEffect(() => {
     const loadEmployees = async () => {
       if (!selectedStore) {
         setEmployees([]);
         setSelectedEmployee("");
+        setEmployeeStatus("idle");
         return;
       }
       setEmployeeStatus("loading");
@@ -340,9 +362,8 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
   }, [fetchRecentFromRecords]);
 
   useEffect(() => {
-    if (!secondaryReady) return;
     loadRecentReports();
-  }, [loadRecentReports, secondaryReady]);
+  }, [loadRecentReports]);
 
   const loadInvestigations = useCallback(async () => {
     setInvestigationStatus("loading");
@@ -621,6 +642,13 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
   return (
     <div className="safe-area-top min-h-screen bg-gradient-to-b from-[#040a20] to-[#010109] px-4 py-10 text-white">
       <RememberUserName name={user.name} />
+      {bootVisible ? (
+        <AppLoadingScreen
+          name={user.name}
+          label="Loading…"
+          className="fixed inset-0 z-50"
+        />
+      ) : null}
       <div className="mx-auto flex max-w-4xl flex-col gap-6">
         <TopBarNav sections={sections} sectionSelector=".portal-section" />
         <header className="ui-card">
