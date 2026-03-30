@@ -5,6 +5,12 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // Prevent iOS webviews from reusing a stale HTML shell between deploys.
+        // Only apply to extensionless routes (skip assets like .png/.css/.js).
+        source: "/:path((?!_next/.*|.*\\..*).*)",
+        headers: [{ key: "Cache-Control", value: "no-store" }],
+      },
+      {
         source: "/.well-known/apple-app-site-association",
         headers: [
           { key: "Content-Type", value: "application/json" },
