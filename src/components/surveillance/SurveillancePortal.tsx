@@ -280,7 +280,11 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
                   : storeId;
               return [storeId, storeName] as const;
             })
-            .filter(Boolean)
+            .filter(
+              (
+                entry,
+              ): entry is readonly [string, string] => entry !== null,
+            )
         : [],
     );
     const records = Array.isArray(payload.records) ? payload.records : [];
@@ -455,7 +459,11 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
         if (rowItems.some((item) => !item)) {
           throw new Error("Select a file in each row (or remove empty rows).");
         }
-        const resolvedRowItems = rowItems.filter(Boolean);
+        const resolvedRowItems = rowItems.filter(
+          (
+            item,
+          ): item is NonNullable<(typeof rowItems)[number]> => item !== null,
+        );
         if (resolvedRowItems.length === 0) {
           throw new Error("Add at least one file.");
         }
@@ -474,16 +482,18 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
           throw new Error("Upload is missing a storage path. Please retry the file upload.");
         }
 
-        const uploadedFiles = resolvedRowItems.map((item, index) => {
+        const uploadedFiles: Array<StoredFile & { uploadItemId?: string }> =
+          resolvedRowItems.map((item, index) => {
           const resolvedLabel =
             footageLabels[index] || primaryFootageLabel || primaryLabel;
           const resolvedSummary =
             footageSummaries[index] || primaryFootageSummary || "";
           const mimeType = item.mimeType || "application/octet-stream";
+          const storagePath = item.storagePath as string;
           return {
             uploadItemId: item.serverId,
-            id: item.storagePath,
-            path: item.storagePath,
+            id: storagePath,
+            path: storagePath,
             originalName: item.filename,
             mimeType,
             size: item.totalBytes,
