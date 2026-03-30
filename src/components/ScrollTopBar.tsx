@@ -121,6 +121,13 @@ export default function ScrollTopBar() {
           try {
             router.refresh();
             window.dispatchEvent(new Event("ih-nav-badges-refresh"));
+          } catch (error) {
+            console.error("Pull-to-refresh failed:", error);
+            try {
+              window.location.reload();
+            } catch {
+              // ignore reload failures
+            }
           } finally {
             window.setTimeout(() => {
               setIsRefreshing(false);
