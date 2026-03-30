@@ -241,10 +241,13 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
     const startDate = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
       .toISOString()
       .slice(0, 10);
+    const endDate = new Date().toISOString().slice(0, 10);
     const params = new URLSearchParams({
       category: "surveillance",
       store: selectedStore || user.storeNumber,
       startDate,
+      endDate,
+      includeStores: "0",
     });
     const response = await fetch(`/api/records?${params.toString()}`, {
       cache: "no-store",
