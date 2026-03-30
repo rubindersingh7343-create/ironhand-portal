@@ -6,7 +6,7 @@ import { firstLastFromName } from "@/lib/userDisplayName";
 
 export default function AppLoadingScreen({
   name,
-  label = "Logging you in…",
+  label = "Loading…",
   className,
 }: {
   name?: string | null;
@@ -23,23 +23,29 @@ export default function AppLoadingScreen({
   return (
     <div
       className={clsx(
-        "safe-area-top flex min-h-screen items-center justify-center bg-gradient-to-b from-[#071327] to-[#02060f] px-6 py-12 text-white",
+        "relative min-h-screen bg-[#071327] text-white",
         className,
       )}
     >
-      <div className="flex w-full max-w-sm flex-col items-center text-center">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/logowriting2.png"
-          alt="Iron Hand"
-          className="h-32 w-auto object-contain drop-shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
-        />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/logowriting2.png"
+        alt="Iron Hand"
+        className="absolute left-1/2 top-1/2 w-[clamp(220px,68vw,320px)] max-w-[86vw] -translate-x-1/2 -translate-y-1/2 object-contain"
+      />
 
-        <p className="mt-6 text-3xl font-semibold tracking-tight">
-          {displayName || " "}
+      <div
+        className="absolute left-1/2 top-1/2 w-full max-w-[420px] -translate-x-1/2 px-6 text-center"
+        style={{
+          transform:
+            "translate(-50%, calc(-50% + clamp(138px, 17vh, 178px)))",
+        }}
+      >
+        <p className="text-3xl font-semibold tracking-tight">
+          {displayName ? `Welcome ${displayName}` : " "}
         </p>
 
-        <div className="mt-3 flex items-center gap-3 text-lg text-white/80">
+        <div className="mt-3 flex items-center justify-center gap-3 text-lg text-white/80">
           <span>{label}</span>
           <span
             className="h-5 w-5 animate-spin rounded-full border-2 border-white/25 border-t-white/80"

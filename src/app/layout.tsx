@@ -66,17 +66,12 @@ export default async function RootLayout({
             position: fixed;
             inset: 0;
             z-index: 2147483647;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 48px 24px;
-            background: linear-gradient(180deg, #071327 0%, #02060f 100%);
+            background: #071327;
             color: #fff;
-            padding-top: calc(env(safe-area-inset-top, 0px) + 48px);
-            padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 48px);
             -webkit-font-smoothing: antialiased;
             text-rendering: optimizeLegibility;
             transition: opacity 180ms ease;
+            overflow: hidden;
           }
 
           #ih-boot.ih-boot-hidden {
@@ -88,23 +83,13 @@ export default async function RootLayout({
             display: none;
           }
 
-          #ih-boot .ih-boot-inner {
-            width: 100%;
-            max-width: 380px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            text-align: center;
-            gap: 14px;
-          }
-
           #ih-boot .ih-boot-logo {
-            width: 220px;
-            max-width: 70vw;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.45);
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: clamp(220px, 68vw, 320px);
+            max-width: 86vw;
           }
 
           #ih-boot .ih-boot-logo img {
@@ -114,8 +99,19 @@ export default async function RootLayout({
             padding: 0;
           }
 
+          #ih-boot .ih-boot-text {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, calc(-50% + clamp(138px, 17vh, 178px)));
+            width: 100%;
+            max-width: 420px;
+            padding: 0 24px;
+            text-align: center;
+            pointer-events: none;
+          }
+
           #ih-boot .ih-boot-name {
-            margin-top: 12px;
             font-size: 30px;
             line-height: 1.1;
             font-weight: 650;
@@ -151,12 +147,14 @@ export default async function RootLayout({
         style={{ backgroundColor: "#071327" }}
       >
         <div id="ih-boot" role="status" aria-live="polite">
-          <div className="ih-boot-inner">
-            <div className="ih-boot-logo">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logowriting2.png" alt="Iron Hand" />
+          <div className="ih-boot-logo">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logowriting2.png" alt="Iron Hand" />
+          </div>
+          <div className="ih-boot-text">
+            <div className="ih-boot-name">
+              {bootName ? `Welcome ${bootName}` : "\u00A0"}
             </div>
-            <div className="ih-boot-name">{bootName || "\u00A0"}</div>
             <div className="ih-boot-label">
               <span>Loading…</span>
               <span className="ih-boot-spinner" aria-hidden="true" />
