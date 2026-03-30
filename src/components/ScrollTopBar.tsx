@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 const PULL_THRESHOLD = 70;
 const MAX_PULL = 140;
 const HOLD_OFFSET = 36;
+const ENGAGE_PULL_MIN = 12;
 
 export default function ScrollTopBar() {
   const pathname = usePathname();
@@ -99,6 +100,12 @@ export default function ScrollTopBar() {
       const consumedScroll = Math.max(0, pullRef.current.startScrollY - currentScroll);
       const pull = Math.max(0, delta - consumedScroll);
       if (pull === 0) {
+        setPullProgress(0);
+        setPullDistance(0);
+        return;
+      }
+      // Don't engage pull-to-refresh for tiny drags; it makes normal scrolling feel "sticky".
+      if (pull < ENGAGE_PULL_MIN) {
         setPullProgress(0);
         setPullDistance(0);
         return;
