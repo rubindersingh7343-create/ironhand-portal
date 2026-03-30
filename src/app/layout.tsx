@@ -55,6 +55,12 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <head>
+        <script
+          // Ensure the boot screen stays visible for a minimum duration so it is noticeable.
+          dangerouslySetInnerHTML={{
+            __html: `window.__IH_BOOT_START = Date.now();`,
+          }}
+        />
         <style>{`
           #ih-boot {
             position: fixed;
