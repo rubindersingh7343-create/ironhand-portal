@@ -84,6 +84,10 @@ export default async function RootLayout({
             pointer-events: none;
           }
 
+          #ih-boot.ih-boot-gone {
+            display: none;
+          }
+
           #ih-boot .ih-boot-inner {
             width: 100%;
             max-width: 380px;
