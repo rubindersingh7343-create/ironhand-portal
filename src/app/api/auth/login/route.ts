@@ -5,6 +5,9 @@ import {
   createSessionToken,
 } from "@/lib/auth";
 import { SESSION_COOKIE } from "@/lib/users";
+import { firstLastFromName } from "@/lib/userDisplayName";
+
+const DISPLAY_NAME_COOKIE = "ih_display_name";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
@@ -35,6 +38,15 @@ export async function POST(request: Request) {
   response.cookies.set({
     name: SESSION_COOKIE,
     value: token,
+    httpOnly: true,
+    maxAge: SESSION_MAX_AGE_SECONDS,
+    sameSite: "lax",
+    path: "/",
+    secure: process.env.NODE_ENV === "production",
+  });
+  response.cookies.set({
+    name: DISPLAY_NAME_COOKIE,
+    value: firstLastFromName(user.name ?? ""),
     httpOnly: true,
     maxAge: SESSION_MAX_AGE_SECONDS,
     sameSite: "lax",

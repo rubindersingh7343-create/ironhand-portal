@@ -9,6 +9,7 @@ import TopBarNav, { type TopBarSection } from "@/components/TopBarNav";
 import { supabasePublic } from "@/lib/supabaseClient";
 import UploadQueue from "@/components/uploads/UploadQueue";
 import { useFileUpload } from "@/hooks/useFileUpload";
+import RememberUserName from "@/components/auth/RememberUserName";
 
 const SurveillanceInvestigationModal = dynamic(
   () => import("@/components/surveillance/SurveillanceInvestigationModal"),
@@ -606,6 +607,7 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
 
   return (
     <div className="safe-area-top min-h-screen bg-gradient-to-b from-[#040a20] to-[#010109] px-4 py-10 text-white">
+      <RememberUserName name={user.name} />
       <div className="mx-auto flex max-w-4xl flex-col gap-6">
         <TopBarNav sections={sections} sectionSelector=".portal-section" />
         <header className="ui-card">

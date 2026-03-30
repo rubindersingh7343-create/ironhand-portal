@@ -11,6 +11,7 @@ import WeeklyOrdersPanel from "@/components/ironhand/WeeklyOrdersPanel";
 import RecordsPanel from "@/components/records/RecordsPanel";
 import ManagerScratchersPanel from "@/components/scratchers/ManagerScratchersPanel";
 import TopBarNav, { type TopBarSection } from "@/components/TopBarNav";
+import RememberUserName from "@/components/auth/RememberUserName";
 import type { SessionUser } from "@/lib/types";
 import { getClientStoreIds, listAllStores, listStoresForManager } from "@/lib/userStore";
 
@@ -86,6 +87,7 @@ export default async function DashboardShell({ user }: { user: SessionUser }) {
 
   return (
     <div className={shellClassName}>
+      <RememberUserName name={user.name} />
       <div className={stackClassName}>
         {topNavSections.length > 0 && (
           <TopBarNav sections={topNavSections} sectionSelector=".portal-section" />

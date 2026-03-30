@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import AppLoadingScreen from "@/components/ui/AppLoadingScreen";
+import { rememberUserFirstLastName } from "@/lib/userDisplayName";
 
 type FeedbackTone = "info" | "error" | "success";
 
@@ -15,17 +17,35 @@ interface LoginFormProps {
 }
 
 export default function LoginForm({ redirectTo = "/" }: LoginFormProps) {
-  const LOGIN_URL = "https://ironhand.net/auth/login?redirect=com.ironhand.operations://auth-callback";
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const [feedback, setFeedback] = useState<FeedbackMessage | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRedirecting, setIsRedirecting] = useState(false);
+  const [redirectingName, setRedirectingName] = useState<string | null>(null);
+
+  type CapacitorAuthSession = {
+    start: (args: { url: string; callbackScheme: string }) => Promise<void>;
+  };
+  type CapacitorLike = {
+    isNativePlatform?: () => boolean;
+    Plugins?: {
+      AuthSessionPlugin?: CapacitorAuthSession;
+    };
+  };
+
+  const getCapacitor = useCallback((): CapacitorLike | null => {
+    if (typeof window === "undefined") return null;
+    const cap = (window as unknown as { Capacitor?: unknown }).Capacitor;
+    if (!cap || typeof cap !== "object") return null;
+    return cap as CapacitorLike;
+  }, []);
 
   const startNativeAuthSession = async () => {
     // Only runs inside the native app; no-op on web/Safari.
-    const Cap = (typeof window !== "undefined" && (window as any).Capacitor) || null;
+    const Cap = getCapacitor();
     if (!Cap?.Plugins?.AuthSessionPlugin || !Cap?.isNativePlatform?.()) return;
     try {
       await Cap.Plugins.AuthSessionPlugin.start({
@@ -37,19 +57,6 @@ export default function LoginForm({ redirectTo = "/" }: LoginFormProps) {
     }
   };
 
-  const handleNativePasswordFill = async () => {
-    const Cap = (typeof window !== "undefined" && (window as any).Capacitor) || null;
-    const isNative = Cap?.Plugins?.AuthSessionPlugin && Cap?.isNativePlatform?.();
-    if (!isNative) return;
-    setIsSubmitting(true);
-    setFeedback(null);
-    try {
-      await startNativeAuthSession();
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsSubmitting(true);
@@ -58,7 +65,7 @@ export default function LoginForm({ redirectTo = "/" }: LoginFormProps) {
     try {
       // Trigger iOS system Passwords sheet when running in the native wrapper,
       // and skip the web fetch login in that case.
-      const Cap = (typeof window !== "undefined" && (window as any).Capacitor) || null;
+      const Cap = getCapacitor();
       const isNative = Cap?.Plugins?.AuthSessionPlugin && Cap?.isNativePlatform?.();
       if (isNative) {
         await startNativeAuthSession();
@@ -81,6 +88,15 @@ export default function LoginForm({ redirectTo = "/" }: LoginFormProps) {
         });
         return;
       }
+
+      const payload = await response.json().catch(() => ({}));
+      const userName =
+        typeof payload?.user?.name === "string" ? payload.user.name : null;
+      if (userName) {
+        setRedirectingName(userName);
+        rememberUserFirstLastName(userName);
+      }
+      setIsRedirecting(true);
 
       setFeedback({
         text: "Success! Redirecting…",
@@ -133,29 +149,15 @@ export default function LoginForm({ redirectTo = "/" }: LoginFormProps) {
     }
   };
 
-  const openExternalLogin = async () => {
-    const Cap = (typeof window !== "undefined" && (window as any).Capacitor) || null;
-    const isNative = Cap?.isNativePlatform?.();
-    if (isNative) {
-      try {
-        const { Browser } = await import("@capacitor/browser");
-        await Browser.open({ url: LOGIN_URL });
-        return;
-      } catch (error) {
-        console.error("Failed to open native browser", error);
-      }
-    }
-    window.open(LOGIN_URL, "_blank", "noopener,noreferrer");
-  };
-
   useEffect(() => {
     const setupDeepLink = async () => {
-      const Cap = (typeof window !== "undefined" && (window as any).Capacitor) || null;
+      const Cap = getCapacitor();
       if (!Cap?.isNativePlatform?.()) return;
       try {
         const { App } = await import("@capacitor/app");
         const listener = await App.addListener("appUrlOpen", ({ url }) => {
           if (url?.startsWith("com.ironhand.operations://auth-callback")) {
+            setIsRedirecting(true);
             router.replace(redirectTo);
             router.refresh();
           }
@@ -173,14 +175,18 @@ export default function LoginForm({ redirectTo = "/" }: LoginFormProps) {
         if (typeof fn === "function") fn();
       });
     };
-  }, [redirectTo, router]);
+  }, [redirectTo, router, getCapacitor]);
 
   return (
     <>
+      {isRedirecting ? (
+        <AppLoadingScreen name={redirectingName} label="Logging you in…" />
+      ) : null}
       <form
         onSubmit={handleSubmit}
         className="space-y-4 text-left"
         autoComplete="on"
+        style={isRedirecting ? { display: "none" } : undefined}
       >
         <div className="space-y-2">
           <label className="block text-sm font-medium text-slate-700" htmlFor="email">
