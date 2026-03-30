@@ -5,6 +5,7 @@ import ScrollTopBar from "@/components/ScrollTopBar";
 import { cookies } from "next/headers";
 import { firstLastFromName } from "@/lib/userDisplayName";
 import BootScreenHider from "@/components/ui/BootScreenHider";
+import DeployReloader from "@/components/ui/DeployReloader";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -164,6 +165,7 @@ export default async function RootLayout({
         <ScrollTopBar />
         <div id="app-root">{children}</div>
         <BootScreenHider />
+        <DeployReloader />
       </body>
     </html>
   );
