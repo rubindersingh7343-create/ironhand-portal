@@ -912,7 +912,7 @@ export default function SurveillanceReportsSection({
               setSelectedDate(next);
               setManualDateRange?.({ startDate: next, endDate: next });
             }}
-            className="ui-date-step ui-pill-primary text-white"
+            className="ui-date-step"
             aria-label="Previous day"
           >
             ‹
@@ -936,7 +936,7 @@ export default function SurveillanceReportsSection({
               setSelectedDate(next);
               setManualDateRange?.({ startDate: next, endDate: next });
             }}
-            className="ui-date-step ui-pill-primary text-white"
+            className="ui-date-step"
             aria-label="Next day"
           >
             ›
