@@ -1146,7 +1146,7 @@ export default function SurveillanceReportsSection({
                                       {src ? (
                                         <button
                                           type="button"
-                                          className="ui-pill-primary inline-flex items-center justify-center px-3 py-1 text-xs"
+                                          className="ui-pill-primary inline-flex items-center justify-center rounded-full px-4 py-1.5 text-xs"
                                           onClick={() => openAttachmentViewer(file)}
                                         >
                                           Open
@@ -1272,7 +1272,7 @@ export default function SurveillanceReportsSection({
                                 {src ? (
                                   <button
                                     type="button"
-                                    className="ui-pill-primary inline-flex items-center justify-center px-3 py-1 text-xs"
+                                    className="ui-pill-primary inline-flex items-center justify-center rounded-full px-4 py-1.5 text-xs"
                                     onClick={() => openAttachmentViewer(incident.file)}
                                   >
                                     Open
