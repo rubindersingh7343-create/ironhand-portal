@@ -437,7 +437,7 @@ export function OwnerPortalStoreProvider({
   children: ReactNode;
 }) {
   const [stores, setStores] = useState<OwnerPortalStoreSummary[]>([]);
-  const [selectedStoreId, setSelectedStoreId] = useState(() => {
+  const [selectedStoreId, setSelectedStoreIdState] = useState(() => {
     if (typeof window === "undefined") return user.storeNumber ?? "";
     const stored = window.localStorage.getItem("ih-owner-store");
     return stored ?? user.storeNumber ?? "";
@@ -472,7 +472,7 @@ export function OwnerPortalStoreProvider({
           "";
 
     setStores(merged);
-    setSelectedStoreId((prev) => {
+    setSelectedStoreIdState((prev) => {
       if (storedValid) return stored!;
       return merged.some((store) => store.storeId === prev) ? prev : preferred;
     });
@@ -505,6 +505,16 @@ export function OwnerPortalStoreProvider({
     if (!selectedStoreId) return;
     window.localStorage.setItem("ih-owner-store", selectedStoreId);
   }, [selectedStoreId]);
+
+  const setSelectedStoreId = useCallback((storeId: string) => {
+    setSelectedStoreIdState((prev) => {
+      if (prev === storeId) return prev;
+      return storeId;
+    });
+    // Date selection is store-specific; switching stores should reset date range
+    // so each store defaults to its most-recent uploads.
+    setManualDateRangeState(null);
+  }, []);
 
   const activeStore = useMemo(
     () => stores.find((store) => store.storeId === selectedStoreId) ?? null,

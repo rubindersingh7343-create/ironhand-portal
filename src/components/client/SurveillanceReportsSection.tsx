@@ -463,10 +463,12 @@ export default function SurveillanceReportsSection({
   const [unseenCounts, setUnseenCounts] = useState<Record<string, number>>({});
   const [unseenIds, setUnseenIds] = useState<string[]>([]);
   const fetchRange = useMemo(() => {
-    const windowStart = shiftIsoDate(selectedDate, -7);
+    const windowStart = shiftIsoDate(selectedDate, -30);
     const windowEnd = shiftIsoDate(selectedDate, 1);
     const startDate = manualDateRange?.startDate ?? windowStart;
-    const endDate = manualDateRange?.endDate ?? windowEnd;
+    const endDate = manualDateRange?.endDate
+      ? shiftIsoDate(manualDateRange.endDate, 1)
+      : windowEnd;
     return { startDate, endDate };
   }, [selectedDate, manualDateRange?.startDate, manualDateRange?.endDate]);
 
@@ -625,6 +627,11 @@ export default function SurveillanceReportsSection({
   useEffect(() => {
     loadReports(false);
   }, [loadReports]);
+
+  // When switching stores, let the view fall back to that store's most-recent uploads.
+  useEffect(() => {
+    setDateTouched(false);
+  }, [selectedStore]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
