@@ -438,10 +438,12 @@ export default function SurveillanceReportsSection({
 }: {
   user: SessionUser;
 }) {
+  const PAGE_KEY = "surveillance";
   const ownerStore = useOwnerPortalStore();
   const hasSharedStore = Boolean(ownerStore);
-  const manualDateRange = ownerStore?.manualDateRange ?? null;
-  const setManualDateRange = ownerStore?.setManualDateRange;
+  const dateLockRange = ownerStore?.dateLockRange ?? null;
+  const isDateLocked = Boolean(dateLockRange?.startDate);
+  const setPageDateRange = ownerStore?.setPageDateRange;
   const [stores, setStores] = useState<StoreSummary[]>(
     ownerStore?.stores ?? [],
   );
@@ -462,15 +464,13 @@ export default function SurveillanceReportsSection({
   const hasSurveillanceInvestigationAPI = true;
   const [unseenCounts, setUnseenCounts] = useState<Record<string, number>>({});
   const [unseenIds, setUnseenIds] = useState<string[]>([]);
+
   const fetchRange = useMemo(() => {
-    const windowStart = shiftIsoDate(selectedDate, -30);
-    const windowEnd = shiftIsoDate(selectedDate, 1);
-    const startDate = manualDateRange?.startDate ?? windowStart;
-    const endDate = manualDateRange?.endDate
-      ? shiftIsoDate(manualDateRange.endDate, 1)
-      : windowEnd;
-    return { startDate, endDate };
-  }, [selectedDate, manualDateRange?.startDate, manualDateRange?.endDate]);
+    const baseDate = isDateLocked && dateLockRange?.startDate ? dateLockRange.startDate : selectedDate;
+    const windowStart = shiftIsoDate(baseDate, -30);
+    const windowEnd = shiftIsoDate(baseDate, 1);
+    return { startDate: windowStart, endDate: windowEnd };
+  }, [selectedDate, isDateLocked, dateLockRange?.startDate]);
 
   const cacheKey = useMemo(() => {
     const storeKey = selectedStore || user.storeNumber || "default";
@@ -522,6 +522,44 @@ export default function SurveillanceReportsSection({
     };
     loadStores();
   }, [ownerStore, ownerStore?.stores, ownerStore?.selectedStoreId, user.storeNumber]);
+
+  useEffect(() => {
+    // When changing stores, avoid showing stale data/dates from the prior store.
+    setRecords([]);
+    setMessage(null);
+    if (isDateLocked && dateLockRange?.startDate) {
+      setSelectedDate(dateLockRange.startDate);
+      setDateTouched(true);
+      return;
+    }
+    const stored = ownerStore?.getPageDateRange?.(PAGE_KEY, selectedStore);
+    if (stored?.startDate) {
+      setSelectedDate(stored.startDate);
+      setDateTouched(true);
+      return;
+    }
+    setSelectedDate(today);
+    setDateTouched(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStore]);
+
+  useEffect(() => {
+    if (!selectedStore) return;
+    if (isDateLocked && dateLockRange?.startDate) {
+      setSelectedDate(dateLockRange.startDate);
+      setDateTouched(true);
+      return;
+    }
+    const stored = ownerStore?.getPageDateRange?.(PAGE_KEY, selectedStore);
+    if (stored?.startDate) {
+      setSelectedDate(stored.startDate);
+      setDateTouched(true);
+      return;
+    }
+    setSelectedDate(today);
+    setDateTouched(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDateLocked, dateLockRange?.startDate]);
 
   const loadUnseen = useCallback(
     async (storeOverride?: string) => {
@@ -743,14 +781,6 @@ export default function SurveillanceReportsSection({
     }
   }, [dateTouched, latestRecordDate, selectedDate]);
 
-  useEffect(() => {
-    if (!manualDateRange?.startDate) return;
-    if (manualDateRange.startDate !== selectedDate) {
-      setSelectedDate(manualDateRange.startDate);
-    }
-    if (!dateTouched) setDateTouched(true);
-  }, [manualDateRange, selectedDate, dateTouched]);
-
   const routineRecords = useMemo(() => {
     const labeledRoutine = recordsForDate.filter(
       (record) => record.surveillanceLabel?.toLowerCase() === "routine",
@@ -914,13 +944,20 @@ export default function SurveillanceReportsSection({
           <button
             type="button"
             onClick={() => {
+              if (isDateLocked) return;
               const next = shiftIsoDate(selectedDate, -1);
               setDateTouched(true);
               setSelectedDate(next);
-              setManualDateRange?.({ startDate: next, endDate: next });
+              if (selectedStore) {
+                setPageDateRange?.(PAGE_KEY, selectedStore, {
+                  startDate: next,
+                  endDate: next,
+                });
+              }
             }}
             className="ui-date-step"
             aria-label="Previous day"
+            disabled={isDateLocked}
           >
             ‹
           </button>
@@ -928,23 +965,37 @@ export default function SurveillanceReportsSection({
             type="date"
             value={selectedDate}
             onChange={(event) => {
+              if (isDateLocked) return;
               const next = event.target.value;
               setDateTouched(true);
               setSelectedDate(next);
-              setManualDateRange?.({ startDate: next, endDate: next });
+              if (selectedStore) {
+                setPageDateRange?.(PAGE_KEY, selectedStore, {
+                  startDate: next,
+                  endDate: next,
+                });
+              }
             }}
             className="ui-field ui-field--slim border-[#223a70]/25 bg-[rgba(34,58,112,0.04)]"
+            disabled={isDateLocked}
           />
           <button
             type="button"
             onClick={() => {
+              if (isDateLocked) return;
               const next = shiftIsoDate(selectedDate, 1);
               setDateTouched(true);
               setSelectedDate(next);
-              setManualDateRange?.({ startDate: next, endDate: next });
+              if (selectedStore) {
+                setPageDateRange?.(PAGE_KEY, selectedStore, {
+                  startDate: next,
+                  endDate: next,
+                });
+              }
             }}
             className="ui-date-step"
             aria-label="Next day"
+            disabled={isDateLocked}
           >
             ›
           </button>

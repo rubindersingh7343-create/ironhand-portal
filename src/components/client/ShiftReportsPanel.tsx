@@ -95,11 +95,13 @@ export default function ShiftReportsPanel({
   embedded?: boolean;
   reportConfigVersion?: number;
 }) {
+  const PAGE_KEY = "shift_reports";
   const today = useMemo(() => getLocalDate(), []);
   const ownerStore = useOwnerPortalStore();
   const hasSharedStore = Boolean(ownerStore);
-  const manualDateRange = ownerStore?.manualDateRange ?? null;
-  const setManualDateRange = ownerStore?.setManualDateRange;
+  const dateLockRange = ownerStore?.dateLockRange ?? null;
+  const isDateLocked = Boolean(dateLockRange?.startDate);
+  const setPageDateRange = ownerStore?.setPageDateRange;
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
   const [stores, setStores] = useState<StoreSummary[]>(
@@ -108,6 +110,11 @@ export default function ShiftReportsPanel({
   const [storeId, setStoreId] = useState(
     ownerStore?.selectedStoreId ?? user.storeNumber,
   );
+  const pageDateRange = useMemo(() => {
+    if (!ownerStore?.getPageDateRange) return null;
+    if (!storeId) return null;
+    return ownerStore.getPageDateRange(PAGE_KEY, storeId);
+  }, [ownerStore, storeId]);
   const [employees, setEmployees] = useState<EmployeeSummary[]>([]);
   const [reports, setReports] = useState<OwnerShiftReport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -160,15 +167,43 @@ export default function ShiftReportsPanel({
   }, [ownerStore, ownerStore?.stores, ownerStore?.selectedStoreId, user.storeNumber]);
 
   useEffect(() => {
-    if (!manualDateRange) return;
-    if (
-      manualDateRange.startDate !== startDate ||
-      manualDateRange.endDate !== endDate
-    ) {
-      setStartDate(manualDateRange.startDate);
-      setEndDate(manualDateRange.endDate);
+    if (!storeId) return;
+    if (isDateLocked && dateLockRange?.startDate) {
+      const nextStart = dateLockRange.startDate;
+      const nextEnd = dateLockRange.endDate || dateLockRange.startDate;
+      if (nextStart !== startDate) setStartDate(nextStart);
+      if (nextEnd !== endDate) setEndDate(nextEnd);
+      return;
     }
-  }, [manualDateRange, startDate, endDate]);
+    if (!pageDateRange) return;
+    if (
+      pageDateRange.startDate !== startDate ||
+      pageDateRange.endDate !== endDate
+    ) {
+      setStartDate(pageDateRange.startDate);
+      setEndDate(pageDateRange.endDate);
+    }
+  }, [
+    storeId,
+    isDateLocked,
+    dateLockRange?.startDate,
+    dateLockRange?.endDate,
+    pageDateRange,
+    startDate,
+    endDate,
+  ]);
+
+  useEffect(() => {
+    if (!storeId) return;
+    if (isDateLocked && dateLockRange?.startDate) return;
+    const stored = ownerStore?.getPageDateRange?.(PAGE_KEY, storeId);
+    if (stored?.startDate) return;
+    if (startDate !== today || endDate !== today) {
+      setStartDate(today);
+      setEndDate(today);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeId]);
 
   useEffect(() => {
     if (!storeId) return;
@@ -221,7 +256,7 @@ export default function ShiftReportsPanel({
       // Only "fallback to latest report date" on the initial/default view.
       // If the user manually picked a date, show exactly that date (even if empty)
       // so the UI doesn't show older reports under a newer selected date.
-      const allowFallback = !manualDateRange && !isRange;
+      const allowFallback = !pageDateRange && !isDateLocked && !isRange;
       const url = isRange
         ? `/api/owner/shift-reports?store_id=${encodeURIComponent(
             storeId,
@@ -239,14 +274,15 @@ export default function ShiftReportsPanel({
         return;
       }
       if (
-        !manualDateRange &&
+        !pageDateRange &&
+        !isDateLocked &&
         !isRange &&
         data?.effectiveDate &&
         data.effectiveDate !== startDate
       ) {
         setStartDate(data.effectiveDate);
         setEndDate(data.effectiveDate);
-        setManualDateRange?.({
+        setPageDateRange?.(PAGE_KEY, storeId, {
           startDate: data.effectiveDate,
           endDate: data.effectiveDate,
         });
@@ -691,11 +727,14 @@ export default function ShiftReportsPanel({
   };
 
   const shiftRange = (delta: number) => {
+    if (isDateLocked) return;
     const nextStart = shiftDate(startDate, delta);
     const nextEnd = shiftDate(endDate, delta);
     setStartDate(nextStart);
     setEndDate(nextEnd);
-    setManualDateRange?.({ startDate: nextStart, endDate: nextEnd });
+    if (storeId) {
+      setPageDateRange?.(PAGE_KEY, storeId, { startDate: nextStart, endDate: nextEnd });
+    }
   };
 
   const Container = embedded ? "div" : "section";
@@ -749,6 +788,7 @@ export default function ShiftReportsPanel({
               onClick={() => shiftRange(-1)}
               className="ui-date-step"
               aria-label="Previous day"
+              disabled={isDateLocked}
             >
               ‹
             </button>
@@ -756,13 +796,17 @@ export default function ShiftReportsPanel({
               type="date"
               value={startDate}
               onChange={(event) => {
+                if (isDateLocked) return;
                 const next = event.target.value;
                 const nextEnd = next > endDate ? next : endDate;
                 setStartDate(next);
                 if (nextEnd !== endDate) setEndDate(nextEnd);
-                setManualDateRange?.({ startDate: next, endDate: nextEnd });
+                if (storeId) {
+                  setPageDateRange?.(PAGE_KEY, storeId, { startDate: next, endDate: nextEnd });
+                }
               }}
               className="ui-field ui-field--slim"
+              disabled={isDateLocked}
             />
             <span className="text-[11px] font-semibold text-slate-400/80">
               To
@@ -771,19 +815,24 @@ export default function ShiftReportsPanel({
               type="date"
               value={endDate}
               onChange={(event) => {
+                if (isDateLocked) return;
                 const next = event.target.value;
                 const nextStart = next < startDate ? next : startDate;
                 setEndDate(next);
                 if (nextStart !== startDate) setStartDate(nextStart);
-                setManualDateRange?.({ startDate: nextStart, endDate: next });
+                if (storeId) {
+                  setPageDateRange?.(PAGE_KEY, storeId, { startDate: nextStart, endDate: next });
+                }
               }}
               className="ui-field ui-field--slim"
+              disabled={isDateLocked}
             />
             <button
               type="button"
               onClick={() => shiftRange(1)}
               className="ui-date-step"
               aria-label="Next day"
+              disabled={isDateLocked}
             >
               ›
             </button>

@@ -62,11 +62,13 @@ function normalizeItems(items: WeeklyOrderItem[]) {
 }
 
 export default function WeeklyOrdersSection({ user }: { user: SessionUser }) {
+  const PAGE_KEY = "weekly_orders";
   const activeTab: OrderPeriod = "weekly";
   const ownerStore = useOwnerPortalStore();
   const hasSharedStore = Boolean(ownerStore);
-  const manualDateRange = ownerStore?.manualDateRange ?? null;
-  const setManualDateRange = ownerStore?.setManualDateRange;
+  const dateLockRange = ownerStore?.dateLockRange ?? null;
+  const isDateLocked = Boolean(dateLockRange?.startDate);
+  const setPageDateRange = ownerStore?.setPageDateRange;
   const [stores, setStores] = useState<StoreSummary[]>(
     ownerStore?.stores ?? [],
   );
@@ -134,11 +136,22 @@ export default function WeeklyOrdersSection({ user }: { user: SessionUser }) {
   }, [ownerStore, ownerStore?.stores, ownerStore?.selectedStoreId, user.storeNumber]);
 
   useEffect(() => {
-    if (!manualDateRange?.startDate) return;
-    if (manualDateRange.startDate !== periodStart) {
-      setPeriodStart(manualDateRange.startDate);
+    if (!selectedStore) return;
+    if (isDateLocked && dateLockRange?.startDate) {
+      if (dateLockRange.startDate !== periodStart) {
+        setPeriodStart(dateLockRange.startDate);
+      }
+      return;
     }
-  }, [manualDateRange, periodStart]);
+    const stored = ownerStore?.getPageDateRange?.(PAGE_KEY, selectedStore);
+    if (stored?.startDate && stored.startDate !== periodStart) {
+      setPeriodStart(stored.startDate);
+      return;
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    if (periodStart !== today) setPeriodStart(today);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStore, isDateLocked, dateLockRange?.startDate]);
 
   const loadUnseen = useCallback(
     async (storeOverride?: string) => {
@@ -371,10 +384,17 @@ export default function WeeklyOrdersSection({ user }: { user: SessionUser }) {
           className="ui-field--slim"
           value={periodStart}
           onChange={(event) => {
+            if (isDateLocked) return;
             const next = event.target.value;
             setPeriodStart(next);
-            setManualDateRange?.({ startDate: next, endDate: next });
+            if (selectedStore) {
+              setPageDateRange?.(PAGE_KEY, selectedStore, {
+                startDate: next,
+                endDate: next,
+              });
+            }
           }}
+          disabled={isDateLocked}
         />
       </div>
 

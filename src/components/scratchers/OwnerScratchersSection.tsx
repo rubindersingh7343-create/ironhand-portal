@@ -29,10 +29,12 @@ const formatMoney = (value: number) =>
   }).format(value);
 
 export default function OwnerScratchersSection({ user }: { user: SessionUser }) {
+  const PAGE_KEY = "scratchers_owner";
   const ownerStore = useOwnerPortalStore();
   const activeStoreId = ownerStore?.selectedStoreId ?? user.storeNumber;
-  const manualDateRange = ownerStore?.manualDateRange ?? null;
-  const setManualDateRange = ownerStore?.setManualDateRange;
+  const dateLockRange = ownerStore?.dateLockRange ?? null;
+  const isDateLocked = Boolean(dateLockRange?.startDate);
+  const setPageDateRange = ownerStore?.setPageDateRange;
   const [discrepancies, setDiscrepancies] = useState<
     Array<ScratcherShiftCalculation & { report?: ShiftReport | null }>
   >([]);
@@ -146,13 +148,28 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
   }, [dateTouched, latestReportDate, startDate, endDate]);
 
   useEffect(() => {
-    if (!manualDateRange?.startDate) return;
-    const nextStart = manualDateRange.startDate;
-    const nextEnd = manualDateRange.endDate ?? manualDateRange.startDate;
-    if (nextStart !== startDate) setStartDate(nextStart);
-    if (nextEnd !== endDate) setEndDate(nextEnd);
-    if (!dateTouched) setDateTouched(true);
-  }, [manualDateRange, startDate, endDate, dateTouched]);
+    if (!activeStoreId) return;
+    if (isDateLocked && dateLockRange?.startDate) {
+      const nextStart = dateLockRange.startDate;
+      const nextEnd = dateLockRange.endDate || dateLockRange.startDate;
+      setStartDate(nextStart);
+      setEndDate(nextEnd);
+      setDateTouched(true);
+      return;
+    }
+    const stored = ownerStore?.getPageDateRange?.(PAGE_KEY, activeStoreId);
+    if (stored?.startDate) {
+      setStartDate(stored.startDate);
+      setEndDate(stored.endDate ?? stored.startDate);
+      setDateTouched(true);
+      return;
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    setStartDate(today);
+    setEndDate(today);
+    setDateTouched(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStoreId, isDateLocked, dateLockRange?.startDate, dateLockRange?.endDate]);
 
   const shiftDate = (value: string, delta: number) => {
     if (!value) return value;
@@ -162,13 +179,16 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
   };
 
   const shiftRange = (delta: number) => {
+    if (isDateLocked) return;
     if (!startDate) return;
     const nextStart = shiftDate(startDate, delta);
     const nextEnd = shiftDate(endDate || startDate, delta);
     setStartDate(nextStart);
     setEndDate(nextEnd);
     setDateTouched(true);
-    setManualDateRange?.({ startDate: nextStart, endDate: nextEnd });
+    if (activeStoreId) {
+      setPageDateRange?.(PAGE_KEY, activeStoreId, { startDate: nextStart, endDate: nextEnd });
+    }
   };
 
   const inRange = useCallback(
@@ -394,6 +414,7 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
               onClick={() => shiftRange(-1)}
               className="ui-date-step"
               aria-label="Previous day"
+              disabled={isDateLocked}
             >
               ‹
             </button>
@@ -401,14 +422,21 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
               type="date"
               value={startDate}
               onChange={(event) => {
+                if (isDateLocked) return;
                 const next = event.target.value;
                 const nextEnd = endDate && endDate >= next ? endDate : next;
                 setStartDate(next);
                 setEndDate(nextEnd);
                 setDateTouched(true);
-                setManualDateRange?.({ startDate: next, endDate: nextEnd });
+                if (activeStoreId) {
+                  setPageDateRange?.(PAGE_KEY, activeStoreId, {
+                    startDate: next,
+                    endDate: nextEnd,
+                  });
+                }
               }}
               className="ui-field ui-field--slim"
+              disabled={isDateLocked}
             />
             <span className="text-[11px] uppercase tracking-[0.18em] text-slate-400">
               To
@@ -417,20 +445,28 @@ export default function OwnerScratchersSection({ user }: { user: SessionUser }) 
               type="date"
               value={endDate}
               onChange={(event) => {
+                if (isDateLocked) return;
                 const next = event.target.value;
                 const nextStart = startDate && startDate <= next ? startDate : next;
                 setEndDate(next);
                 setStartDate(nextStart);
                 setDateTouched(true);
-                setManualDateRange?.({ startDate: nextStart, endDate: next });
+                if (activeStoreId) {
+                  setPageDateRange?.(PAGE_KEY, activeStoreId, {
+                    startDate: nextStart,
+                    endDate: next,
+                  });
+                }
               }}
               className="ui-field ui-field--slim"
+              disabled={isDateLocked}
             />
             <button
               type="button"
               onClick={() => shiftRange(1)}
               className="ui-date-step"
               aria-label="Next day"
+              disabled={isDateLocked}
             >
               ›
             </button>

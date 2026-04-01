@@ -32,7 +32,7 @@ export type OwnerPortalStoreSummary = {
   hasSurveillance?: boolean;
 };
 
-type OwnerPortalDateRange = {
+export type OwnerPortalDateRange = {
   startDate: string;
   endDate: string;
 };
@@ -44,9 +44,13 @@ type OwnerPortalStoreContextValue = {
   activeStore: OwnerPortalStoreSummary | null;
   ready: boolean;
   refreshStores: () => Promise<void>;
-  manualDateRange: OwnerPortalDateRange | null;
-  setManualDateRange: (range: OwnerPortalDateRange) => void;
-  clearManualDateRange: () => void;
+  dateLockRange: OwnerPortalDateRange | null;
+  isDateLocked: boolean;
+  setDateLockRange: (range: OwnerPortalDateRange) => void;
+  clearDateLockRange: () => void;
+  getPageDateRange: (pageKey: string, scopeId: string) => OwnerPortalDateRange | null;
+  setPageDateRange: (pageKey: string, scopeId: string, range: OwnerPortalDateRange) => void;
+  clearPageDateRange: (pageKey: string, scopeId: string) => void;
 };
 
 const OwnerPortalStoreContext =
@@ -63,20 +67,32 @@ function OwnerPortalStoreBar({
   selectedStoreId,
   onChange,
   ready,
+  dateLockRange,
+  onSetDateLockRange,
+  onClearDateLockRange,
 }: {
   stores: OwnerPortalStoreSummary[];
   selectedStoreId: string;
   onChange: (storeId: string) => void;
   ready: boolean;
+  dateLockRange: OwnerPortalDateRange | null;
+  onSetDateLockRange: (range: OwnerPortalDateRange) => void;
+  onClearDateLockRange: () => void;
 }) {
   const activeLabel =
     stores.find((store) => store.storeId === selectedStoreId)?.storeName ??
     (selectedStoreId ? `Store ${selectedStoreId}` : "Select a store");
   const [storePickerOpen, setStorePickerOpen] = useState(false);
-  const [managerChatOpen, setManagerChatOpen] = useState(false);
   const [surveillanceChatOpen, setSurveillanceChatOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const [chatBadges, setChatBadges] = useState({ manager: 0, surveillance: 0 });
+  const [dateLockOpen, setDateLockOpen] = useState(false);
+  const [chatBadges, setChatBadges] = useState({ surveillance: 0 });
+  const [toast, setToast] = useState<string | null>(null);
+  const [lockStart, setLockStart] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new Date().toISOString().slice(0, 10);
+  });
+  const [lockEnd, setLockEnd] = useState("");
   const [portalNode, setPortalNode] = useState<Element | null>(null);
   const [assistantVoice, setAssistantVoice] = useState<AssistantVoice>(() => {
     if (typeof window === "undefined") return DEFAULT_ASSISTANT_VOICE;
@@ -110,28 +126,37 @@ function OwnerPortalStoreBar({
   );
   const voiceIdleTimer = useRef<number | null>(null);
   const voiceToggleGuard = useRef(0);
+  const lockToastShownRef = useRef(false);
+
+  const isDateLocked = Boolean(dateLockRange?.startDate);
+
+  const showToast = (message: string) => {
+    setToast(message);
+    window.setTimeout(() => setToast(null), 2400);
+  };
+
+  useEffect(() => {
+    if (!isDateLocked) {
+      lockToastShownRef.current = false;
+      return;
+    }
+    if (lockToastShownRef.current) return;
+    lockToastShownRef.current = true;
+    showToast("Date lock active.");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDateLocked]);
 
   const loadBadges = useCallback(async (storeId: string) => {
     if (!storeId) return;
     try {
-      const [managerRes, survRes] = await Promise.all([
-        fetch(
-          `/api/owner/unseen?type=chat-manager&storeId=${encodeURIComponent(
-            storeId,
-          )}`,
-          { cache: "no-store" },
-        ),
-        fetch(
-          `/api/owner/unseen?type=chat-surveillance&storeId=${encodeURIComponent(
-            storeId,
-          )}`,
-          { cache: "no-store" },
-        ),
-      ]);
-      const managerData = await managerRes.json().catch(() => ({}));
+      const survRes = await fetch(
+        `/api/owner/unseen?type=chat-surveillance&storeId=${encodeURIComponent(
+          storeId,
+        )}`,
+        { cache: "no-store" },
+      );
       const survData = await survRes.json().catch(() => ({}));
       setChatBadges({
-        manager: managerData.counts?.[storeId] ?? 0,
         surveillance: survData.counts?.[storeId] ?? 0,
       });
     } catch (error) {
@@ -176,6 +201,14 @@ function OwnerPortalStoreBar({
   const canUseVoice = canOpenAssistant && supportsRealtime;
 
   useEffect(() => {
+    if (!dateLockOpen) return;
+    const nextStart = dateLockRange?.startDate ?? new Date().toISOString().slice(0, 10);
+    const nextEnd = dateLockRange?.endDate ?? "";
+    setLockStart(nextStart);
+    setLockEnd(nextEnd === nextStart ? "" : nextEnd);
+  }, [dateLockOpen, dateLockRange?.startDate, dateLockRange?.endDate]);
+
+  useEffect(() => {
     if (!canUseVoice) return;
     if (typeof navigator === "undefined") return;
     const warmConnection = async () => {
@@ -217,131 +250,140 @@ function OwnerPortalStoreBar({
     <>
       {portalNode &&
         createPortal(
-          <div className="owner-bottom-bar">
-            <div className="owner-bottom-bar__label owner-bottom-bar__label--ai">
-              <div className="owner-bottom-bar__slot">
-                <button
-                  type="button"
-                  onClick={() => setStorePickerOpen(true)}
-                  className="owner-bottom-bar__icon disabled:cursor-not-allowed disabled:opacity-50"
-                  aria-label="Select store"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M4 9l2-4h12l2 4" />
-                    <path d="M5 9v10h14V9" />
-                    <path d="M3 9h18" />
-                    <path d="M9 19v-6h6v6" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setManagerChatOpen(true)}
-                  className="owner-bottom-bar__icon"
-                  aria-label="Manager chat"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                  >
-                    <path d="M6 7h12a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-4 3v-3H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z" />
-                  </svg>
-                  {chatBadges.manager > 0 && (
-                    <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-semibold text-slate-950">
-                      {chatBadges.manager}
-                    </span>
-                  )}
-                </button>
+          <>
+            {toast ? (
+              <div className="pointer-events-none fixed bottom-[calc(76px+env(safe-area-inset-bottom))] left-1/2 z-[60] w-[min(420px,92vw)] -translate-x-1/2 px-4">
+                <div className="ui-toast rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-center text-sm text-slate-100 shadow-lg backdrop-blur">
+                  {toast}
+                </div>
               </div>
-              <button
-                type="button"
-                className="owner-bottom-bar__ai"
-                aria-label="Toggle voice assistant"
-                disabled={!canUseVoice}
-                data-state={voiceState}
-                data-listening={voiceListening ? "true" : "false"}
-                onKeyDown={(event) => {
-                  if (event.key !== "Enter" && event.key !== " ") return;
-                  event.preventDefault();
-                  handleVoiceToggle();
-                }}
-                onClick={handleVoiceToggle}
-              >
-                <span className="owner-bottom-bar__ai-core">
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
+            ) : null}
+            <div className="owner-bottom-bar">
+              <div className="owner-bottom-bar__label owner-bottom-bar__label--ai">
+                <div className="owner-bottom-bar__slot">
+                  <button
+                    type="button"
+                    onClick={() => setStorePickerOpen(true)}
+                    className="owner-bottom-bar__icon disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-label="Select store"
                   >
-                    <path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 1 1-6 0V6a3 3 0 0 1 3-3Z" />
-                    <path d="M19 11a7 7 0 0 1-14 0" />
-                    <path d="M12 18v3" />
-                  </svg>
-                </span>
-                <span className="owner-bottom-bar__ai-label">
-                  {voiceState === "connecting"
-                    ? "Connecting"
-                    : voiceListening
-                      ? "Listening"
-                      : "Tap to talk"}
-                </span>
-              </button>
-              <div className="owner-bottom-bar__slot owner-bottom-bar__slot--right">
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M4 9l2-4h12l2 4" />
+                      <path d="M5 9v10h14V9" />
+                      <path d="M3 9h18" />
+                      <path d="M9 19v-6h6v6" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDateLockOpen(true)}
+                    className="owner-bottom-bar__icon"
+                    aria-label="Lock date"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                    >
+                      <path d="M7 11V8a5 5 0 0 1 10 0v3" />
+                      <path d="M6.5 11h11a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 17.5 21h-11A1.5 1.5 0 0 1 5 19.5v-7A1.5 1.5 0 0 1 6.5 11Z" />
+                      <path d="M12 15v2" />
+                    </svg>
+                    {isDateLocked ? (
+                      <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-blue-500 ring-2 ring-white/90" />
+                    ) : null}
+                  </button>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setSurveillanceChatOpen(true)}
-                  className="owner-bottom-bar__icon"
-                  aria-label="Surveillance chat"
+                  className="owner-bottom-bar__ai"
+                  aria-label="Toggle voice assistant"
+                  disabled={!canUseVoice}
+                  data-state={voiceState}
+                  data-listening={voiceListening ? "true" : "false"}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    handleVoiceToggle();
+                  }}
+                  onClick={handleVoiceToggle}
                 >
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                  >
-                    <path d="M7 8h10a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-5l-4 3v-3H7a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2Z" />
-                    <path d="M9.5 11h5" />
-                  </svg>
-                  {chatBadges.surveillance > 0 && (
-                    <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-semibold text-slate-950">
-                      {chatBadges.surveillance}
-                    </span>
-                  )}
+                  <span className="owner-bottom-bar__ai-core">
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                    >
+                      <path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 1 1-6 0V6a3 3 0 0 1 3-3Z" />
+                      <path d="M19 11a7 7 0 0 1-14 0" />
+                      <path d="M12 18v3" />
+                    </svg>
+                  </span>
+                  <span className="owner-bottom-bar__ai-label">
+                    {voiceState === "connecting"
+                      ? "Connecting"
+                      : voiceListening
+                        ? "Listening"
+                        : "Tap to talk"}
+                  </span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setAssistantOpen(true)}
-                  className="owner-bottom-bar__icon"
-                  aria-label="Open assistant"
-                  disabled={!canOpenAssistant}
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
+                <div className="owner-bottom-bar__slot owner-bottom-bar__slot--right">
+                  <button
+                    type="button"
+                    onClick={() => setSurveillanceChatOpen(true)}
+                    className="owner-bottom-bar__icon"
+                    aria-label="Surveillance chat"
                   >
-                    <path d="M12 3l1.6 3.6L17 8.3l-3.4 1.5L12 13.4l-1.6-3.6L7 8.3l3.4-1.7L12 3Z" />
-                    <path d="M5 13l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2Z" />
-                    <path d="M18 14l0.8 1.8L21 17l-2.2 1-0.8 1.8-0.8-1.8-2.2-1 2.2-1.2L18 14Z" />
-                  </svg>
-                </button>
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                    >
+                      <path d="M7 8h10a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-5l-4 3v-3H7a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2Z" />
+                      <path d="M9.5 11h5" />
+                    </svg>
+                    {chatBadges.surveillance > 0 && (
+                      <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-semibold text-slate-950">
+                        {chatBadges.surveillance}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAssistantOpen(true)}
+                    className="owner-bottom-bar__icon"
+                    aria-label="Open assistant"
+                    disabled={!canOpenAssistant}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                    >
+                      <path d="M12 3l1.6 3.6L17 8.3l-3.4 1.5L12 13.4l-1.6-3.6L7 8.3l3.4-1.7L12 3Z" />
+                      <path d="M5 13l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2Z" />
+                      <path d="M18 14l0.8 1.8L21 17l-2.2 1-0.8 1.8-0.8-1.8-2.2-1 2.2-1.2L18 14Z" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             </div>
-          </div>,
+          </>,
           portalNode,
         )}
 
@@ -390,17 +432,83 @@ function OwnerPortalStoreBar({
         </div>
       </IHModal>
 
-      {managerChatOpen && selectedStoreId && (
-        <OwnerChatModal
-          type="manager"
-          storeId={selectedStoreId}
-          storeName={activeLabel}
-          onClose={() => {
-            setManagerChatOpen(false);
-            loadBadges(selectedStoreId);
-          }}
-        />
-      )}
+      <IHModal
+        isOpen={dateLockOpen}
+        onClose={() => setDateLockOpen(false)}
+        allowOutsideClose
+      >
+        <div className="w-[min(420px,92vw)]">
+          <div className="border-b border-white/10 px-6 py-4">
+            <p className="text-xs uppercase tracking-[0.26em] text-slate-400">
+              Date Lock
+            </p>
+            <h2 className="mt-2 text-lg font-semibold text-white">
+              {isDateLocked ? "Date lock active" : "Lock a date"}
+            </h2>
+          </div>
+          <div className="space-y-4 px-6 py-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <label className="ui-label">Start</label>
+                <input
+                  type="date"
+                  className="ui-field w-full"
+                  value={lockStart}
+                  onChange={(event) => setLockStart(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="ui-label">End (optional)</label>
+                <input
+                  type="date"
+                  className="ui-field w-full"
+                  value={lockEnd}
+                  onChange={(event) => setLockEnd(event.target.value)}
+                />
+              </div>
+            </div>
+            <p className="text-sm text-slate-200/90">
+              Locks the selected date or range across all pages and stores until
+              you close the app.
+            </p>
+            <div className="flex flex-wrap justify-end gap-2">
+              {isDateLocked ? (
+                <button
+                  type="button"
+                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-100"
+                  onClick={() => {
+                    onClearDateLockRange();
+                    showToast("Date lock cleared.");
+                    setDateLockOpen(false);
+                  }}
+                >
+                  Clear lock
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-blue-900/30"
+                disabled={!lockStart}
+                onClick={() => {
+                  if (!lockStart) return;
+                  const normalizedEnd = lockEnd && lockEnd >= lockStart ? lockEnd : "";
+                  const effectiveEnd = normalizedEnd || lockStart;
+                  onSetDateLockRange({ startDate: lockStart, endDate: effectiveEnd });
+                  const label =
+                    effectiveEnd === lockStart
+                      ? `Date locked: ${lockStart}`
+                      : `Range locked: ${lockStart} → ${effectiveEnd}`;
+                  showToast(label);
+                  setDateLockOpen(false);
+                }}
+              >
+                {isDateLocked ? "Update lock" : "Lock date"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </IHModal>
+
       {surveillanceChatOpen && selectedStoreId && (
         <OwnerChatModal
           type="surveillance"
@@ -443,8 +551,30 @@ export function OwnerPortalStoreProvider({
     return stored ?? user.storeNumber ?? "";
   });
   const [ready, setReady] = useState(false);
-  const [manualDateRange, setManualDateRangeState] =
+  const [dateLockRange, setDateLockRangeState] =
     useState<OwnerPortalDateRange | null>(null);
+  const [pageDateRanges, setPageDateRanges] = useState<
+    Record<string, OwnerPortalDateRange>
+  >({});
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = window.sessionStorage.getItem("ih-date-lock-range");
+      if (!stored) return;
+      const parsed = JSON.parse(stored);
+      if (!parsed || typeof parsed !== "object") return;
+      if (typeof parsed.startDate !== "string") return;
+      if (typeof parsed.endDate !== "string") return;
+      if (!parsed.startDate) return;
+      setDateLockRangeState({
+        startDate: parsed.startDate,
+        endDate: parsed.endDate || parsed.startDate,
+      });
+    } catch {
+      // ignore storage parse issues
+    }
+  }, []);
 
   const refreshStores = useCallback(async () => {
     const response = await fetch("/api/client/store-list", { cache: "no-store" });
@@ -511,9 +641,6 @@ export function OwnerPortalStoreProvider({
       if (prev === storeId) return prev;
       return storeId;
     });
-    // Date selection is store-specific; switching stores should reset date range
-    // so each store defaults to its most-recent uploads.
-    setManualDateRangeState(null);
   }, []);
 
   const activeStore = useMemo(
@@ -521,23 +648,92 @@ export function OwnerPortalStoreProvider({
     [stores, selectedStoreId],
   );
 
-  const setManualDateRange = useCallback((range: OwnerPortalDateRange) => {
-    if (!range.startDate || !range.endDate) return;
-    setManualDateRangeState((prev) => {
+  const isDateLocked = Boolean(dateLockRange?.startDate);
+
+  const setDateLockRange = useCallback((range: OwnerPortalDateRange) => {
+    if (!range?.startDate) return;
+    const normalized: OwnerPortalDateRange = {
+      startDate: range.startDate,
+      endDate: range.endDate || range.startDate,
+    };
+    setDateLockRangeState((prev) => {
       if (
         prev &&
-        prev.startDate === range.startDate &&
-        prev.endDate === range.endDate
+        prev.startDate === normalized.startDate &&
+        prev.endDate === normalized.endDate
       ) {
         return prev;
       }
-      return { ...range };
+      return normalized;
     });
+    if (typeof window !== "undefined") {
+      try {
+        window.sessionStorage.setItem(
+          "ih-date-lock-range",
+          JSON.stringify(normalized),
+        );
+      } catch {
+        // ignore storage failures
+      }
+    }
   }, []);
 
-  const clearManualDateRange = useCallback(() => {
-    setManualDateRangeState(null);
+  const clearDateLockRange = useCallback(() => {
+    setDateLockRangeState(null);
+    if (typeof window !== "undefined") {
+      try {
+        window.sessionStorage.removeItem("ih-date-lock-range");
+      } catch {
+        // ignore storage failures
+      }
+    }
   }, []);
+
+  const buildPageDateKey = useCallback(
+    (pageKey: string, scopeId: string) => `${pageKey}:${scopeId}`,
+    [],
+  );
+
+  const getPageDateRange = useCallback(
+    (pageKey: string, scopeId: string) => {
+      const key = buildPageDateKey(pageKey, scopeId);
+      return pageDateRanges[key] ?? null;
+    },
+    [buildPageDateKey, pageDateRanges],
+  );
+
+  const setPageDateRange = useCallback(
+    (pageKey: string, scopeId: string, range: OwnerPortalDateRange) => {
+      if (!pageKey || !scopeId) return;
+      if (!range?.startDate || !range?.endDate) return;
+      const key = buildPageDateKey(pageKey, scopeId);
+      setPageDateRanges((prev) => {
+        const existing = prev[key];
+        if (
+          existing &&
+          existing.startDate === range.startDate &&
+          existing.endDate === range.endDate
+        ) {
+          return prev;
+        }
+        return { ...prev, [key]: { ...range } };
+      });
+    },
+    [buildPageDateKey],
+  );
+
+  const clearPageDateRange = useCallback(
+    (pageKey: string, scopeId: string) => {
+      const key = buildPageDateKey(pageKey, scopeId);
+      setPageDateRanges((prev) => {
+        if (!(key in prev)) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    },
+    [buildPageDateKey],
+  );
 
   const value = useMemo(
     () => ({
@@ -547,9 +743,13 @@ export function OwnerPortalStoreProvider({
       activeStore,
       ready,
       refreshStores,
-      manualDateRange,
-      setManualDateRange,
-      clearManualDateRange,
+      dateLockRange,
+      isDateLocked,
+      setDateLockRange,
+      clearDateLockRange,
+      getPageDateRange,
+      setPageDateRange,
+      clearPageDateRange,
     }),
     [
       stores,
@@ -557,9 +757,13 @@ export function OwnerPortalStoreProvider({
       activeStore,
       ready,
       refreshStores,
-      manualDateRange,
-      setManualDateRange,
-      clearManualDateRange,
+      dateLockRange,
+      isDateLocked,
+      setDateLockRange,
+      clearDateLockRange,
+      getPageDateRange,
+      setPageDateRange,
+      clearPageDateRange,
     ],
   );
 
@@ -571,6 +775,9 @@ export function OwnerPortalStoreProvider({
         selectedStoreId={selectedStoreId}
         onChange={setSelectedStoreId}
         ready={ready}
+        dateLockRange={dateLockRange}
+        onSetDateLockRange={setDateLockRange}
+        onClearDateLockRange={clearDateLockRange}
       />
     </OwnerPortalStoreContext.Provider>
   );

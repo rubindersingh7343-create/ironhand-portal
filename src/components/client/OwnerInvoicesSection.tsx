@@ -46,10 +46,12 @@ function formatDate(value?: string) {
 }
 
 export default function OwnerInvoicesSection({ user }: { user: SessionUser }) {
+  const PAGE_KEY = "invoices";
   const ownerStore = useOwnerPortalStore();
   const hasSharedStore = Boolean(ownerStore);
-  const manualDateRange = ownerStore?.manualDateRange ?? null;
-  const setManualDateRange = ownerStore?.setManualDateRange;
+  const dateLockRange = ownerStore?.dateLockRange ?? null;
+  const isDateLocked = Boolean(dateLockRange?.startDate);
+  const setPageDateRange = ownerStore?.setPageDateRange;
   const [stores, setStores] = useState<StoreSummary[]>(
     ownerStore?.stores ?? [],
   );
@@ -112,15 +114,29 @@ export default function OwnerInvoicesSection({ user }: { user: SessionUser }) {
   }, []);
 
   useEffect(() => {
-    if (!manualDateRange) return;
-    if (
-      manualDateRange.startDate !== startDate ||
-      manualDateRange.endDate !== endDate
-    ) {
-      setStartDate(manualDateRange.startDate);
-      setEndDate(manualDateRange.endDate);
+    if (!selectedStore) return;
+    if (isDateLocked && dateLockRange?.startDate) {
+      const nextStart = dateLockRange.startDate;
+      const nextEnd = dateLockRange.endDate || dateLockRange.startDate;
+      if (nextStart !== startDate) setStartDate(nextStart);
+      if (nextEnd !== endDate) setEndDate(nextEnd);
+      return;
     }
-  }, [manualDateRange, startDate, endDate]);
+    const stored = ownerStore?.getPageDateRange?.(PAGE_KEY, selectedStore);
+    if (stored?.startDate && stored?.endDate) {
+      if (stored.startDate !== startDate) setStartDate(stored.startDate);
+      if (stored.endDate !== endDate) setEndDate(stored.endDate);
+      return;
+    }
+    const today = new Date();
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+      .toISOString()
+      .slice(0, 10);
+    const todayIso = today.toISOString().slice(0, 10);
+    if (startDate !== monthStart) setStartDate(monthStart);
+    if (endDate !== todayIso) setEndDate(todayIso);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStore, isDateLocked, dateLockRange?.startDate, dateLockRange?.endDate]);
 
   const loadUnseen = useCallback(
     async (storeOverride?: string) => {
@@ -361,10 +377,17 @@ export default function OwnerInvoicesSection({ user }: { user: SessionUser }) {
             className="ui-field--slim w-full min-w-0"
             value={startDate}
             onChange={(event) => {
+              if (isDateLocked) return;
               const next = event.target.value;
               setStartDate(next);
-              setManualDateRange?.({ startDate: next, endDate });
+              if (selectedStore) {
+                setPageDateRange?.(PAGE_KEY, selectedStore, {
+                  startDate: next,
+                  endDate,
+                });
+              }
             }}
+            disabled={isDateLocked}
           />
           <span className="text-xs uppercase tracking-[0.2em] text-slate-400">
             to
@@ -374,10 +397,17 @@ export default function OwnerInvoicesSection({ user }: { user: SessionUser }) {
             className="ui-field--slim w-full min-w-0"
             value={endDate}
             onChange={(event) => {
+              if (isDateLocked) return;
               const next = event.target.value;
               setEndDate(next);
-              setManualDateRange?.({ startDate, endDate: next });
+              if (selectedStore) {
+                setPageDateRange?.(PAGE_KEY, selectedStore, {
+                  startDate,
+                  endDate: next,
+                });
+              }
             }}
+            disabled={isDateLocked}
           />
         </div>
       </div>

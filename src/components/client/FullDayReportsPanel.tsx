@@ -141,11 +141,17 @@ export default function FullDayReportsPanel({
   embedded?: boolean;
   reportConfigVersion?: number;
 }) {
+  const PAGE_KEY = "full_day_reports";
   const today = useMemo(() => getLocalDate(), []);
   const ownerStore = useOwnerPortalStore();
   const hasSharedStore = Boolean(ownerStore);
-  const manualDateRange = ownerStore?.manualDateRange ?? null;
-  const setManualDateRange = ownerStore?.setManualDateRange;
+  const dateLockRange = ownerStore?.dateLockRange ?? null;
+  const isDateLocked = Boolean(dateLockRange?.startDate);
+  const setPageDateRange = ownerStore?.setPageDateRange;
+  const pageDateRange = useMemo(() => {
+    if (!ownerStore?.getPageDateRange) return null;
+    return ownerStore.getPageDateRange(PAGE_KEY, "all");
+  }, [ownerStore]);
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
   const [autoRangeEnabled, setAutoRangeEnabled] = useState(true);
@@ -196,16 +202,31 @@ export default function FullDayReportsPanel({
   }, [ownerStore, ownerStore?.stores, ownerStore?.selectedStoreId, user.storeNumber]);
 
   useEffect(() => {
-    if (!manualDateRange) return;
+    if (isDateLocked && dateLockRange?.startDate) {
+      const nextStart = dateLockRange.startDate;
+      const nextEnd = dateLockRange.endDate || dateLockRange.startDate;
+      if (nextStart !== startDate) setStartDate(nextStart);
+      if (nextEnd !== endDate) setEndDate(nextEnd);
+      setAutoRangeEnabled(false);
+      return;
+    }
+    if (!pageDateRange) return;
     if (
-      manualDateRange.startDate !== startDate ||
-      manualDateRange.endDate !== endDate
+      pageDateRange.startDate !== startDate ||
+      pageDateRange.endDate !== endDate
     ) {
-      setStartDate(manualDateRange.startDate);
-      setEndDate(manualDateRange.endDate);
+      setStartDate(pageDateRange.startDate);
+      setEndDate(pageDateRange.endDate);
     }
     setAutoRangeEnabled(false);
-  }, [manualDateRange, startDate, endDate]);
+  }, [
+    isDateLocked,
+    dateLockRange?.startDate,
+    dateLockRange?.endDate,
+    pageDateRange,
+    startDate,
+    endDate,
+  ]);
 
   useEffect(() => {
     if (!activeStoreId) return;
@@ -234,7 +255,8 @@ export default function FullDayReportsPanel({
       const activeController = controller ?? new AbortController();
       const shouldAutoDate =
         autoRangeEnabled &&
-        !manualDateRange &&
+        !pageDateRange &&
+        !isDateLocked &&
         Boolean(startDate) &&
         startDate === endDate;
       try {
@@ -287,6 +309,7 @@ export default function FullDayReportsPanel({
             setAutoRangeEnabled(false);
             setStartDate(latest);
             setEndDate(latest);
+            setPageDateRange?.(PAGE_KEY, "all", { startDate: latest, endDate: latest });
             return;
           }
           setAutoRangeEnabled(false);
@@ -316,7 +339,17 @@ export default function FullDayReportsPanel({
         if (!activeController.signal.aborted && !silent) setLoading(false);
       }
     },
-    [autoRangeEnabled, endDate, manualDateRange, startDate, stores, user.storeName, user.storeNumber],
+    [
+      autoRangeEnabled,
+      endDate,
+      startDate,
+      stores,
+      user.storeName,
+      user.storeNumber,
+      pageDateRange,
+      isDateLocked,
+      setPageDateRange,
+    ],
   );
 
   const visibleItems = useMemo(
@@ -455,12 +488,13 @@ export default function FullDayReportsPanel({
   };
 
   const shiftRange = (delta: number) => {
+    if (isDateLocked) return;
     setAutoRangeEnabled(false);
     const nextStart = shiftDate(startDate, delta);
     const nextEnd = shiftDate(endDate, delta);
     setStartDate(nextStart);
     setEndDate(nextEnd);
-    setManualDateRange?.({ startDate: nextStart, endDate: nextEnd });
+    setPageDateRange?.(PAGE_KEY, "all", { startDate: nextStart, endDate: nextEnd });
   };
 
   return (
@@ -479,6 +513,7 @@ export default function FullDayReportsPanel({
             onClick={() => shiftRange(-1)}
             className="ui-date-step"
             aria-label="Previous day"
+            disabled={isDateLocked}
           >
             ‹
           </button>
@@ -486,14 +521,16 @@ export default function FullDayReportsPanel({
             type="date"
             value={startDate}
             onChange={(event) => {
+              if (isDateLocked) return;
               const next = event.target.value;
               const nextEnd = next > endDate ? next : endDate;
               setAutoRangeEnabled(false);
               setStartDate(next);
               if (nextEnd !== endDate) setEndDate(nextEnd);
-              setManualDateRange?.({ startDate: next, endDate: nextEnd });
+              setPageDateRange?.(PAGE_KEY, "all", { startDate: next, endDate: nextEnd });
             }}
             className="ui-field ui-field--slim"
+            disabled={isDateLocked}
           />
           <span className="text-[11px] font-semibold text-slate-400/80">
             To
@@ -502,20 +539,23 @@ export default function FullDayReportsPanel({
             type="date"
             value={endDate}
             onChange={(event) => {
+              if (isDateLocked) return;
               const next = event.target.value;
               const nextStart = next < startDate ? next : startDate;
               setAutoRangeEnabled(false);
               setEndDate(next);
               if (nextStart !== startDate) setStartDate(nextStart);
-              setManualDateRange?.({ startDate: nextStart, endDate: next });
+              setPageDateRange?.(PAGE_KEY, "all", { startDate: nextStart, endDate: next });
             }}
             className="ui-field ui-field--slim"
+            disabled={isDateLocked}
           />
           <button
             type="button"
             onClick={() => shiftRange(1)}
             className="ui-date-step"
             aria-label="Next day"
+            disabled={isDateLocked}
           >
             ›
           </button>

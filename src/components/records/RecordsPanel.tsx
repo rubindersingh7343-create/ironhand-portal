@@ -76,10 +76,12 @@ export default function RecordsPanel({
   storeIds,
   variant = "default",
 }: RecordsPanelProps) {
+  const PAGE_KEY = "records";
   const router = useRouter();
   const ownerStore = useOwnerPortalStore();
-  const manualDateRange = ownerStore?.manualDateRange ?? null;
-  const setManualDateRange = ownerStore?.setManualDateRange;
+  const dateLockRange = ownerStore?.dateLockRange ?? null;
+  const isDateLocked = Boolean(dateLockRange?.startDate);
+  const setPageDateRange = ownerStore?.setPageDateRange;
   const initialFilters = useMemo(
     () => ({
       category: "all",
@@ -124,21 +126,32 @@ export default function RecordsPanel({
   }, [ownerStore, ownerStore?.stores, ownerStore?.selectedStoreId, role]);
 
   useEffect(() => {
-    if (!manualDateRange) return;
+    if (!ownerStore?.getPageDateRange) return;
+    const scopeId = filters.store || "all";
+    if (isDateLocked && dateLockRange?.startDate) {
+      const nextStart = dateLockRange.startDate;
+      const nextEnd = dateLockRange.endDate || dateLockRange.startDate;
+      setFilters((prev) => ({
+        ...prev,
+        startDate: nextStart,
+        endDate: nextEnd,
+      }));
+      return;
+    }
+    const stored = ownerStore.getPageDateRange(PAGE_KEY, scopeId);
+    if (!stored?.startDate || !stored?.endDate) return;
     setFilters((prev) => {
-      if (
-        prev.startDate === manualDateRange.startDate &&
-        prev.endDate === manualDateRange.endDate
-      ) {
+      if (prev.startDate === stored.startDate && prev.endDate === stored.endDate) {
         return prev;
       }
       return {
         ...prev,
-        startDate: manualDateRange.startDate,
-        endDate: manualDateRange.endDate,
+        startDate: stored.startDate,
+        endDate: stored.endDate,
       };
     });
-  }, [manualDateRange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.store, isDateLocked, dateLockRange?.startDate, dateLockRange?.endDate, ownerStore]);
   const [viewerFile, setViewerFile] = useState<StoredFile | null>(null);
   const [storeNames, setStoreNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -1218,6 +1231,7 @@ export default function RecordsPanel({
                     type="date"
                     value={filters.startDate}
                     onChange={(event) => {
+                      if (isDateLocked) return;
                       const next = event.target.value;
                       const nextEnd = filters.endDate || next;
                       setFilters((prev) => ({
@@ -1225,17 +1239,20 @@ export default function RecordsPanel({
                         startDate: next,
                         endDate: nextEnd,
                       }));
-                      setManualDateRange?.({
+                      const scopeId = filters.store || "all";
+                      setPageDateRange?.(PAGE_KEY, scopeId, {
                         startDate: next,
                         endDate: nextEnd,
                       });
                     }}
                     className="ui-field w-1/2 min-w-0 md:w-full"
+                    disabled={isDateLocked}
                   />
                   <input
                     type="date"
                     value={filters.endDate}
                     onChange={(event) => {
+                      if (isDateLocked) return;
                       const next = event.target.value;
                       const nextStart = filters.startDate || next;
                       setFilters((prev) => ({
@@ -1243,12 +1260,14 @@ export default function RecordsPanel({
                         startDate: nextStart,
                         endDate: next,
                       }));
-                      setManualDateRange?.({
+                      const scopeId = filters.store || "all";
+                      setPageDateRange?.(PAGE_KEY, scopeId, {
                         startDate: nextStart,
                         endDate: next,
                       });
                     }}
                     className="ui-field w-1/2 min-w-0 md:w-full"
+                    disabled={isDateLocked}
                   />
                 </div>
               </div>
