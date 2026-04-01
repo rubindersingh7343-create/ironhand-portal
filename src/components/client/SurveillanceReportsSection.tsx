@@ -894,6 +894,14 @@ export default function SurveillanceReportsSection({
     return summary ? summary.split("\n") : [];
   }, [selectedRoutineEntry]);
 
+  const routineAttachments = useMemo(() => {
+    const attachments = selectedRoutineEntry?.record?.attachments ?? [];
+    return attachments.filter((file) => {
+      const label = (file.label ?? "").toLowerCase() as IncidentCategory;
+      return !incidentLabels.includes(label);
+    });
+  }, [selectedRoutineEntry]);
+
   return (
     <section className="ui-card relative overflow-hidden">
       <div
@@ -1167,13 +1175,13 @@ export default function SurveillanceReportsSection({
                           </div>
                         )}
 
-                        {selectedRoutineEntry?.record?.attachments?.length ? (
+                        {routineAttachments.length ? (
                           <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
                             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
                               Attachments
                             </p>
                             <div className="mt-2 space-y-2">
-                              {(selectedRoutineEntry.record.attachments ?? []).map((file) => {
+                              {routineAttachments.map((file) => {
                                 const src = buildAttachmentSrc(file.path || file.id);
                                 return (
                                   <div
