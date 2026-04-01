@@ -785,8 +785,7 @@ export default function SurveillanceReportsSection({
     const labeledRoutine = recordsForDate.filter(
       (record) => record.surveillanceLabel?.toLowerCase() === "routine",
     );
-    if (labeledRoutine.length) return labeledRoutine;
-    return recordsForDate;
+    return labeledRoutine;
   }, [recordsForDate]);
 
   const averageGradeByEmployee = useMemo(() => {
@@ -892,14 +891,6 @@ export default function SurveillanceReportsSection({
     const record = selectedRoutineEntry?.record;
     const summary = record?.surveillanceSummary ?? record?.notes ?? "";
     return summary ? summary.split("\n") : [];
-  }, [selectedRoutineEntry]);
-
-  const routineAttachments = useMemo(() => {
-    const attachments = selectedRoutineEntry?.record?.attachments ?? [];
-    return attachments.filter((file) => {
-      const label = (file.label ?? "").toLowerCase() as IncidentCategory;
-      return !incidentLabels.includes(label);
-    });
   }, [selectedRoutineEntry]);
 
   return (
@@ -1175,51 +1166,7 @@ export default function SurveillanceReportsSection({
                           </div>
                         )}
 
-                        {routineAttachments.length ? (
-                          <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
-                              Attachments
-                            </p>
-                            <div className="mt-2 space-y-2">
-                              {routineAttachments.map((file) => {
-                                const src = buildAttachmentSrc(file.path || file.id);
-                                return (
-                                  <div
-                                    key={file.id}
-                                    className="overflow-hidden rounded-2xl border border-slate-200 bg-white text-sm shadow-sm"
-                                  >
-                                    <AttachmentPreview
-                                      file={file}
-                                      onOpen={() => openAttachmentViewer(file)}
-                                    />
-                                    <div className="flex flex-wrap items-start justify-between gap-3 px-4 pb-4 pt-3">
-                                      <div className="min-w-0 flex-1">
-                                        <p className="font-semibold text-slate-900 break-words text-wrap">
-                                          {file.originalName ?? "Attachment"}
-                                        </p>
-                                        <p className="mt-1 text-xs text-slate-500">
-                                          {(file.kind ?? "file").toUpperCase()}{" "}
-                                          {formatBytes(file.size)}
-                                        </p>
-                                      </div>
-                                      {src ? (
-                                        <button
-                                          type="button"
-                                          className="ui-pill-primary inline-flex items-center justify-center rounded-full px-4 py-1.5 text-xs"
-                                          onClick={() => openAttachmentViewer(file)}
-                                        >
-                                          Open
-                                        </button>
-                                      ) : (
-                                        <span className="text-xs text-slate-500">No file</span>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ) : null}
+                        {/* Attachments are intentionally only displayed in the Incidents panel. */}
                       </div>
                     </>
                   ) : (
