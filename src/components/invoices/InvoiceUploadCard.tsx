@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 
 type InvoiceUploadCardProps = {
@@ -15,6 +15,19 @@ const pad2 = (value: number) => String(value).padStart(2, "0");
 
 const formatLocalDateInput = (date: Date) =>
   `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+
+const formatBytes = (value: number) => {
+  if (!Number.isFinite(value) || value <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let size = value;
+  let index = 0;
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024;
+    index += 1;
+  }
+  const precision = index === 0 ? 0 : size >= 10 ? 1 : 2;
+  return `${size.toFixed(precision)} ${units[index]}`;
+};
 
 const addDays = (date: Date, days: number) => {
   const next = new Date(date);
@@ -39,10 +52,14 @@ export default function InvoiceUploadCard({
   storeLabel,
   className,
 }: InvoiceUploadCardProps) {
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const pickerInputRef = useRef<HTMLInputElement | null>(null);
+
   const [invoiceStatus, setInvoiceStatus] = useState<
     "idle" | "sending" | "success" | "error"
   >("idle");
   const [invoiceMessage, setInvoiceMessage] = useState<string | null>(null);
+  const [invoiceFiles, setInvoiceFiles] = useState<File[]>([]);
   const [invoicePaid, setInvoicePaid] = useState(false);
   const [invoiceDueDate, setInvoiceDueDate] = useState("");
   const [invoiceDuePreset, setInvoiceDuePreset] =
@@ -107,6 +124,24 @@ export default function InvoiceUploadCard({
     setInvoiceDueDate(formatLocalDateInput(target));
   };
 
+  const appendInvoiceFiles = (files: File[]) => {
+    if (!files.length) return;
+    setInvoiceFiles((prev) => {
+      const next = [...prev];
+      files.forEach((file) => {
+        if (!file || !file.name || file.size <= 0) return;
+        const isDuplicate = next.some(
+          (existing) =>
+            existing.name === file.name &&
+            existing.size === file.size &&
+            existing.lastModified === file.lastModified,
+        );
+        if (!isDuplicate) next.push(file);
+      });
+      return next;
+    });
+  };
+
   return (
     <div
       className={clsx("rounded-3xl border border-white/10 bg-white/5 p-5", className)}
@@ -128,6 +163,7 @@ export default function InvoiceUploadCard({
           setInvoiceMessage(null);
           const form = event.currentTarget;
           const formData = new FormData(form);
+          formData.delete("invoiceFiles");
           formData.set("invoicePaid", invoicePaid ? "true" : "false");
           formData.set("invoiceDueDate", invoicePaid ? "" : invoiceDueDate);
           formData.set("invoicePaymentMethod", invoicePaid ? invoicePaymentMethod : "");
@@ -141,6 +177,16 @@ export default function InvoiceUploadCard({
           }
 
           try {
+            if (invoiceFiles.length === 0) {
+              setInvoiceStatus("error");
+              setInvoiceMessage("Attach at least one invoice page (photo or PDF).");
+              setTimeout(() => setInvoiceStatus("idle"), 6000);
+              return;
+            }
+            invoiceFiles.forEach((file) => {
+              formData.append("invoiceFiles", file, file.name);
+            });
+
             const response = await fetch("/api/invoices", {
               method: "POST",
               body: formData,
@@ -155,6 +201,7 @@ export default function InvoiceUploadCard({
               return;
             }
             form.reset();
+            setInvoiceFiles([]);
             setInvoicePaid(false);
             setInvoiceDueDate("");
             setInvoicePaymentMethod("");
@@ -195,16 +242,96 @@ export default function InvoiceUploadCard({
           <div className="space-y-3">
             <label className="ui-label">Invoice files</label>
             <p className="text-xs text-slate-300">
-              Attach clear photos or PDFs of invoices. You can select more than one.
+              Add each invoice page (photo or PDF). On iPhone/iPad, use{" "}
+              <span className="font-semibold text-slate-100">Add photo page</span>{" "}
+              to capture multiple pages one at a time.
             </p>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className="ui-button--slim ui-pill-primary"
+                disabled={invoiceStatus === "sending"}
+                onClick={() => cameraInputRef.current?.click()}
+              >
+                Add photo page
+              </button>
+              <button
+                type="button"
+                className="ui-button--slim ui-pill-secondary"
+                disabled={invoiceStatus === "sending"}
+                onClick={() => pickerInputRef.current?.click()}
+              >
+                Add from library / PDF
+              </button>
+              {invoiceFiles.length ? (
+                <span className="text-xs text-slate-300">
+                  {invoiceFiles.length} page{invoiceFiles.length === 1 ? "" : "s"} added
+                </span>
+              ) : null}
+            </div>
+
             <input
-              required
-              multiple
+              ref={cameraInputRef}
               type="file"
-              name="invoiceFiles"
-              accept="image/*,application/pdf"
-              className="w-full rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-sm text-slate-100 focus:border-blue-400 focus:outline-none"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(event) => {
+                const files = Array.from(event.target.files ?? []);
+                appendInvoiceFiles(files);
+                event.target.value = "";
+              }}
             />
+
+            <input
+              ref={pickerInputRef}
+              type="file"
+              accept="image/*,application/pdf"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                const files = Array.from(event.target.files ?? []);
+                appendInvoiceFiles(files);
+                event.target.value = "";
+              }}
+            />
+
+            {invoiceFiles.length ? (
+              <div className="space-y-2">
+                {invoiceFiles.map((file, index) => (
+                  <div
+                    key={`${file.name}-${file.size}-${file.lastModified}-${index}`}
+                    className="flex flex-wrap items-start justify-between gap-2 rounded-2xl border border-white/10 bg-[#0c1329] px-4 py-3 text-sm text-slate-200"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-white break-words text-wrap">
+                        {file.name}
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-400">
+                        {formatBytes(file.size)}{" "}
+                        {file.type ? `· ${file.type}` : ""}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="ui-button--slim ui-pill-danger"
+                      onClick={() =>
+                        setInvoiceFiles((prev) =>
+                          prev.filter((_, idx) => idx !== index),
+                        )
+                      }
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-white/10 bg-[#0c1329] px-4 py-3 text-xs text-slate-400">
+                No pages added yet.
+              </div>
+            )}
           </div>
 
           <div className="space-y-3">
