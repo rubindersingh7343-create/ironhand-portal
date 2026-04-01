@@ -785,8 +785,8 @@ export default function EmployeeUploadForm({
                   className={clsx(
                     "rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] transition",
                     receiptAutofillConfirmed
-                      ? "border-emerald-300/40 bg-emerald-500/10 text-emerald-100"
-                      : "border-amber-300/40 bg-amber-500/10 text-amber-100 hover:border-amber-300/70",
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-950 hover:border-emerald-300"
+                      : "border-amber-200 bg-amber-50 text-amber-950 hover:border-amber-300",
                   )}
                   onClick={() => setReceiptAutofillConfirmed(true)}
                 >
@@ -806,12 +806,12 @@ export default function EmployeeUploadForm({
             )}
           </div>
           {receiptNeedsConfirm && (
-            <p className="mt-2 text-xs text-amber-200">
+            <p className="mt-2 text-xs font-medium text-amber-800">
               Confirm the scanned totals to enable upload.
             </p>
           )}
           {receiptNeedsPhoto && (
-            <p className="mt-2 text-xs text-amber-200">
+            <p className="mt-2 text-xs font-medium text-amber-800">
               Scan receipt to attach the sales report photo.
             </p>
           )}
