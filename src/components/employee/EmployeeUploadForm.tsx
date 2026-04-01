@@ -816,17 +816,17 @@ export default function EmployeeUploadForm({
             </p>
           )}
           {receiptBgStatus === "parsing" && (
-            <div className="mt-3 rounded-2xl border border-blue-400/20 bg-blue-500/10 px-4 py-3 text-xs text-blue-100">
+            <div className="mt-3 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs font-medium text-blue-950">
               Parsing receipt in background… you can continue with Scratchers.
             </div>
           )}
           {receiptBgStatus === "done" && (
-            <div className="mt-3 rounded-2xl border border-emerald-300/20 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-100">
+            <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-medium text-emerald-950">
               Receipt ready — review and confirm the highlighted totals.
             </div>
           )}
           {receiptBgStatus === "error" && receiptBgError && (
-            <div className="mt-3 rounded-2xl border border-rose-300/20 bg-rose-500/10 px-4 py-3 text-xs text-rose-100">
+            <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-medium text-rose-950">
               Receipt scan failed in background: {receiptBgError}
             </div>
           )}
