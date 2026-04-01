@@ -183,16 +183,35 @@ export function useFileUpload(args: UseFileUploadArgs) {
             ),
           );
 
-          const finalized = await finalizeUpload({
-            storagePath: target.path,
-            filename: file.name,
-            mimeType: file.type || "application/octet-stream",
-            size: file.size,
-            category: category ?? null,
-            status: "uploaded",
-          });
+          try {
+            const finalized = await finalizeUpload({
+              storagePath: target.path,
+              filename: file.name,
+              mimeType: file.type || "application/octet-stream",
+              size: file.size,
+              category: category ?? null,
+              status: "uploaded",
+            });
 
-          applyFinalize(localId, target.path, finalized);
+            applyFinalize(localId, target.path, finalized);
+          } catch (error) {
+            console.warn(
+              "[uploads] finalize failed (continuing without tracking):",
+              error,
+            );
+            setItems((prev) =>
+              prev.map((item) =>
+                item.localId === localId
+                  ? {
+                      ...item,
+                      storagePath: target.path,
+                      status: "complete",
+                      errorMessage: null,
+                    }
+                  : item,
+              ),
+            );
+          }
         } catch (error) {
           const message =
             error instanceof Error ? error.message : "Upload failed. Try again.";
