@@ -302,20 +302,20 @@ export default function InvoiceUploadCard({
                 {invoiceFiles.map((file, index) => (
                   <div
                     key={`${file.name}-${file.size}-${file.lastModified}-${index}`}
-                    className="flex flex-wrap items-start justify-between gap-2 rounded-2xl border border-white/10 bg-[#0c1329] px-4 py-3 text-sm text-slate-200"
+                    className="ui-ink-inverse flex flex-wrap items-start justify-between gap-2 rounded-2xl border border-white/10 bg-[#0c1329] px-4 py-3 text-sm"
                   >
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-white break-words text-wrap">
                         {file.name}
                       </p>
-                      <p className="mt-0.5 text-xs text-slate-400">
+                      <p className="mt-0.5 text-xs text-slate-300">
                         {formatBytes(file.size)}{" "}
                         {file.type ? `· ${file.type}` : ""}
                       </p>
                     </div>
                     <button
                       type="button"
-                      className="ui-button--slim ui-pill-danger"
+                      className="rounded-full border border-rose-300/35 bg-rose-500/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-100 transition hover:border-rose-300/60"
                       onClick={() =>
                         setInvoiceFiles((prev) =>
                           prev.filter((_, idx) => idx !== index),
@@ -328,7 +328,7 @@ export default function InvoiceUploadCard({
                 ))}
               </div>
             ) : (
-              <div className="rounded-2xl border border-white/10 bg-[#0c1329] px-4 py-3 text-xs text-slate-400">
+              <div className="ui-ink-inverse rounded-2xl border border-white/10 bg-[#0c1329] px-4 py-3 text-xs text-slate-300">
                 No pages added yet.
               </div>
             )}
@@ -386,10 +386,10 @@ export default function InvoiceUploadCard({
                     type="button"
                     onClick={() => setInvoicePaid(false)}
                     className={clsx(
-                      "rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]",
+                      "rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition",
                       invoicePaid
-                        ? "border-white/10 text-slate-400"
-                        : "border-blue-400/60 text-blue-100",
+                        ? "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                        : "border-blue-200 bg-blue-50 text-blue-950 hover:border-blue-300",
                     )}
                   >
                     Due
@@ -401,10 +401,10 @@ export default function InvoiceUploadCard({
                       setInvoiceDueDate("");
                     }}
                     className={clsx(
-                      "rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]",
+                      "rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition",
                       invoicePaid
-                        ? "border-emerald-300/60 text-emerald-100"
-                        : "border-white/10 text-slate-400",
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-950 hover:border-emerald-300"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
                     )}
                   >
                     Paid
@@ -432,10 +432,10 @@ export default function InvoiceUploadCard({
                         type="button"
                         onClick={() => applyDuePreset(preset.id)}
                         className={clsx(
-                          "rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em]",
+                          "rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition",
                           invoiceDuePreset === preset.id
-                            ? "border-blue-400/60 text-blue-100"
-                            : "border-white/10 text-slate-400",
+                            ? "border-blue-200 bg-blue-50 text-blue-950 hover:border-blue-300"
+                            : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
                         )}
                       >
                         {preset.label}
