@@ -22,6 +22,8 @@ export default function OwnerAssistantVoiceOrb({
   const {
     supportsRealtime,
     state,
+    uiState,
+    mode,
     error,
     listening,
     toggleListening,
@@ -73,10 +75,16 @@ export default function OwnerAssistantVoiceOrb({
         onClick={onOpenAssistant}
         className="assistant-orb__label"
       >
-        {state === "connecting"
+        {uiState === "connecting" || state === "connecting"
           ? "Connecting"
-          : listening
+          : uiState === "thinking"
+            ? "Thinking"
+            : uiState === "speaking"
+              ? "Speaking"
+              : listening
             ? "Listening"
+            : mode === "active"
+              ? "Voice on"
             : "Ask AI"}
       </button>
       {error && <div className="assistant-orb__error">{error}</div>}

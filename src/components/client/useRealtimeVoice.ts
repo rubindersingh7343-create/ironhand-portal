@@ -79,6 +79,7 @@ const controller = {
   responseInFlight: false,
   awaitingTranscript: false,
   listeningStartedAt: 0,
+  stopAfterTurn: false,
   lastSpeechStoppedAt: 0,
   lastTranscript: null as string | null,
   confirmTranscript: null as string | null,
@@ -348,6 +349,7 @@ const stop = () => {
   controller.responseInFlight = false;
   controller.awaitingTranscript = false;
   controller.listeningStartedAt = 0;
+  controller.stopAfterTurn = false;
   controller.lastSpeechStoppedAt = 0;
   controller.lastResponseCreateAt = 0;
   controller.needsPlaybackKick = false;
@@ -597,6 +599,15 @@ const stopListening = (event: string, detail?: string) => {
   controller.lastSpeechStoppedAt = 0;
   setMicEnabled(false);
   setVoiceState("idle", event, detail);
+
+  // In continuous mode, recover from transient endpointing/transcription misses.
+  if (controller.mode === "active") {
+    window.setTimeout(() => {
+      if (controller.mode !== "active") return;
+      if (controller.voiceState !== "idle") return;
+      void startListening();
+    }, 250);
+  }
 };
 
 const commitListening = (event: string, detail?: string) => {
@@ -652,6 +663,7 @@ const startListening = async () => {
     return;
   }
 
+  controller.stopAfterTurn = false;
   controller.error = null;
   notify();
 
@@ -687,13 +699,17 @@ const startListening = async () => {
   controller.listeningStartedAt = Date.now();
   setVoiceState("listening", "listening.start");
 
+  // Push-to-talk uses a short safety timeout; continuous mode should keep listening.
   if (controller.listeningSafetyTimer) window.clearTimeout(controller.listeningSafetyTimer);
-  controller.listeningSafetyTimer = window.setTimeout(() => {
-    controller.listeningSafetyTimer = null;
-    if (controller.voiceState !== "listening") return;
-    controller.error = "Didn't catch that.";
-    stopListening("listening.timeout");
-  }, 10000);
+  controller.listeningSafetyTimer = null;
+  if (controller.mode !== "active") {
+    controller.listeningSafetyTimer = window.setTimeout(() => {
+      controller.listeningSafetyTimer = null;
+      if (controller.voiceState !== "listening") return;
+      controller.error = "Didn't catch that.";
+      stopListening("listening.timeout");
+    }, 10000);
+  }
 };
 
 const speakText = (text: string) => {
@@ -1139,6 +1155,18 @@ const connect = async (
             setUiState("wake", "response.done.wake");
           } else {
             setVoiceState("idle", "response.done");
+            if (controller.stopAfterTurn) {
+              controller.stopAfterTurn = false;
+              window.setTimeout(() => stop(), 180);
+              return;
+            }
+            if (controller.mode === "active") {
+              window.setTimeout(() => {
+                if (controller.mode !== "active") return;
+                if (controller.voiceState !== "idle") return;
+                void startListening();
+              }, 260);
+            }
           }
         }
       } catch (error) {
@@ -1241,42 +1269,43 @@ export function useRealtimeVoice(
           return;
         }
 
-        // Tap-to-talk: toggle only idle <-> listening.
-        // If speaking, tap cancels TTS and immediately starts listening.
-        if (controller.voiceState === "speaking") {
-          cancelAssistantSpeech();
-          controller.responseInFlight = false;
+        const isContinuous = controller.mode === "active";
+
+        // Continuous mode: tap toggles the whole session on/off.
+        if (isContinuous) {
           controller.mode = "off";
-          // Ensure the controller knows the requested store params before we start.
-          controller.storeId = storeId;
-          controller.voice = voice?.trim() ? voice.trim() : null;
-          controller.primaryLanguage = primaryLanguage?.trim() ? primaryLanguage.trim() : null;
-          controller.secondaryLanguage = secondaryLanguage?.trim() ? secondaryLanguage.trim() : null;
-          void startListening();
+          if (controller.voiceState === "listening") {
+            const longEnoughToCommit =
+              controller.listeningStartedAt > 0 &&
+              Date.now() - controller.listeningStartedAt > 750;
+            const shouldCommit =
+              controller.userSpeaking || controller.awaitingTranscript || longEnoughToCommit;
+            if (shouldCommit) {
+              controller.stopAfterTurn = true;
+              commitListening("continuous.stop.commit");
+            } else {
+              stop();
+            }
+            return;
+          }
+          if (controller.voiceState === "processing") {
+            if (controller.assistantAbortController) controller.assistantAbortController.abort();
+            controller.assistantAbortController = null;
+            stop();
+            return;
+          }
+          if (controller.voiceState === "speaking") {
+            cancelAssistantSpeech();
+            controller.responseInFlight = false;
+            stop();
+            return;
+          }
+          stop();
           return;
         }
 
-        // If processing, tap cancels and returns to idle.
-        if (controller.voiceState === "processing") {
-          if (controller.assistantAbortController) controller.assistantAbortController.abort();
-          controller.assistantAbortController = null;
-          controller.responseInFlight = false;
-          controller.error = null;
-          stopListening("processing.cancel");
-          return;
-        }
-
-        if (controller.voiceState === "listening") {
-          const longEnoughToCommit =
-            controller.listeningStartedAt > 0 &&
-            Date.now() - controller.listeningStartedAt > 750;
-          const shouldCommit = controller.userSpeaking || controller.awaitingTranscript || longEnoughToCommit;
-          if (shouldCommit) commitListening("mic.toggle.commit");
-          else stopListening("mic.toggle.off");
-          return;
-        }
-
-        controller.mode = "off";
+        // Enable continuous mode.
+        controller.mode = "active";
         controller.storeId = storeId;
         controller.voice = voice?.trim() ? voice.trim() : null;
         controller.primaryLanguage = primaryLanguage?.trim() ? primaryLanguage.trim() : null;

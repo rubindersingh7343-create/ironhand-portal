@@ -161,7 +161,7 @@ export default function OwnerAssistantModal({
             <div>
               <h2 className="text-xl font-semibold text-slate-900">{storeName}</h2>
               <p className="text-xs text-slate-600">
-                Tap the mic to start, then pause or tap again to stop. Or type your question.
+                Tap once to start hands-free. Tap again to stop. Or type your question.
               </p>
             </div>
             <div

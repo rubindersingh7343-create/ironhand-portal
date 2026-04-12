@@ -112,6 +112,8 @@ function OwnerPortalStoreBar({
   const {
     supportsRealtime,
     state: voiceState,
+    uiState: voiceUiState,
+    mode: voiceMode,
     listening: voiceListening,
     start: startVoice,
     stop: stopVoice,
@@ -331,11 +333,17 @@ function OwnerPortalStoreBar({
                     </svg>
                   </span>
                   <span className="owner-bottom-bar__ai-label">
-                    {voiceState === "connecting"
+                    {voiceUiState === "connecting"
                       ? "Connecting"
-                      : voiceListening
-                        ? "Listening"
-                        : "Tap to talk"}
+                      : voiceUiState === "thinking"
+                        ? "Thinking"
+                        : voiceUiState === "speaking"
+                          ? "Speaking"
+                          : voiceListening
+                            ? "Listening"
+                            : voiceMode === "active"
+                              ? "Voice on"
+                              : "Tap to talk"}
                   </span>
                 </button>
                 <div className="owner-bottom-bar__slot owner-bottom-bar__slot--right">
