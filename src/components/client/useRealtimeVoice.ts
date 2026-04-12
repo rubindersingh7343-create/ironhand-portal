@@ -27,6 +27,8 @@ export type VoiceDebugEvent = {
 
 type VoiceTopic = "sales" | "surveillance" | "other";
 
+type AssistantHistoryMessage = { role: "user" | "assistant"; content: string };
+
 type VoiceSnapshot = {
   state: RealtimeVoiceState;
   voiceState: VoiceState;
@@ -76,6 +78,7 @@ const controller = {
   userSpeaking: false,
   responseInFlight: false,
   awaitingTranscript: false,
+  listeningStartedAt: 0,
   lastSpeechStoppedAt: 0,
   lastTranscript: null as string | null,
   confirmTranscript: null as string | null,
@@ -98,6 +101,8 @@ const controller = {
   assistantAbortController: null as AbortController | null,
   assistantRequestSeq: 0,
   activeAssistantRequestSeq: 0,
+  assistantHistory: [] as AssistantHistoryMessage[],
+  assistantHistoryStoreId: null as string | null,
 
   debug: [] as VoiceDebugEvent[],
   subscribers: new Set<Subscriber>(),
@@ -342,6 +347,7 @@ const stop = () => {
   controller.userSpeaking = false;
   controller.responseInFlight = false;
   controller.awaitingTranscript = false;
+  controller.listeningStartedAt = 0;
   controller.lastSpeechStoppedAt = 0;
   controller.lastResponseCreateAt = 0;
   controller.needsPlaybackKick = false;
@@ -351,6 +357,8 @@ const stop = () => {
   controller.pendingTopicTranscript = null;
   controller.transcriptTimer = null;
   controller.activeAssistantRequestSeq = 0;
+  controller.assistantHistory = [];
+  controller.assistantHistoryStoreId = null;
   pushDebug("stop", "all");
   notify();
 };
@@ -585,9 +593,42 @@ const stopListening = (event: string, detail?: string) => {
   }
   controller.awaitingTranscript = false;
   controller.userSpeaking = false;
+  controller.listeningStartedAt = 0;
   controller.lastSpeechStoppedAt = 0;
   setMicEnabled(false);
   setVoiceState("idle", event, detail);
+};
+
+const commitListening = (event: string, detail?: string) => {
+  if (controller.listeningSafetyTimer) {
+    window.clearTimeout(controller.listeningSafetyTimer);
+    controller.listeningSafetyTimer = null;
+  }
+  if (controller.transcriptTimer) {
+    window.clearTimeout(controller.transcriptTimer);
+    controller.transcriptTimer = null;
+  }
+
+  controller.awaitingTranscript = true;
+  controller.userSpeaking = false;
+  controller.listeningStartedAt = 0;
+  controller.lastSpeechStoppedAt = Date.now();
+
+  // Freeze mic while we wait for the final transcript.
+  setMicEnabled(false);
+  // Best-effort: force an endpoint if the server supports manual commit.
+  sendRealtimeEvent({ type: "input_audio_buffer.commit" });
+
+  setVoiceState("processing", event, detail);
+  startProcessingTimeout();
+
+  controller.transcriptTimer = window.setTimeout(() => {
+    controller.transcriptTimer = null;
+    if (!controller.awaitingTranscript) return;
+    controller.awaitingTranscript = false;
+    controller.error = "Didn't catch that.";
+    stopListening("transcript.timeout.manual");
+  }, 3500);
 };
 
 const startProcessingTimeout = () => {
@@ -643,6 +684,7 @@ const startListening = async () => {
 
   setMicEnabled(true);
   playEarcon("ack");
+  controller.listeningStartedAt = Date.now();
   setVoiceState("listening", "listening.start");
 
   if (controller.listeningSafetyTimer) window.clearTimeout(controller.listeningSafetyTimer);
@@ -677,16 +719,41 @@ const requestStoreAssistantResponse = async (transcript: string) => {
   const text = normalizeTranscript(transcript);
   if (!text) return false;
   if (controller.responseInFlight) {
-    pushDebug("response.skip", "in_flight");
-    return false;
+    // Legit in-flight while we're fetching the assistant response.
+    const fetchInFlight = Boolean(controller.assistantAbortController);
+    if (fetchInFlight) {
+      pushDebug("response.skip", "in_flight");
+      return false;
+    }
+
+    // If we're speaking and the user produced a transcript, barge-in and proceed.
+    if (controller.voiceState === "speaking") {
+      cancelAssistantSpeech();
+      controller.responseInFlight = false;
+      pushDebug("response.barge_in", "cancel_speech");
+    } else {
+      // Stale lock (shouldn't happen, but prevents "works once then stuck").
+      controller.responseInFlight = false;
+      pushDebug("response.fixup", `stale_in_flight state=${controller.voiceState}`);
+    }
   }
   if (Date.now() - controller.lastResponseCreateAt < 650) {
     pushDebug("response.skip", "debounce");
+    if (controller.voiceState === "processing") setVoiceState("idle", "assistant.debounce");
     return false;
   }
 
   const storeId = controller.storeId ?? "";
-  if (!storeId) return false;
+  if (!storeId) {
+    if (controller.voiceState === "processing") setVoiceState("idle", "assistant.no_store");
+    return false;
+  }
+
+  // Reset voice session history when store changes (prevents cross-store confusion).
+  if (controller.assistantHistoryStoreId !== storeId) {
+    controller.assistantHistory = [];
+    controller.assistantHistoryStoreId = storeId;
+  }
 
   controller.responseInFlight = true;
   const seq = (controller.assistantRequestSeq += 1);
@@ -697,20 +764,36 @@ const requestStoreAssistantResponse = async (transcript: string) => {
     if (controller.assistantAbortController) controller.assistantAbortController.abort();
     controller.assistantAbortController = new AbortController();
     startProcessingTimeout();
-    const res = await fetch("/api/ai/store-assistant", {
+    const res = await fetch("/api/assistant", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      cache: "no-store",
       body: JSON.stringify({
-        active_store_id: storeId,
+        storeId,
         message: text,
         mode: "voice",
+        history: controller.assistantHistory.slice(-8),
+        primaryLanguage: controller.primaryLanguage ?? undefined,
+        secondaryLanguage: controller.secondaryLanguage ?? undefined,
       }),
       signal: controller.assistantAbortController.signal,
     });
-    const data = await res.json().catch(() => ({}));
+    const raw = await res.text().catch(() => "");
+    const data = (() => {
+      if (!raw) return {};
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return {};
+      }
+    })();
     if (!res.ok) {
-      const msg = data?.error ?? "Assistant unavailable.";
-      pushDebug("assistant.fetch.error", String(msg));
+      const msg =
+        (data as any)?.error ??
+        (raw && raw.trim() ? raw.trim().slice(0, 180) : null) ??
+        `Assistant unavailable (HTTP ${res.status}).`;
+      pushDebug("assistant.fetch.error", `http=${res.status} ${String(msg).slice(0, 120)}`);
       controller.responseInFlight = false;
       controller.error = String(msg);
       setVoiceState("error", "assistant.fetch.error");
@@ -727,11 +810,17 @@ const requestStoreAssistantResponse = async (transcript: string) => {
       return false;
     }
 
-    const answer = normalizeTranscript(data?.answer ?? "");
+    const answer = normalizeTranscript((data as any)?.reply ?? "");
     if (!answer) {
       controller.responseInFlight = false;
       setVoiceState("idle", "assistant.empty");
       return false;
+    }
+
+    controller.assistantHistory.push({ role: "user", content: text });
+    controller.assistantHistory.push({ role: "assistant", content: answer });
+    if (controller.assistantHistory.length > 16) {
+      controller.assistantHistory.splice(0, controller.assistantHistory.length - 16);
     }
 
     pushDebug("assistant.fetch.ok", answer.slice(0, 80));
@@ -832,12 +921,16 @@ const connect = async (
   controller.voice = requestedVoice;
   controller.primaryLanguage = requestedPrimary;
   controller.secondaryLanguage = requestedSecondary;
+  controller.assistantHistory = [];
+  controller.assistantHistoryStoreId = storeId;
   setUiState("connecting", "connect.start");
 
   try {
     const tokenResponse = await fetch("/api/realtime-token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      cache: "no-store",
       body: JSON.stringify({
         storeId,
         voice: requestedVoice,
@@ -845,15 +938,28 @@ const connect = async (
         secondaryLanguage: requestedSecondary,
       }),
     });
-    const tokenData = await tokenResponse.json().catch(() => ({}));
+    const raw = await tokenResponse.text().catch(() => "");
+    const tokenData = (() => {
+      if (!raw) return {};
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return {};
+      }
+    })();
     if (!tokenResponse.ok) {
-      const detail = tokenData?.details ? ` ${tokenData.details}` : "";
-      throw new Error((tokenData?.error ?? "Unable to start voice.") + detail);
+      const detail =
+        (tokenData as any)?.details
+          ? ` ${(tokenData as any).details}`
+          : raw && raw.trim()
+            ? ` ${raw.trim().slice(0, 180)}`
+            : "";
+      throw new Error(((tokenData as any)?.error ?? "Unable to start voice.") + detail);
     }
-    const token = tokenData?.value;
+    const token = (tokenData as any)?.value;
     if (!token) throw new Error("Realtime token missing.");
-    const prompt = tokenData?.prompt ?? null;
-    const vad = tokenData?.vad ?? null;
+    const prompt = (tokenData as any)?.prompt ?? null;
+    const vad = (tokenData as any)?.vad ?? null;
     if (
       vad &&
       typeof vad.threshold === "number" &&
@@ -1161,7 +1267,12 @@ export function useRealtimeVoice(
         }
 
         if (controller.voiceState === "listening") {
-          stopListening("mic.toggle.off");
+          const longEnoughToCommit =
+            controller.listeningStartedAt > 0 &&
+            Date.now() - controller.listeningStartedAt > 750;
+          const shouldCommit = controller.userSpeaking || controller.awaitingTranscript || longEnoughToCommit;
+          if (shouldCommit) commitListening("mic.toggle.commit");
+          else stopListening("mic.toggle.off");
           return;
         }
 

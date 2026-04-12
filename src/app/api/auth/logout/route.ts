@@ -3,6 +3,7 @@ import { SESSION_COOKIE } from "@/lib/users";
 
 export async function POST() {
   const response = NextResponse.json({ success: true });
+  const cookieDomain = process.env.AUTH_COOKIE_DOMAIN?.trim() || undefined;
   response.cookies.set({
     name: SESSION_COOKIE,
     value: "",
@@ -11,6 +12,7 @@ export async function POST() {
     sameSite: "lax",
     path: "/",
     secure: process.env.NODE_ENV === "production",
+    ...(cookieDomain ? { domain: cookieDomain } : {}),
   });
   return response;
 }

@@ -35,6 +35,7 @@ export async function POST(request: Request) {
 
   const token = createSessionToken(user);
   const response = NextResponse.json({ user });
+  const cookieDomain = process.env.AUTH_COOKIE_DOMAIN?.trim() || undefined;
   response.cookies.set({
     name: SESSION_COOKIE,
     value: token,
@@ -43,6 +44,7 @@ export async function POST(request: Request) {
     sameSite: "lax",
     path: "/",
     secure: process.env.NODE_ENV === "production",
+    ...(cookieDomain ? { domain: cookieDomain } : {}),
   });
   response.cookies.set({
     name: DISPLAY_NAME_COOKIE,
@@ -52,6 +54,7 @@ export async function POST(request: Request) {
     sameSite: "lax",
     path: "/",
     secure: process.env.NODE_ENV === "production",
+    ...(cookieDomain ? { domain: cookieDomain } : {}),
   });
   return response;
 }

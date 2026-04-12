@@ -60,6 +60,7 @@ export default function OwnerAssistantModal({
     error: realtimeError,
     listening,
     toggleListening,
+    stop: stopVoice,
   } = useRealtimeVoice(storeId, voice, primaryLanguage, secondaryLanguage, storeName);
 
   const title = useMemo(() => "Store Assistant", []);
@@ -139,8 +140,18 @@ export default function OwnerAssistantModal({
     onSecondaryLanguageChange(value);
   };
 
+  const handleClose = () => {
+    stopVoice();
+    onClose();
+  };
+
   return (
-    <IHModal isOpen onClose={onClose} allowOutsideClose panelClassName="assistant-modal">
+    <IHModal
+      isOpen
+      onClose={handleClose}
+      allowOutsideClose
+      panelClassName="assistant-modal"
+    >
       <div className="assistant-shell flex h-[82vh] max-h-[700px] w-[min(720px,92vw)] flex-col overflow-hidden">
         <div className="assistant-header border-b border-black/5 px-6 py-5">
           <p className="text-xs uppercase tracking-[0.32em] text-slate-600">
@@ -150,7 +161,7 @@ export default function OwnerAssistantModal({
             <div>
               <h2 className="text-xl font-semibold text-slate-900">{storeName}</h2>
               <p className="text-xs text-slate-600">
-                Tap the mic to speak, or type it in.
+                Tap the mic to start, then pause or tap again to stop. Or type your question.
               </p>
             </div>
             <div
@@ -219,7 +230,7 @@ export default function OwnerAssistantModal({
             <button
               type="button"
               disabled={!supportsRealtime}
-              aria-label="Toggle voice assistant"
+              aria-label={listening ? "Stop recording" : "Start recording"}
               className={`assistant-voice-icon ${realtimeState} ${
                 !supportsRealtime ? "disabled" : ""
               } ${listening ? "listening" : ""}`}
