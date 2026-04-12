@@ -15,6 +15,7 @@ import type { SessionUser } from "@/lib/types";
 import IHModal from "@/components/ui/IHModal";
 import OwnerChatModal from "@/components/client/OwnerChatModal";
 import OwnerAssistantModal from "@/components/client/OwnerAssistantModal";
+import { useRealtimeVoice } from "@/components/client/useRealtimeVoice";
 import {
   DEFAULT_ASSISTANT_VOICE,
   type AssistantVoice,
@@ -108,6 +109,23 @@ function OwnerPortalStoreBar({
     const stored = window.localStorage.getItem("ih-assistant-lang-secondary");
     return stored?.trim() || "";
   });
+  const {
+    supportsRealtime,
+    state: voiceState,
+    listening: voiceListening,
+    start: startVoice,
+    stop: stopVoice,
+    mute: muteVoice,
+    toggleListening,
+  } = useRealtimeVoice(
+    selectedStoreId ?? "",
+    assistantVoice,
+    assistantPrimaryLanguage,
+    assistantSecondaryLanguage,
+    activeLabel,
+  );
+  const voiceIdleTimer = useRef<number | null>(null);
+  const voiceToggleGuard = useRef(0);
   const lockToastShownRef = useRef(false);
 
   const isDateLocked = Boolean(dateLockRange?.startDate);
@@ -180,6 +198,7 @@ function OwnerPortalStoreBar({
   }, [loadBadges, selectedStoreId]);
 
   const canOpenAssistant = Boolean(selectedStoreId);
+  const canUseVoice = canOpenAssistant && supportsRealtime;
 
   useEffect(() => {
     if (!dateLockOpen) return;
@@ -188,6 +207,44 @@ function OwnerPortalStoreBar({
     setLockStart(nextStart);
     setLockEnd(nextEnd === nextStart ? "" : nextEnd);
   }, [dateLockOpen, dateLockRange?.startDate, dateLockRange?.endDate]);
+
+  useEffect(() => {
+    if (!canUseVoice) return;
+    if (typeof navigator === "undefined") return;
+    const warmConnection = async () => {
+      try {
+        if (!("permissions" in navigator)) return;
+        const status = await navigator.permissions.query({
+          name: "microphone" as PermissionName,
+        });
+        if (status.state === "granted") {
+          startVoice();
+          muteVoice();
+        }
+      } catch (error) {
+        console.warn("Unable to prewarm voice connection", error);
+      }
+    };
+    warmConnection();
+  }, [canUseVoice, startVoice, muteVoice]);
+
+  const handleVoiceToggle = () => {
+    if (!canUseVoice) return;
+    const now = Date.now();
+    if (now - voiceToggleGuard.current < 350) return;
+    voiceToggleGuard.current = now;
+    toggleListening();
+    if (voiceIdleTimer.current) {
+      window.clearTimeout(voiceIdleTimer.current);
+      voiceIdleTimer.current = null;
+    }
+    if (!voiceListening) {
+      voiceIdleTimer.current = window.setTimeout(() => {
+        stopVoice();
+        voiceIdleTimer.current = null;
+      }, 300000);
+    }
+  };
 
   return (
     <>
@@ -249,14 +306,16 @@ function OwnerPortalStoreBar({
                 <button
                   type="button"
                   className="owner-bottom-bar__ai"
-                  aria-label="Open assistant"
-                  disabled={!canOpenAssistant}
+                  aria-label="Toggle voice assistant"
+                  disabled={!canUseVoice}
+                  data-state={voiceState}
+                  data-listening={voiceListening ? "true" : "false"}
                   onKeyDown={(event) => {
                     if (event.key !== "Enter" && event.key !== " ") return;
                     event.preventDefault();
-                    setAssistantOpen(true);
+                    handleVoiceToggle();
                   }}
-                  onClick={() => setAssistantOpen(true)}
+                  onClick={handleVoiceToggle}
                 >
                   <span className="owner-bottom-bar__ai-core">
                     <svg
@@ -272,7 +331,11 @@ function OwnerPortalStoreBar({
                     </svg>
                   </span>
                   <span className="owner-bottom-bar__ai-label">
-                    Tap for assistant
+                    {voiceState === "connecting"
+                      ? "Connecting"
+                      : voiceListening
+                        ? "Listening"
+                        : "Tap to talk"}
                   </span>
                 </button>
                 <div className="owner-bottom-bar__slot owner-bottom-bar__slot--right">
