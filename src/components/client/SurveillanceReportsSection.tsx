@@ -29,18 +29,6 @@ const formatTimestamp = (value: string) => {
   });
 };
 
-const formatBytes = (bytes?: number) => {
-  if (!bytes || Number.isNaN(bytes)) return "";
-  const units = ["B", "KB", "MB", "GB"];
-  let index = 0;
-  let value = bytes;
-  while (value >= 1024 && index < units.length - 1) {
-    value /= 1024;
-    index += 1;
-  }
-  return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
-};
-
 const shiftIsoDate = (value: string, delta: number) => {
   if (!value) return value;
   const date = new Date(`${value}T00:00:00`);
@@ -66,6 +54,15 @@ const isImageAttachment = (file?: Partial<StoredFile> | null) => {
   return /\.(png|jpe?g|webp|gif|avif|heic|heif|bmp|tiff?)$/.test(name);
 };
 
+const isVideoAttachment = (file?: Partial<StoredFile> | null) => {
+  if (!file) return false;
+  if (file.kind === "video") return true;
+  const mime = (file.mimeType ?? "").toLowerCase();
+  if (mime.startsWith("video/")) return true;
+  const name = (file.originalName ?? file.path ?? "").toLowerCase();
+  return /\.(mp4|mov|webm|m4v|avi|mkv)$/i.test(name);
+};
+
 function AttachmentPreview({
   file,
   onOpen,
@@ -74,26 +71,65 @@ function AttachmentPreview({
   onOpen: () => void;
 }) {
   const [failed, setFailed] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const src = buildAttachmentSrc(file.path || file.id);
   const showImage = Boolean(src) && isImageAttachment(file) && !failed;
+  const showVideo = Boolean(src) && isVideoAttachment(file) && !failed;
 
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="group relative block h-52 w-full overflow-hidden bg-slate-50"
+      className="group relative block h-52 w-full overflow-hidden bg-[var(--card-soft)]"
       aria-label={`Open ${file.originalName ?? "attachment"}`}
       title="Open"
     >
       {showImage ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
+          key={`${src}:${retryCount}`}
           src={src}
           alt={file.originalName ?? "Attachment preview"}
-          loading="lazy"
+          loading="eager"
           className="h-full w-full object-cover transition group-hover:scale-[1.02]"
-          onError={() => setFailed(true)}
+          onError={() => {
+            if (retryCount < 2) {
+              window.setTimeout(() => setRetryCount((prev) => prev + 1), 650);
+              return;
+            }
+            setFailed(true);
+          }}
         />
+      ) : showVideo ? (
+        <div className="relative h-full w-full">
+          <video
+            key={`${src}:${retryCount}`}
+            className="h-full w-full object-cover"
+            src={src}
+            muted
+            playsInline
+            preload="metadata"
+            onError={() => {
+              if (retryCount < 2) {
+                window.setTimeout(() => setRetryCount((prev) => prev + 1), 650);
+                return;
+              }
+              setFailed(true);
+            }}
+          />
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-black/45 text-white">
+              <svg
+                viewBox="0 0 24 24"
+                className="h-6 w-6"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </div>
+          </div>
+        </div>
       ) : (
         <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-slate-500">
           <svg
@@ -132,9 +168,11 @@ const touchCenter = (a: Touch, b: Touch) => ({
 function ZoomableImage({
   src,
   alt,
+  fullscreen = false,
 }: {
   src: string;
   alt: string;
+  fullscreen?: boolean;
 }) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -342,7 +380,9 @@ function ZoomableImage({
   return (
     <div
       ref={stageRef}
-      className="relative flex max-h-[70vh] w-full items-center justify-center overflow-hidden rounded-xl bg-black/10"
+      className={`relative flex w-full items-center justify-center overflow-hidden bg-black/10 ${
+        fullscreen ? "h-full max-h-none rounded-none" : "max-h-[70vh] rounded-xl"
+      }`}
       style={{
         touchAction: "none",
       }}
@@ -366,19 +406,6 @@ function ZoomableImage({
     </div>
   );
 }
-
-type SurveillanceIncident = {
-  id: string;
-  category: IncidentCategory;
-  timestamp: string;
-  record: CombinedRecord;
-  file: CombinedRecord["attachments"][number];
-};
-
-const statusStyles = {
-  submitted: "border-emerald-400/30 bg-emerald-500/15 text-emerald-200",
-  pending: "border-amber-300/40 bg-amber-400/15 text-amber-100",
-} as const;
 
 const categoryStyles: Record<IncidentCategory, string> = {
   critical: "border-red-200 bg-red-50 text-red-800",
@@ -462,14 +489,143 @@ export default function SurveillanceReportsSection({
     null,
   );
   const hasSurveillanceInvestigationAPI = true;
-  const [unseenCounts, setUnseenCounts] = useState<Record<string, number>>({});
   const [unseenIds, setUnseenIds] = useState<string[]>([]);
+  const [ttsSupported, setTtsSupported] = useState(false);
+  const [ttsVoices, setTtsVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [ttsVoiceName, setTtsVoiceName] = useState<string>("");
+  const [ttsSpeaking, setTtsSpeaking] = useState(false);
+  const ttsSpeakingRef = useRef(false);
+
+  const pickNaturalVoice = useCallback(
+    (voices: SpeechSynthesisVoice[], lang: string) => {
+      const normalizedLang = String(lang || "en-US");
+      const languageBase = normalizedLang.split("-")[0]?.toLowerCase() || "en";
+      const isLangMatch = (v: SpeechSynthesisVoice) => {
+        const vLang = String(v.lang ?? "").toLowerCase();
+        if (!vLang) return false;
+        return vLang === normalizedLang.toLowerCase() || vLang.startsWith(`${languageBase}-`);
+      };
+
+      const nameScore = (nameRaw: string) => {
+        const name = nameRaw.toLowerCase();
+        if (
+          /samantha|karen|moira|serena|tessa|nicky|martha|daniel|ava|siri/i.test(
+            nameRaw,
+          )
+        )
+          return 40;
+        if (/google.*english/i.test(nameRaw)) return 34;
+        if (/microsoft.*(aria|jenny|guy|davis|zira|natasha)/i.test(nameRaw))
+          return 30;
+        if (/enhanced|premium|neural/i.test(nameRaw)) return 26;
+        if (/compact|robot|default/i.test(nameRaw)) return -10;
+        return 0;
+      };
+
+      const scored = voices
+        .filter((v) => Boolean(v?.name))
+        .map((v) => {
+          let score = 0;
+          if (isLangMatch(v)) score += 20;
+          if (v.localService) score += 6;
+          score += nameScore(v.name);
+          return { v, score };
+        })
+        .sort((a, b) => b.score - a.score);
+
+      return scored[0]?.v ?? null;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const supported =
+      "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+    setTtsSupported(supported);
+    if (!supported) return;
+
+    const synth = window.speechSynthesis;
+    const loadVoices = () => {
+      try {
+        const voices = synth.getVoices() ?? [];
+        setTtsVoices(voices);
+      } catch {
+        setTtsVoices([]);
+      }
+    };
+
+    loadVoices();
+    // Some browsers populate voices async.
+    synth.addEventListener?.("voiceschanged", loadVoices as EventListener);
+    window.setTimeout(loadVoices, 250);
+    return () => {
+      synth.removeEventListener?.("voiceschanged", loadVoices as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!ttsSupported) return;
+    if (typeof window === "undefined") return;
+    if (!ttsVoices.length) return;
+
+    const stored = window.localStorage.getItem("ih-tts-voice")?.trim() || "";
+    const preferredName = ttsVoiceName || stored;
+    const byStored =
+      preferredName && ttsVoices.find((v) => v.name === preferredName)
+        ? preferredName
+        : "";
+
+    const nextVoice =
+      (byStored && ttsVoices.find((v) => v.name === byStored)) ||
+      pickNaturalVoice(ttsVoices, navigator.language || "en-US");
+
+    if (!nextVoice) return;
+    if (nextVoice.name !== ttsVoiceName) setTtsVoiceName(nextVoice.name);
+    try {
+      window.localStorage.setItem("ih-tts-voice", nextVoice.name);
+    } catch {
+      // ignore storage failures
+    }
+  }, [pickNaturalVoice, ttsSupported, ttsVoiceName, ttsVoices]);
+
+  const selectedTtsVoice = useMemo(() => {
+    if (!ttsSupported) return null;
+    if (!ttsVoices.length) return null;
+    if (ttsVoiceName) {
+      const found = ttsVoices.find((v) => v.name === ttsVoiceName);
+      if (found) return found;
+    }
+    return pickNaturalVoice(ttsVoices, typeof navigator !== "undefined" ? navigator.language : "en-US");
+  }, [pickNaturalVoice, ttsSupported, ttsVoiceName, ttsVoices]);
+
+  useEffect(() => {
+    return () => {
+      if (typeof window === "undefined") return;
+      if (!("speechSynthesis" in window)) return;
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
 
   const fetchRange = useMemo(() => {
-    const baseDate = isDateLocked && dateLockRange?.startDate ? dateLockRange.startDate : selectedDate;
-    const windowStart = shiftIsoDate(baseDate, -30);
-    const windowEnd = shiftIsoDate(baseDate, 1);
-    return { startDate: windowStart, endDate: windowEnd };
+    const baseDate =
+      isDateLocked && dateLockRange?.startDate
+        ? dateLockRange.startDate
+        : selectedDate;
+    const [yearRaw, monthRaw] = baseDate.split("-").map((value) => Number(value));
+    const year = Number.isFinite(yearRaw) ? yearRaw : new Date().getFullYear();
+    const monthIndex = Number.isFinite(monthRaw)
+      ? Math.max(1, Math.min(monthRaw, 12)) - 1
+      : new Date().getMonth();
+
+    const monthStartLocal = new Date(year, monthIndex, 1, 0, 0, 0, 0);
+    const nextMonthStartLocal = new Date(year, monthIndex + 1, 1, 0, 0, 0, 0);
+    const monthEndLocal = new Date(nextMonthStartLocal.getTime() - 1);
+    return { startDate: monthStartLocal.toISOString(), endDate: monthEndLocal.toISOString() };
   }, [selectedDate, isDateLocked, dateLockRange?.startDate]);
 
   const cacheKey = useMemo(() => {
@@ -574,7 +730,6 @@ export default function SurveillanceReportsSection({
         );
         const data = await response.json().catch(() => ({}));
         if (response.ok) {
-          setUnseenCounts(data.counts ?? {});
           setUnseenIds(Array.isArray(data.unseenIds) ? data.unseenIds : []);
         }
       } catch (error) {
@@ -715,10 +870,6 @@ export default function SurveillanceReportsSection({
       }),
     });
     setUnseenIds((prev) => prev.filter((id) => id !== record.id));
-    setUnseenCounts((prev) => ({
-      ...prev,
-      [record.storeNumber]: Math.max(0, (prev[record.storeNumber] ?? 1) - 1),
-    }));
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("ih-nav-badges-refresh"));
     }
@@ -760,13 +911,6 @@ export default function SurveillanceReportsSection({
       setUnseenIds((prev) =>
         prev.filter((id) => !unseenRecords.some((record) => record.id === id)),
       );
-      setUnseenCounts((prev) => {
-        const next = { ...prev };
-        unseenRecords.forEach((record) => {
-          next[record.storeNumber] = Math.max(0, (next[record.storeNumber] ?? 1) - 1);
-        });
-        return next;
-      });
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("ih-nav-badges-refresh"));
       }
@@ -782,13 +926,12 @@ export default function SurveillanceReportsSection({
   }, [dateTouched, latestRecordDate, selectedDate]);
 
   const routineRecords = useMemo(() => {
-    const labeledRoutine = recordsForDate.filter(
-      (record) => record.surveillanceLabel?.toLowerCase() === "routine",
-    );
-    return labeledRoutine;
+    // Treat any surveillance submission as a daily "routine" entry; incidents are
+    // surfaced separately based on each attachment's label.
+    return recordsForDate;
   }, [recordsForDate]);
 
-  const averageGradeByEmployee = useMemo(() => {
+  const averageBehaviorGradeByEmployee = useMemo(() => {
     const totals = new Map<string, { sum: number; count: number }>();
     records.forEach((record) => {
       if (!record.employeeName) return;
@@ -822,24 +965,59 @@ export default function SurveillanceReportsSection({
       });
     return Array.from(latestByEmployee.entries()).map(([name, record]) => ({
       name,
-      grade: record.surveillanceGrade ?? "",
-      avgGrade: (averageGradeByEmployee.get(name) ?? "").replace(/^avg\\s+/i, ""),
+      behaviorGrade: record.surveillanceGrade ?? "",
+      conductGrade: record.surveillanceConductGrade ?? "",
+      avgBehaviorGrade: (averageBehaviorGradeByEmployee.get(name) ?? "").replace(
+        /^avg\\s+/i,
+        "",
+      ),
       record,
     }));
-  }, [routineRecords, averageGradeByEmployee]);
+  }, [routineRecords, averageBehaviorGradeByEmployee]);
 
-  const incidents = recordsForDate.flatMap((record) => {
-    const timestamp = new Date(record.createdAt).toLocaleString();
-    return (record.attachments ?? [])
-      .map((file) => ({
-        id: `${record.id}-${file.id ?? file.path ?? file.originalName ?? "file"}`,
-        category: (file.label ?? "").toLowerCase() as IncidentCategory,
-        timestamp,
-        record,
-        file,
-      }))
-      .filter((entry) => incidentLabels.includes(entry.category));
-  });
+  const incidentGroups = useMemo(() => {
+    type Group = {
+      id: string;
+      category: IncidentCategory;
+      timestamp: string;
+      record: CombinedRecord;
+      summary: string;
+      files: StoredFile[];
+    };
+
+    const groups = new Map<string, Group>();
+    recordsForDate.forEach((record) => {
+      const timestamp = new Date(record.createdAt).toLocaleString();
+      (record.attachments ?? []).forEach((file) => {
+        const category = (file.label ?? "").toLowerCase() as IncidentCategory;
+        if (!incidentLabels.includes(category)) return;
+        const summary = String(
+          file.summary ??
+            record.surveillanceSummary ??
+            record.notes ??
+            "",
+        ).trim();
+        const groupKey = `${record.id}::${category}::${summary}`;
+        const existing =
+          groups.get(groupKey) ??
+          ({
+            id: groupKey,
+            category,
+            timestamp,
+            record,
+            summary,
+            files: [],
+          } satisfies Group);
+        existing.files.push(file);
+        groups.set(groupKey, existing);
+      });
+    });
+
+    return Array.from(groups.values()).sort(
+      (a, b) =>
+        new Date(b.record.createdAt).getTime() - new Date(a.record.createdAt).getTime(),
+    );
+  }, [recordsForDate]);
 
   const hasReports = recordsForDate.length > 0;
   const showSkeleton = loading && records.length === 0;
@@ -852,14 +1030,118 @@ export default function SurveillanceReportsSection({
   const [attachmentViewerFile, setAttachmentViewerFile] = useState<
     CombinedRecord["attachments"][number] | null
   >(null);
+  const [attachmentViewerFullscreen, setAttachmentViewerFullscreen] =
+    useState(false);
 
   const openAttachmentViewer = (
     file?: CombinedRecord["attachments"][number] | null,
   ) => {
     if (!file) return;
     setAttachmentViewerFile(file);
+    setAttachmentViewerFullscreen(false);
     setAttachmentViewerOpen(true);
   };
+
+  const closeAttachmentViewer = () => {
+    setAttachmentViewerOpen(false);
+    setAttachmentViewerFile(null);
+    setAttachmentViewerFullscreen(false);
+  };
+
+  const [gradeHistoryEmployee, setGradeHistoryEmployee] = useState<string | null>(
+    null,
+  );
+  const [gradeHistoryRecords, setGradeHistoryRecords] = useState<CombinedRecord[]>(
+    [],
+  );
+  const [gradeHistoryStatus, setGradeHistoryStatus] = useState<
+    "idle" | "loading" | "error"
+  >("idle");
+  const [gradeHistoryMessage, setGradeHistoryMessage] = useState<string | null>(
+    null,
+  );
+
+  const openGradeHistory = useCallback(
+    async (employeeName: string) => {
+      if (!selectedStore || !employeeName.trim()) return;
+      setGradeHistoryEmployee(employeeName);
+      setGradeHistoryStatus("loading");
+      setGradeHistoryMessage(null);
+      setGradeHistoryRecords([]);
+      try {
+        const [yearRaw, monthRaw] = selectedDate.split("-").map((value) => Number(value));
+        const year = Number.isFinite(yearRaw) ? yearRaw : new Date().getFullYear();
+        const monthIndex = Number.isFinite(monthRaw) ? Math.max(1, Math.min(monthRaw, 12)) - 1 : 0;
+        const monthStartLocal = new Date(year, monthIndex, 1, 0, 0, 0, 0);
+        const nextMonthStartLocal = new Date(year, monthIndex + 1, 1, 0, 0, 0, 0);
+        const monthEndLocal = new Date(nextMonthStartLocal.getTime() - 1);
+
+        const startDate = monthStartLocal.toISOString();
+        const endDate = monthEndLocal.toISOString();
+        const params = new URLSearchParams({
+          category: "surveillance",
+          store: selectedStore,
+          employee: employeeName,
+          includeStores: "0",
+          startDate,
+          endDate,
+        });
+        const response = await fetch(`/api/records?${params.toString()}`, {
+          cache: "no-store",
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.error ?? "Unable to load grade history.");
+        }
+        setGradeHistoryRecords(Array.isArray(data.records) ? data.records : []);
+        setGradeHistoryStatus("idle");
+      } catch (error) {
+        setGradeHistoryStatus("error");
+        setGradeHistoryMessage(
+          error instanceof Error ? error.message : "Unable to load grade history.",
+        );
+      }
+    },
+    [selectedStore, selectedDate],
+  );
+
+  const gradeHistoryAverages = useMemo(() => {
+    const totals = {
+      behaviorSum: 0,
+      behaviorCount: 0,
+      conductSum: 0,
+      conductCount: 0,
+    };
+    gradeHistoryRecords.forEach((record) => {
+      const behaviorPoints = gradeToPoints(record.surveillanceGrade);
+      if (behaviorPoints !== null) {
+        totals.behaviorSum += behaviorPoints;
+        totals.behaviorCount += 1;
+      }
+      const conductPoints = gradeToPoints(record.surveillanceConductGrade);
+      if (conductPoints !== null) {
+        totals.conductSum += conductPoints;
+        totals.conductCount += 1;
+      }
+    });
+    return {
+      behavior:
+        totals.behaviorCount > 0
+          ? pointsToGrade(totals.behaviorSum / totals.behaviorCount)
+          : "",
+      conduct:
+        totals.conductCount > 0
+          ? pointsToGrade(totals.conductSum / totals.conductCount)
+          : "",
+      count: gradeHistoryRecords.length,
+    };
+  }, [gradeHistoryRecords]);
+
+  const gradeHistoryMonthLabel = useMemo(() => {
+    const parsed = new Date(`${selectedDate}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return selectedDate;
+    return parsed.toLocaleString(undefined, { month: "short", year: "numeric" });
+  }, [selectedDate]);
 
   const [selectedRoutineRecordId, setSelectedRoutineRecordId] = useState<string | null>(
     null,
@@ -887,24 +1169,105 @@ export default function SurveillanceReportsSection({
     );
   }, [routineEmployees, selectedRoutineRecordId]);
 
+  const routineUploads = useMemo(() => {
+    const employeeName = selectedRoutineEntry?.name;
+    if (!employeeName) return [] as Array<{
+      recordId: string;
+      createdAt: string;
+      file: StoredFile;
+    }>;
+
+    const uploads: Array<{ recordId: string; createdAt: string; file: StoredFile }> = [];
+    recordsForDate
+      .filter((record) => record.employeeName === employeeName)
+      .forEach((record) => {
+        (record.attachments ?? []).forEach((file) => {
+          const category = String(file.label ?? "").toLowerCase() as IncidentCategory;
+          if (incidentLabels.includes(category)) return;
+          uploads.push({ recordId: record.id, createdAt: record.createdAt, file });
+        });
+      });
+
+    return uploads.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+  }, [recordsForDate, selectedRoutineEntry]);
+
   const routineSummaryLines = useMemo(() => {
     const record = selectedRoutineEntry?.record;
     const summary = record?.surveillanceSummary ?? record?.notes ?? "";
     return summary ? summary.split("\n") : [];
   }, [selectedRoutineEntry]);
 
+  const routineSummaryText = useMemo(() => {
+    const record = selectedRoutineEntry?.record;
+    return String(record?.surveillanceSummary ?? record?.notes ?? "").trim();
+  }, [selectedRoutineEntry]);
+
+  const stopSummarySpeech = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (!("speechSynthesis" in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+    } catch {
+      // ignore
+    }
+    ttsSpeakingRef.current = false;
+    setTtsSpeaking(false);
+  }, []);
+
+  const speakSummary = useCallback(
+    (text: string) => {
+      if (!ttsSupported) return;
+      if (typeof window === "undefined") return;
+      if (!("speechSynthesis" in window)) return;
+      const clean = String(text ?? "").trim();
+      if (!clean) return;
+
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        // ignore
+      }
+
+      try {
+        const utterance = new window.SpeechSynthesisUtterance(clean);
+        if (selectedTtsVoice) utterance.voice = selectedTtsVoice;
+        // Slightly slower + a touch more pitch tends to sound more natural across common voices.
+        utterance.rate = 0.98;
+        utterance.pitch = 1.05;
+        utterance.volume = 1;
+        utterance.lang = selectedTtsVoice?.lang || navigator.language || "en-US";
+        utterance.onend = () => {
+          ttsSpeakingRef.current = false;
+          setTtsSpeaking(false);
+        };
+        utterance.onerror = () => {
+          ttsSpeakingRef.current = false;
+          setTtsSpeaking(false);
+        };
+        ttsSpeakingRef.current = true;
+        setTtsSpeaking(true);
+        window.speechSynthesis.speak(utterance);
+      } catch (error) {
+        console.error("Unable to speak summary", error);
+        ttsSpeakingRef.current = false;
+        setTtsSpeaking(false);
+      }
+    },
+    [selectedTtsVoice, ttsSupported],
+  );
+
+  useEffect(() => {
+    // If the underlying summary changes, stop any in-progress speech to avoid reading stale text.
+    if (!ttsSpeakingRef.current) return;
+    stopSummarySpeech();
+  }, [routineSummaryText, stopSummarySpeech]);
+
   return (
     <section className="ui-card relative overflow-hidden">
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-blue-500/30 to-transparent"
-        aria-hidden="true"
-      />
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-sm uppercase tracking-[0.3em] text-[#223a70]">
-          <span
-            className="h-2 w-2 rounded-full bg-blue-500/70 shadow-[0_0_0_3px_rgba(14,165,233,0.12)]"
-            aria-hidden="true"
-          />
+        <h2 className="text-sm uppercase tracking-[0.3em] text-[#223a70]">
           Surveillance
         </h2>
       </div>
@@ -975,7 +1338,7 @@ export default function SurveillanceReportsSection({
                 });
               }
             }}
-            className="ui-field ui-field--slim border-[#223a70]/25 bg-[rgba(34,58,112,0.04)]"
+            className="ui-field ui-field--slim"
             disabled={isDateLocked}
           />
           <button
@@ -1035,11 +1398,7 @@ export default function SurveillanceReportsSection({
                 {showRefreshing ? (
                   <p className="text-xs text-slate-500">Refreshing…</p>
                 ) : null}
-                <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-b from-white to-[#f4f7ff] p-4 shadow-[0_8px_24px_rgba(15,23,42,0.08)] ring-1 ring-[#223a70]/10">
-                  <div
-                    className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-blue-500/20 to-transparent"
-                    aria-hidden="true"
-                  />
+                <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
                       Summary
@@ -1072,134 +1431,296 @@ export default function SurveillanceReportsSection({
 
                   {routineEmployees.length ? (
                     <>
-                      <div className="flex flex-wrap gap-2">
-                        {routineEmployees.map((entry) => {
-                          const isActive = entry.record.id === selectedRoutineRecordId;
-                          return (
-                            <button
-                              key={entry.record.id}
-                              type="button"
-                              onClick={() => {
-                                markSurveillanceSeen(entry.record);
-                                setSelectedRoutineRecordId(entry.record.id);
-                              }}
-                              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-left text-xs font-semibold transition ${
-                                isActive ? "ui-pill-primary" : "ui-pill-secondary"
-                              }`}
-                            >
-                              <span className="max-w-[14ch] truncate">{entry.name}</span>
-                              {unseenSet.has(entry.record.id) ? (
-                                <span className="h-2 w-2 rounded-full bg-blue-400" />
-                              ) : null}
-                              {entry.grade ? (
-                                <span
-                                  className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${gradePillClass(
-                                    entry.grade,
-                                  )}`}
-                                >
-                                  {entry.grade}
-                                </span>
-                              ) : null}
-                              {entry.avgGrade ? (
-                                <span className="inline-flex items-center gap-1">
-                                  <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                                    Avg
+	                      <div className="flex flex-wrap gap-2">
+	                        {routineEmployees.map((entry) => {
+	                          const isActive = entry.record.id === selectedRoutineRecordId;
+	                          return (
+	                            <div
+	                              key={entry.record.id}
+	                              className="flex w-full max-w-full flex-nowrap items-center gap-2 sm:w-auto sm:flex-wrap"
+	                            >
+	                              <button
+	                                type="button"
+	                                onClick={() => {
+	                                  markSurveillanceSeen(entry.record);
+	                                  setSelectedRoutineRecordId(entry.record.id);
+	                                }}
+	                                className={`inline-flex max-w-full min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-full border px-3 py-1 text-left text-xs font-semibold transition ${
+	                                  isActive ? "ui-pill-primary" : "ui-pill-secondary"
+	                                }`}
+	                              >
+	                                <span className="max-w-[11ch] truncate sm:max-w-[14ch]">
+                                    {entry.name}
+                                  </span>
+                                {unseenSet.has(entry.record.id) ? (
+                                  <span className="h-2 w-2 rounded-full bg-blue-400" />
+                                ) : null}
+
+                                {entry.behaviorGrade ? (
+                                  <span className="inline-flex items-center gap-1">
+                                    <span
+                                      className={`text-[10px] font-semibold tracking-[0.18em] ${
+                                        isActive ? "text-white/85" : "text-slate-500"
+                                      }`}
+                                    >
+                                      Beh.
+                                    </span>
+                                    <span
+                                      className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${gradePillClass(
+                                        entry.behaviorGrade,
+                                      )}`}
+                                    >
+                                      {entry.behaviorGrade}
+                                    </span>
+                                  </span>
+                                ) : null}
+
+                                {entry.conductGrade ? (
+                                  <span className="inline-flex items-center gap-1">
+                                    <span
+                                      className={`text-[10px] font-semibold tracking-[0.18em] ${
+                                        isActive ? "text-white/85" : "text-slate-500"
+                                      }`}
+                                    >
+                                      Cond.
+                                    </span>
+                                    <span
+                                      className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${gradePillClass(
+                                        entry.conductGrade,
+                                      )}`}
+                                    >
+                                      {entry.conductGrade}
+                                    </span>
+                                  </span>
+                                ) : null}
+                              </button>
+
+                              {entry.avgBehaviorGrade ? (
+                                <button
+                                  type="button"
+	                                  onClick={(event) => {
+	                                    event.preventDefault();
+	                                    event.stopPropagation();
+	                                    void openGradeHistory(entry.name);
+	                                  }}
+	                                  className="inline-flex shrink-0 items-center gap-2 rounded-full border border-[#223a70]/30 bg-[var(--nav-pill-blue)] px-3 py-1 text-left text-[11px] font-semibold tracking-[0.18em] text-white shadow-[0_10px_26px_rgba(15,23,42,0.12)] transition hover:bg-[#1c3362]"
+	                                  aria-label={`Open grade history for ${entry.name}`}
+	                                >
+                                  <span className="text-[10px] font-semibold tracking-[0.22em] text-white/90">
+                                    AVG
                                   </span>
                                   <span
-                                    className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${gradePillClass(
-                                      entry.avgGrade,
+                                    className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${gradePillClass(
+                                      entry.avgBehaviorGrade,
                                     )}`}
                                   >
-                                    {entry.avgGrade}
+                                    {entry.avgBehaviorGrade}
                                   </span>
-                                </span>
+                                </button>
                               ) : null}
-                            </button>
+                            </div>
                           );
                         })}
                       </div>
 
-                      <div className="mt-4 rounded-2xl border border-slate-200 bg-[rgba(34,58,112,0.03)] px-4 py-3 ring-1 ring-[#223a70]/5">
-                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
-                          Routine Surveillance Report
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {activeStoreName} · {selectedStore} · {formatTimestamp(
-                            selectedRoutineEntry?.record?.createdAt ?? selectedDate,
-                          )}
-                        </p>
-
-                        <div className="mt-3 space-y-2 text-sm text-slate-800">
-                          {routineSummaryLines.length ? (
+                      <div className="mt-4 rounded-2xl border border-slate-200 bg-[var(--card-soft)] px-4 py-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
+                            AI Summary
+                          </p>
+                          <button
+                            type="button"
+                            className="rounded-full border border-slate-200/80 bg-white/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-700 shadow-sm transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={!ttsSupported || !routineSummaryText}
+                            onClick={() => {
+                              if (ttsSpeaking) stopSummarySpeech();
+                              else speakSummary(routineSummaryText);
+                            }}
+                            aria-label={
+                              ttsSpeaking ? "Stop speaking summary" : "Speak summary"
+                            }
+                            title={
+                              !ttsSupported
+                                ? "Text-to-speech is not available on this device."
+                                : !routineSummaryText
+                                  ? "No summary available yet."
+                                  : ttsSpeaking
+                                    ? "Stop"
+                                    : "Speak"
+                            }
+                          >
+                            {ttsSpeaking ? "Stop" : "Speak"}
+                          </button>
+                        </div>
+	
+	                        <div className="mt-3 space-y-2 text-sm text-slate-800">
+	                          {routineSummaryLines.length ? (
                             routineSummaryLines.map((line, index) => (
                               <p key={`${line}-${index}`} className={index ? "mt-2" : ""}>
                                 {line || "\u00a0"}
                               </p>
                             ))
                           ) : (
-                            <p className="text-slate-600">No summary provided.</p>
+                            <p className="text-slate-600">No summary available yet.</p>
                           )}
                         </div>
 
-                        {(selectedRoutineEntry?.record?.surveillanceGrade ||
-                          selectedRoutineEntry?.record?.surveillanceGradeReason) && (
-                          <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
-                              Behavior Grade
-                            </p>
-                            <div className="mt-2 flex flex-wrap items-center gap-2">
-                              {selectedRoutineEntry?.record?.surveillanceGrade ? (
-                                <span
-                                  className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${gradePillClass(
-                                    selectedRoutineEntry.record.surveillanceGrade,
-                                  )}`}
-                                >
-                                  {selectedRoutineEntry.record.surveillanceGrade}
-                                </span>
-                              ) : null}
-                              {selectedRoutineEntry?.record?.surveillanceGradeReason ? (
-                                <span className="text-sm text-slate-700">
-                                  {selectedRoutineEntry.record.surveillanceGradeReason}
-                                </span>
-                              ) : null}
+	                        {(selectedRoutineEntry?.record?.surveillanceGrade ||
+	                          selectedRoutineEntry?.record?.surveillanceGradeReason) && (
+	                          <div className="mt-4 rounded-2xl border border-[#223a70]/30 bg-[var(--nav-pill-blue)] px-4 py-3 text-white shadow-[0_10px_26px_rgba(15,23,42,0.12)]">
+	                            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/90">
+	                              Behavior Grade
+	                            </p>
+	                            <div className="mt-2 flex flex-wrap items-center gap-2">
+	                              {selectedRoutineEntry?.record?.surveillanceGrade ? (
+	                                <span
+	                                  className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${gradePillClass(
+	                                    selectedRoutineEntry.record.surveillanceGrade,
+	                                  )}`}
+	                                >
+	                                  {selectedRoutineEntry.record.surveillanceGrade}
+	                                </span>
+	                              ) : null}
+	                              {selectedRoutineEntry?.record?.surveillanceGradeReason ? (
+	                                <span className="text-sm !text-white">
+	                                  {selectedRoutineEntry.record.surveillanceGradeReason}
+	                                </span>
+	                              ) : null}
+	                            </div>
+	                          </div>
+	                        )}
+
+	                        {(selectedRoutineEntry?.record?.surveillanceConductGrade ||
+	                          selectedRoutineEntry?.record?.surveillanceConductGradeReason) && (
+	                          <div className="mt-3 rounded-2xl border border-[#223a70]/30 bg-[var(--nav-pill-blue)] px-4 py-3 text-white shadow-[0_10px_26px_rgba(15,23,42,0.12)]">
+	                            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/90">
+	                              Conduct Grade
+	                            </p>
+	                            <div className="mt-2 flex flex-wrap items-center gap-2">
+	                              {selectedRoutineEntry?.record?.surveillanceConductGrade ? (
+	                                <span
+	                                  className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${gradePillClass(
+	                                    selectedRoutineEntry.record.surveillanceConductGrade,
+	                                  )}`}
+	                                >
+	                                  {selectedRoutineEntry.record.surveillanceConductGrade}
+	                                </span>
+	                              ) : null}
+	                              {selectedRoutineEntry?.record
+	                                ?.surveillanceConductGradeReason ? (
+	                                <span className="text-sm !text-white">
+	                                  {selectedRoutineEntry.record.surveillanceConductGradeReason}
+	                                </span>
+	                              ) : null}
+	                            </div>
+	                          </div>
+	                        )}
+
+                        {routineUploads.length ? (
+                          <div className="mt-4">
+                            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
+                                Routine Uploads
+                              </p>
+                              <span className="rounded-full border border-slate-200 bg-[var(--card-soft)] px-3 py-1 text-xs font-semibold text-slate-700">
+                                {routineUploads.length}
+                              </span>
+                            </div>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              {routineUploads.map((upload, index) => {
+                                const file = upload.file;
+                                const seqRaw = file.sequence;
+                                const seq =
+                                  typeof seqRaw === "number" &&
+                                  Number.isFinite(seqRaw) &&
+                                  seqRaw > 0
+                                    ? Math.floor(seqRaw)
+                                    : index + 1;
+                                const ref =
+                                  file.kind === "video"
+                                    ? `Video ${seq}`
+                                    : file.kind === "image"
+                                      ? `Photo ${seq}`
+                                      : `File ${seq}`;
+                                return (
+                                  <div
+                                    key={`${upload.recordId}-${file.id ?? file.path ?? file.originalName ?? "file"}`}
+                                    className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-white text-sm shadow-sm"
+                                  >
+                                    <AttachmentPreview
+                                      file={file}
+                                      onOpen={() => openAttachmentViewer(file)}
+                                    />
+                                    <div className="px-4 pb-4 pt-3">
+                                      {file.summary ? (
+                                        <p className="text-xs text-slate-700">
+                                          {file.summary}
+                                        </p>
+                                      ) : null}
+                                      <p className="mt-2 text-xs text-slate-500">
+                                        {formatTimestamp(upload.createdAt)}
+                                      </p>
+                                      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <span className="rounded-full border border-slate-200 bg-[var(--card-soft)] px-3 py-1 text-[11px] font-semibold text-slate-700">
+                                            {(file.kind ?? "file").toUpperCase()}
+                                          </span>
+                                          <span className="rounded-full border border-slate-200 bg-[var(--card-soft)] px-3 py-1 text-[11px] font-semibold text-slate-700">
+                                            {ref}
+                                          </span>
+                                          {file.label ? (
+                                            <span className="rounded-full border border-slate-200 bg-[var(--card-soft)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-700">
+                                              {String(file.label).toUpperCase()}
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                        <button
+                                          type="button"
+                                          className="ui-pill-primary inline-flex items-center justify-center rounded-full px-4 py-1.5 text-xs"
+                                          onClick={() => openAttachmentViewer(file)}
+                                        >
+                                          Open
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
+                        ) : (
+                          <p className="mt-4 text-sm text-slate-600">
+                            No routine uploads attached to this report.
+                          </p>
                         )}
-
-                        {/* Attachments are intentionally only displayed in the Incidents panel. */}
                       </div>
                     </>
-                  ) : (
-                    <p className="text-sm text-slate-600">
-                      No routine reports submitted for this date yet.
-                    </p>
-                  )}
+	                  ) : (
+	                    <p className="text-sm text-slate-600">
+	                      No surveillance reports submitted for this date yet.
+	                    </p>
+	                  )}
                 </div>
 
-                {incidents.length ? (
+                {incidentGroups.length ? (
                   <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
                     <div className="mb-3 flex items-center justify-between gap-2">
                       <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
                         Incidents
                       </p>
-                      <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-                        {incidents.length}
+                      <span className="rounded-full border border-slate-200 bg-[var(--card-soft)] px-3 py-1 text-xs font-semibold text-slate-700">
+                        {incidentGroups.length}
                       </span>
                     </div>
 
                     <div className="space-y-3">
-                      {incidents.map((incident) => {
-                        const src = buildAttachmentSrc(incident.file.path || incident.file.id);
-                        const headline =
-                          incident.file.summary ??
-                          incident.record.surveillanceSummary ??
-                          incident.record.notes ??
-                          "";
+                      {incidentGroups.map((incident) => {
+                        const headline = incident.summary;
                         const detailsLines = headline ? headline.split("\n") : [];
                         return (
                           <div
                             key={incident.id}
-                            className="rounded-2xl border border-slate-200 bg-[rgba(34,58,112,0.03)] px-4 py-3 ring-1 ring-[#223a70]/5"
+                            className="rounded-2xl border border-slate-200 bg-[var(--card-soft)] px-4 py-3"
                           >
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <div className="min-w-0">
@@ -1215,6 +1736,9 @@ export default function SurveillanceReportsSection({
                                   <span className="text-xs text-slate-500">
                                     {incident.timestamp}
                                   </span>
+                                  <span className="text-xs text-slate-500">
+                                    · {incident.files.length} file{incident.files.length === 1 ? "" : "s"}
+                                  </span>
                                 </div>
                                 {incident.record.employeeName ? (
                                   <p className="mt-1 text-sm font-semibold text-slate-900">
@@ -1229,7 +1753,7 @@ export default function SurveillanceReportsSection({
                                   setActiveInvestigate({
                                     ...incident.record,
                                     surveillanceLabel: incident.category,
-                                    attachments: [incident.file],
+                                    attachments: incident.files,
                                   });
                                 }}
                                 className="ui-icon-btn ui-icon-btn--primary"
@@ -1260,33 +1784,50 @@ export default function SurveillanceReportsSection({
                               </div>
                             ) : null}
 
-                            <div className="mt-3 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white text-sm shadow-sm">
-                              <AttachmentPreview
-                                file={incident.file}
-                                onOpen={() => openAttachmentViewer(incident.file)}
-                              />
-                              <div className="flex flex-wrap items-start justify-between gap-3 px-4 pb-4 pt-3">
-                                <div className="min-w-0 flex-1">
-                                  <p className="font-semibold text-slate-900 break-words text-wrap">
-                                    {incident.file.originalName ?? "Attachment"}
-                                  </p>
-                                  <p className="mt-1 text-xs text-slate-500">
-                                    {(incident.file.kind ?? "file").toUpperCase()}{" "}
-                                    {formatBytes(incident.file.size)}
-                                  </p>
+                            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                              {incident.files.map((file, index) => {
+                                const seqRaw = file.sequence;
+                                const seq =
+                                  typeof seqRaw === "number" &&
+                                  Number.isFinite(seqRaw) &&
+                                  seqRaw > 0
+                                    ? Math.floor(seqRaw)
+                                    : index + 1;
+                                const ref =
+                                  file.kind === "video"
+                                    ? `Video ${seq}`
+                                    : file.kind === "image"
+                                      ? `Photo ${seq}`
+                                      : `File ${seq}`;
+                                return (
+                                <div
+                                  key={`${incident.id}-${file.id ?? file.path ?? file.originalName ?? "file"}`}
+                                  className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-white text-sm shadow-sm"
+                                >
+                                  <AttachmentPreview
+                                    file={file}
+                                    onOpen={() => openAttachmentViewer(file)}
+                                  />
+                                  <div className="flex items-center justify-between gap-3 px-4 pb-4 pt-3">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="rounded-full border border-slate-200 bg-[var(--card-soft)] px-3 py-1 text-[11px] font-semibold text-slate-700">
+                                        {(file.kind ?? "file").toUpperCase()}
+                                      </span>
+                                      <span className="rounded-full border border-slate-200 bg-[var(--card-soft)] px-3 py-1 text-[11px] font-semibold text-slate-700">
+                                        {ref}
+                                      </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="ui-pill-primary inline-flex items-center justify-center rounded-full px-4 py-1.5 text-xs"
+                                      onClick={() => openAttachmentViewer(file)}
+                                    >
+                                      Open
+                                    </button>
+                                  </div>
                                 </div>
-                                {src ? (
-                                  <button
-                                    type="button"
-                                    className="ui-pill-primary inline-flex items-center justify-center rounded-full px-4 py-1.5 text-xs"
-                                    onClick={() => openAttachmentViewer(incident.file)}
-                                  >
-                                    Open
-                                  </button>
-                                ) : (
-                                  <span className="text-xs text-slate-500">No file</span>
-                                )}
-                              </div>
+                              );
+                              })}
                             </div>
                           </div>
                         );
@@ -1309,6 +1850,141 @@ export default function SurveillanceReportsSection({
         </div>
       )}
 
+      <IHModal
+        isOpen={Boolean(gradeHistoryEmployee)}
+        onClose={() => {
+          setGradeHistoryEmployee(null);
+          setGradeHistoryMessage(null);
+          setGradeHistoryStatus("idle");
+          setGradeHistoryRecords([]);
+        }}
+        allowOutsideClose
+        panelClassName="max-w-3xl"
+      >
+        <div className="w-[min(820px,94vw)] overflow-hidden rounded-3xl border border-white/10 bg-[#0b152a] text-white shadow-[0_18px_44px_rgba(0,0,0,0.35)]">
+          <div className="border-b border-white/10 px-6 py-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-300">
+              Grades
+            </p>
+            <p className="mt-2 text-base font-semibold text-white">
+              {gradeHistoryEmployee ?? "Grade history"}
+            </p>
+            <p className="mt-1 text-xs text-slate-300">
+              Month: {gradeHistoryMonthLabel}
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+              {gradeHistoryAverages.behavior ? (
+                <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                  <span className="text-[10px] font-semibold tracking-[0.22em] text-slate-300">
+                    AVG BEH
+                  </span>
+                  <span
+                    className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${gradePillClass(
+                      gradeHistoryAverages.behavior,
+                    )}`}
+                  >
+                    {gradeHistoryAverages.behavior}
+                  </span>
+                </span>
+              ) : null}
+              {gradeHistoryAverages.conduct ? (
+                <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                  <span className="text-[10px] font-semibold tracking-[0.22em] text-slate-300">
+                    AVG COND
+                  </span>
+                  <span
+                    className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${gradePillClass(
+                      gradeHistoryAverages.conduct,
+                    )}`}
+                  >
+                    {gradeHistoryAverages.conduct}
+                  </span>
+                </span>
+              ) : null}
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-semibold tracking-[0.22em] text-slate-200">
+                {gradeHistoryAverages.count} REPORTS
+              </span>
+            </div>
+          </div>
+
+          <div className="max-h-[70vh] overflow-y-auto px-6 py-5">
+            {gradeHistoryStatus === "loading" ? (
+              <div className="space-y-3">
+                {Array.from({ length: 5 }).map((_, index) => (
+                  <div key={`grade-hist-skel-${index}`} className="ui-skeleton h-14" />
+                ))}
+              </div>
+            ) : gradeHistoryStatus === "error" ? (
+              <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                {gradeHistoryMessage ?? "Unable to load grade history."}
+              </div>
+            ) : gradeHistoryRecords.length === 0 ? (
+              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-slate-300">
+                No graded reports found in the last year.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {gradeHistoryRecords.map((record) => (
+                  <div
+                    key={record.id}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
+                  >
+                    <p className="text-xs text-slate-300">
+                      {formatTimestamp(record.createdAt)}
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-white">
+                      {(record.surveillanceGrade || record.surveillanceGradeReason) && (
+                        <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                          <span className="text-[10px] font-semibold tracking-[0.22em] text-slate-300">
+                            BEH
+                          </span>
+                          {record.surveillanceGrade ? (
+                            <span
+                              className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${gradePillClass(
+                                record.surveillanceGrade,
+                              )}`}
+                            >
+                              {record.surveillanceGrade}
+                            </span>
+                          ) : null}
+                          {record.surveillanceGradeReason ? (
+                            <span className="text-xs text-slate-200">
+                              {record.surveillanceGradeReason}
+                            </span>
+                          ) : null}
+                        </span>
+                      )}
+                      {(record.surveillanceConductGrade ||
+                        record.surveillanceConductGradeReason) && (
+                        <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                          <span className="text-[10px] font-semibold tracking-[0.22em] text-slate-300">
+                            COND
+                          </span>
+                          {record.surveillanceConductGrade ? (
+                            <span
+                              className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${gradePillClass(
+                                record.surveillanceConductGrade,
+                              )}`}
+                            >
+                              {record.surveillanceConductGrade}
+                            </span>
+                          ) : null}
+                          {record.surveillanceConductGradeReason ? (
+                            <span className="text-xs text-slate-200">
+                              {record.surveillanceConductGradeReason}
+                            </span>
+                          ) : null}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </IHModal>
+
       {activeInvestigate && (
         <SurveillanceInvestigateModal
           report={activeInvestigate}
@@ -1324,49 +2000,72 @@ export default function SurveillanceReportsSection({
 
       <IHModal
         isOpen={attachmentViewerOpen}
-        onClose={() => setAttachmentViewerOpen(false)}
+        onClose={closeAttachmentViewer}
         allowOutsideClose
-        panelClassName="media-modal max-w-6xl"
+        panelClassName={`media-modal ${
+          attachmentViewerFullscreen
+            ? "ih-modal-panel--fullscreen"
+            : "max-w-6xl"
+        }`}
+        backdropClassName={
+          attachmentViewerFullscreen ? "ih-modal-backdrop--fullscreen" : ""
+        }
       >
-        <div className="media-shell flex max-h-[82vh] flex-col overflow-hidden">
+        <div
+          className={`media-shell flex flex-col overflow-hidden ${
+            attachmentViewerFullscreen ? "h-full max-h-none" : "max-h-[82vh]"
+          }`}
+        >
           <div className="media-header border-b border-white/10 px-6 py-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <p className="text-xs uppercase tracking-[0.26em] text-slate-300">
                   Attachment
                 </p>
-                <h2 className="mt-2 truncate text-lg font-semibold text-white">
-                  {attachmentViewerFile?.originalName ?? "Viewer"}
-                </h2>
                 <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-300">
                   {attachmentViewerFile?.kind ? (
-                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-slate-200">
+                    <span className="media-chip">
                       {attachmentViewerFile.kind.toUpperCase()}
                     </span>
                   ) : null}
-                  {formatBytes(attachmentViewerFile?.size) ? (
-                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-slate-200">
-                      {formatBytes(attachmentViewerFile?.size)}
+                  {attachmentViewerFile?.sequence ? (
+                    <span className="media-chip">
+                      {attachmentViewerFile.kind === "video"
+                        ? `Video ${attachmentViewerFile.sequence}`
+                        : attachmentViewerFile.kind === "image"
+                          ? `Photo ${attachmentViewerFile.sequence}`
+                          : `File ${attachmentViewerFile.sequence}`}
                     </span>
                   ) : null}
                 </p>
               </div>
 
-              {attachmentViewerFile?.path ? (
-                <a
-                  className="media-chip"
-                  href={buildAttachmentSrc(attachmentViewerFile.path)}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open in new tab
-                </a>
-              ) : null}
+              <button
+                type="button"
+                className="media-chip cursor-pointer"
+                disabled={!attachmentViewerFile?.path}
+                aria-pressed={attachmentViewerFullscreen}
+                onClick={() =>
+                  setAttachmentViewerFullscreen((prev) => !prev)
+                }
+              >
+                {attachmentViewerFullscreen ? "Exit full screen" : "Full screen"}
+              </button>
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-6 py-5">
-            <div className="media-stage flex max-h-[70vh] items-center justify-center p-2">
+          <div
+            className={`flex-1 min-h-0 ${
+              attachmentViewerFullscreen
+                ? "overflow-hidden p-0"
+                : "overflow-y-auto px-6 py-5"
+            }`}
+          >
+            <div
+              className={`media-stage relative flex min-h-0 items-center justify-center ${
+                attachmentViewerFullscreen ? "flex-1 p-0" : "max-h-[70vh] p-2"
+              }`}
+            >
               {!attachmentViewerFile?.path ? (
                 <div className="px-4 py-10 text-sm text-slate-300">
                   No attachment selected.
@@ -1376,7 +2075,11 @@ export default function SurveillanceReportsSection({
                   controls
                   playsInline
                   autoPlay
-                  className="max-h-[68vh] w-full rounded-xl bg-black object-contain"
+                  className={`w-full bg-black object-contain ${
+                    attachmentViewerFullscreen
+                      ? "h-full max-h-full rounded-none"
+                      : "max-h-[68vh] rounded-xl"
+                  }`}
                   src={buildAttachmentSrc(attachmentViewerFile.path)}
                 />
               ) : attachmentViewerFile.kind === "image" ? (
@@ -1384,12 +2087,17 @@ export default function SurveillanceReportsSection({
                   key={attachmentViewerFile.path}
                   src={buildAttachmentSrc(attachmentViewerFile.path)}
                   alt={attachmentViewerFile.originalName ?? "Attachment preview"}
+                  fullscreen={attachmentViewerFullscreen}
                 />
               ) : (
                 <iframe
                   src={buildAttachmentSrc(attachmentViewerFile.path)}
                   title={attachmentViewerFile.originalName ?? "Attachment preview"}
-                  className="h-[68vh] w-full rounded-xl bg-white"
+                  className={`w-full bg-white ${
+                    attachmentViewerFullscreen
+                      ? "h-full rounded-none"
+                      : "h-[68vh] rounded-xl"
+                  }`}
                 />
               )}
             </div>
