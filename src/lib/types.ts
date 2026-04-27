@@ -17,6 +17,7 @@ export interface StoredFile {
   id: string;
   path: string;
   dataUrl?: string;
+  sequence?: number;
   originalName: string;
   mimeType: string;
   size: number;
@@ -405,6 +406,8 @@ export interface CombinedRecord {
   surveillanceSummary?: string;
   surveillanceGrade?: string;
   surveillanceGradeReason?: string;
+  surveillanceConductGrade?: string;
+  surveillanceConductGradeReason?: string;
   invoiceNotes?: string;
   invoiceCompany?: string;
   invoiceNumber?: string;
