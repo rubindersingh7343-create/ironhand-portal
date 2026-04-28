@@ -470,6 +470,18 @@ export default function SurveillanceReportsSection({
   const hasSurveillanceInvestigationAPI = true;
   const [unseenCounts, setUnseenCounts] = useState<Record<string, number>>({});
   const [unseenIds, setUnseenIds] = useState<string[]>([]);
+  const [gradeHistoryEmployee, setGradeHistoryEmployee] = useState<string | null>(
+    null,
+  );
+  const [gradeHistoryRecords, setGradeHistoryRecords] = useState<CombinedRecord[]>(
+    [],
+  );
+  const [gradeHistoryStatus, setGradeHistoryStatus] = useState<
+    "idle" | "loading" | "error"
+  >("idle");
+  const [gradeHistoryMessage, setGradeHistoryMessage] = useState<string | null>(
+    null,
+  );
 
   const fetchRange = useMemo(() => {
     const baseDate = isDateLocked && dateLockRange?.startDate ? dateLockRange.startDate : selectedDate;
@@ -900,6 +912,76 @@ export default function SurveillanceReportsSection({
     return summary ? summary.split("\n") : [];
   }, [selectedRoutineEntry]);
 
+  const openGradeHistory = useCallback(
+    async (employeeName: string) => {
+      if (!selectedStore) return;
+      setGradeHistoryEmployee(employeeName);
+      setGradeHistoryRecords([]);
+      setGradeHistoryStatus("loading");
+      setGradeHistoryMessage(null);
+      try {
+        const endDate = new Date();
+        const startDate = new Date(endDate);
+        startDate.setFullYear(startDate.getFullYear() - 1);
+        const params = new URLSearchParams({
+          category: "surveillance",
+          store: selectedStore,
+          includeStores: "0",
+          employee: employeeName,
+          startDate: startDate.toISOString().slice(0, 10),
+          endDate: endDate.toISOString().slice(0, 10),
+        });
+        const response = await fetch(`/api/records?${params.toString()}`, {
+          cache: "no-store",
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.error ?? "Unable to load grade history.");
+        }
+        const nextRecords = Array.isArray(data.records) ? data.records : [];
+        setGradeHistoryRecords(nextRecords);
+        setGradeHistoryStatus("idle");
+        if (!nextRecords.length) {
+          setGradeHistoryMessage("No previous grades found.");
+        }
+      } catch (error) {
+        console.error("Failed to load grade history", error);
+        setGradeHistoryStatus("error");
+        setGradeHistoryMessage(
+          error instanceof Error ? error.message : "Unable to load grade history.",
+        );
+      }
+    },
+    [selectedStore],
+  );
+
+  const gradeHistoryAverages = useMemo(() => {
+    const totals = {
+      behavior: { sum: 0, count: 0 },
+      conduct: { sum: 0, count: 0 },
+    };
+    gradeHistoryRecords.forEach((record) => {
+      const behaviorPoints = gradeToPoints(record.surveillanceGrade);
+      if (behaviorPoints !== null) {
+        totals.behavior.sum += behaviorPoints;
+        totals.behavior.count += 1;
+      }
+      const conductPoints = gradeToPoints(record.surveillanceConductGrade);
+      if (conductPoints !== null) {
+        totals.conduct.sum += conductPoints;
+        totals.conduct.count += 1;
+      }
+    });
+    return {
+      behavior: totals.behavior.count
+        ? pointsToGrade(totals.behavior.sum / totals.behavior.count)
+        : "",
+      conduct: totals.conduct.count
+        ? pointsToGrade(totals.conduct.sum / totals.conduct.count)
+        : "",
+    };
+  }, [gradeHistoryRecords]);
+
   return (
     <section className="ui-card relative overflow-hidden">
       <div className="mb-4">
@@ -1071,48 +1153,68 @@ export default function SurveillanceReportsSection({
                         {routineEmployees.map((entry) => {
                           const isActive = entry.record.id === selectedRoutineRecordId;
                           return (
-                            <button
+                            <div
                               key={entry.record.id}
-                              type="button"
-                              onClick={() => {
-                                markSurveillanceSeen(entry.record);
-                                setSelectedRoutineRecordId(entry.record.id);
-                              }}
-                              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-left text-xs font-semibold transition ${
-                                isActive ? "ui-pill-primary" : "ui-pill-secondary"
-                              }`}
+                              className="flex max-w-full flex-nowrap items-center gap-1.5"
                             >
-                              <span className="max-w-[14ch] truncate">{entry.name}</span>
-                              {unseenSet.has(entry.record.id) ? (
-                                <span className="h-2 w-2 rounded-full bg-blue-400" />
-                              ) : null}
-                              {entry.grade ? (
-                                <span
-                                  className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${gradePillClass(
-                                    entry.grade,
-                                  )}`}
-                                >
-                                  {entry.grade}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  markSurveillanceSeen(entry.record);
+                                  setSelectedRoutineRecordId(entry.record.id);
+                                }}
+                                className={`inline-flex min-w-0 shrink items-center gap-1.5 rounded-full border px-2.5 py-1 text-left text-[11px] font-semibold transition ${
+                                  isActive ? "ui-pill-primary" : "ui-pill-secondary"
+                                }`}
+                              >
+                                <span className="max-w-[10ch] shrink truncate">
+                                  {entry.name}
                                 </span>
-                              ) : null}
-                              {entry.conductGrade ? (
-                                <span className="inline-flex items-center gap-1">
-                                  <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                                    Cond
+                                {unseenSet.has(entry.record.id) ? (
+                                  <span className="h-2 w-2 shrink-0 rounded-full bg-blue-400" />
+                                ) : null}
+                                {entry.grade ? (
+                                  <span className="inline-flex shrink-0 items-center gap-1">
+                                    <span className="text-[10px] font-semibold tracking-[0.18em] !text-white/90">
+                                      Beh.
+                                    </span>
+                                    <span
+                                      className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${gradePillClass(
+                                        entry.grade,
+                                      )}`}
+                                    >
+                                      {entry.grade}
+                                    </span>
                                   </span>
-                                  <span
-                                    className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${gradePillClass(
-                                      entry.conductGrade,
-                                    )}`}
-                                  >
-                                    {entry.conductGrade}
+                                ) : null}
+                                {entry.conductGrade ? (
+                                  <span className="inline-flex shrink-0 items-center gap-1">
+                                    <span className="text-[10px] font-semibold tracking-[0.18em] !text-white/90">
+                                      Cond.
+                                    </span>
+                                    <span
+                                      className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${gradePillClass(
+                                        entry.conductGrade,
+                                      )}`}
+                                    >
+                                      {entry.conductGrade}
+                                    </span>
                                   </span>
-                                </span>
-                              ) : null}
+                                ) : null}
+                              </button>
                               {entry.avgGrade ? (
-                                <span className="inline-flex items-center gap-1">
-                                  <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                                    Avg
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    void openGradeHistory(entry.name);
+                                  }}
+                                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#223a70]/30 bg-[#223a70] px-2.5 py-1 text-left text-[11px] font-semibold tracking-[0.18em] text-white shadow-[0_10px_26px_rgba(15,23,42,0.12)] transition hover:bg-[#1c3362]"
+                                  aria-label={`Open grade history for ${entry.name}`}
+                                >
+                                  <span className="text-[10px] font-semibold tracking-[0.22em] !text-white/90">
+                                    AVG
                                   </span>
                                   <span
                                     className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${gradePillClass(
@@ -1121,9 +1223,9 @@ export default function SurveillanceReportsSection({
                                   >
                                     {entry.avgGrade}
                                   </span>
-                                </span>
+                                </button>
                               ) : null}
-                            </button>
+                            </div>
                           );
                         })}
                       </div>
@@ -1359,6 +1461,113 @@ export default function SurveillanceReportsSection({
           onClose={() => setActiveInvestigate(null)}
         />
       )}
+
+      <IHModal
+        isOpen={Boolean(gradeHistoryEmployee)}
+        onClose={() => {
+          setGradeHistoryEmployee(null);
+          setGradeHistoryRecords([]);
+          setGradeHistoryMessage(null);
+          setGradeHistoryStatus("idle");
+        }}
+        allowOutsideClose
+        panelClassName="max-w-xl"
+      >
+        <div className="rounded-3xl bg-white p-5 text-slate-900">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+                Grade History
+              </p>
+              <h3 className="mt-1 text-lg font-semibold text-slate-950">
+                {gradeHistoryEmployee}
+              </h3>
+            </div>
+            <div className="flex shrink-0 flex-wrap justify-end gap-2">
+              {gradeHistoryAverages.behavior ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-[#223a70] px-3 py-1 text-[10px] font-semibold tracking-[0.18em] text-white">
+                  Beh.
+                  <span
+                    className={`rounded-full border px-2 py-0.5 uppercase tracking-[0.2em] ${gradePillClass(
+                      gradeHistoryAverages.behavior,
+                    )}`}
+                  >
+                    {gradeHistoryAverages.behavior}
+                  </span>
+                </span>
+              ) : null}
+              {gradeHistoryAverages.conduct ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-[#223a70] px-3 py-1 text-[10px] font-semibold tracking-[0.18em] text-white">
+                  Cond.
+                  <span
+                    className={`rounded-full border px-2 py-0.5 uppercase tracking-[0.2em] ${gradePillClass(
+                      gradeHistoryAverages.conduct,
+                    )}`}
+                  >
+                    {gradeHistoryAverages.conduct}
+                  </span>
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="mt-4 max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+            {gradeHistoryStatus === "loading" ? (
+              <p className="text-sm text-slate-600">Loading previous grades…</p>
+            ) : gradeHistoryMessage ? (
+              <p className="text-sm text-slate-600">{gradeHistoryMessage}</p>
+            ) : (
+              gradeHistoryRecords.map((record) => (
+                <div
+                  key={record.id}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+                >
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    {formatTimestamp(record.createdAt)}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {record.surveillanceGrade ? (
+                      <span className="inline-flex items-center gap-2 rounded-full bg-[#223a70] px-3 py-1 text-[10px] font-semibold tracking-[0.18em] text-white">
+                        Beh.
+                        <span
+                          className={`rounded-full border px-2 py-0.5 uppercase tracking-[0.2em] ${gradePillClass(
+                            record.surveillanceGrade,
+                          )}`}
+                        >
+                          {record.surveillanceGrade}
+                        </span>
+                      </span>
+                    ) : null}
+                    {record.surveillanceConductGrade ? (
+                      <span className="inline-flex items-center gap-2 rounded-full bg-[#223a70] px-3 py-1 text-[10px] font-semibold tracking-[0.18em] text-white">
+                        Cond.
+                        <span
+                          className={`rounded-full border px-2 py-0.5 uppercase tracking-[0.2em] ${gradePillClass(
+                            record.surveillanceConductGrade,
+                          )}`}
+                        >
+                          {record.surveillanceConductGrade}
+                        </span>
+                      </span>
+                    ) : null}
+                  </div>
+                  {record.surveillanceGradeReason ||
+                  record.surveillanceConductGradeReason ? (
+                    <div className="mt-2 space-y-1 text-sm text-slate-700">
+                      {record.surveillanceGradeReason ? (
+                        <p>Behavior: {record.surveillanceGradeReason}</p>
+                      ) : null}
+                      {record.surveillanceConductGradeReason ? (
+                        <p>Conduct: {record.surveillanceConductGradeReason}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </IHModal>
 
       <IHModal
         isOpen={attachmentViewerOpen}
