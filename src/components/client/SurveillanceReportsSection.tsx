@@ -896,16 +896,8 @@ export default function SurveillanceReportsSection({
 
   return (
     <section className="ui-card relative overflow-hidden">
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-blue-500/30 to-transparent"
-        aria-hidden="true"
-      />
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-sm uppercase tracking-[0.3em] text-[#223a70]">
-          <span
-            className="h-2 w-2 rounded-full bg-blue-500/70 shadow-[0_0_0_3px_rgba(14,165,233,0.12)]"
-            aria-hidden="true"
-          />
+      <div className="mb-4">
+        <h2 className="text-sm uppercase tracking-[0.3em] text-slate-300">
           Surveillance
         </h2>
       </div>
@@ -976,7 +968,7 @@ export default function SurveillanceReportsSection({
                 });
               }
             }}
-            className="ui-field ui-field--slim border-[#223a70]/25 bg-[rgba(34,58,112,0.04)]"
+            className="ui-field ui-field--slim"
             disabled={isDateLocked}
           />
           <button
@@ -1036,11 +1028,7 @@ export default function SurveillanceReportsSection({
                 {showRefreshing ? (
                   <p className="text-xs text-slate-500">Refreshing…</p>
                 ) : null}
-                <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-b from-white to-[#f4f7ff] p-4 shadow-[0_8px_24px_rgba(15,23,42,0.08)] ring-1 ring-[#223a70]/10">
-                  <div
-                    className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-blue-500/20 to-transparent"
-                    aria-hidden="true"
-                  />
+                <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
                       Summary
@@ -1134,7 +1122,7 @@ export default function SurveillanceReportsSection({
                         })}
                       </div>
 
-                      <div className="mt-4 rounded-2xl border border-slate-200 bg-[rgba(34,58,112,0.03)] px-4 py-3 ring-1 ring-[#223a70]/5">
+                      <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
                         <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
                           Routine Surveillance Report
                         </p>
@@ -1243,7 +1231,7 @@ export default function SurveillanceReportsSection({
                         return (
                           <div
                             key={incident.id}
-                            className="rounded-2xl border border-slate-200 bg-[rgba(34,58,112,0.03)] px-4 py-3 ring-1 ring-[#223a70]/5"
+                            className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
                           >
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <div className="min-w-0">
