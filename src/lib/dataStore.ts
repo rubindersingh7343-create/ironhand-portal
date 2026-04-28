@@ -81,9 +81,36 @@ interface SurveillanceRecord {
   summary: string;
   grade?: string;
   gradeReason?: string;
+  conductGrade?: string;
+  conductGradeReason?: string;
   notes?: string;
   attachments: StoredFile[];
   createdAt: string;
+}
+
+type SurveillanceTextContentMeta = {
+  conductGrade?: string;
+  conductGradeReason?: string;
+};
+
+function parseSurveillanceTextContent(value?: string): SurveillanceTextContentMeta {
+  const raw = (value ?? "").trim();
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") return {};
+    const record = parsed as Record<string, unknown>;
+    return {
+      conductGrade:
+        typeof record.conductGrade === "string" ? record.conductGrade : undefined,
+      conductGradeReason:
+        typeof record.conductGradeReason === "string"
+          ? record.conductGradeReason
+          : undefined,
+    };
+  } catch {
+    return {};
+  }
 }
 
 interface StorageSchema {
@@ -669,12 +696,22 @@ export async function addSurveillanceReport(
 ): Promise<SurveillanceRecord> {
   if (USE_SUPABASE && supabase) {
     const recordId = randomUUID();
+    const textContent = (() => {
+      const conductGrade = payload.conductGrade?.trim();
+      const conductGradeReason = payload.conductGradeReason?.trim();
+      if (!conductGrade && !conductGradeReason) return null;
+      return JSON.stringify({
+        conductGrade: conductGrade ?? "",
+        conductGradeReason: conductGradeReason ?? "",
+      });
+    })();
     await supabase.from("records").insert({
       id: recordId,
       store_number: payload.storeNumber,
       employee_name: payload.employeeName,
       category: "surveillance",
       notes: payload.notes ?? "",
+      text_content: textContent,
       surveillance_label: payload.label,
       surveillance_summary: payload.summary,
       surveillance_grade: payload.grade ?? null,
@@ -997,20 +1034,27 @@ export async function getCombinedRecords(
         fileMap.set(entry.recordId, list);
       });
 
-    return (data ?? []).map((record: any) => ({
-      id: record.id,
-      category: record.category,
-      employeeName: record.employee_name,
-      storeNumber: record.store_number,
-      createdAt: record.created_at,
-      shiftNotes: record.shift_notes ?? undefined,
-      notes: record.notes ?? undefined,
-      textContent: record.text_content ?? undefined,
-      surveillanceLabel: record.surveillance_label ?? undefined,
-      surveillanceSummary: record.surveillance_summary ?? undefined,
-      surveillanceGrade: record.surveillance_grade ?? undefined,
-      surveillanceGradeReason: record.surveillance_grade_reason ?? undefined,
-      invoiceNotes: record.invoice_notes ?? undefined,
+    return (data ?? []).map((record: any) => {
+      const surveillanceMeta =
+        record.category === "surveillance"
+          ? parseSurveillanceTextContent(record.text_content)
+          : {};
+      return {
+        id: record.id,
+        category: record.category,
+        employeeName: record.employee_name,
+        storeNumber: record.store_number,
+        createdAt: record.created_at,
+        shiftNotes: record.shift_notes ?? undefined,
+        notes: record.notes ?? undefined,
+        textContent: record.text_content ?? undefined,
+        surveillanceLabel: record.surveillance_label ?? undefined,
+        surveillanceSummary: record.surveillance_summary ?? undefined,
+        surveillanceGrade: record.surveillance_grade ?? undefined,
+        surveillanceGradeReason: record.surveillance_grade_reason ?? undefined,
+        surveillanceConductGrade: surveillanceMeta.conductGrade,
+        surveillanceConductGradeReason: surveillanceMeta.conductGradeReason,
+        invoiceNotes: record.invoice_notes ?? undefined,
       invoiceCompany: record.invoice_company ?? undefined,
       invoiceNumber: record.invoice_number ?? undefined,
       invoiceAmountCents:
@@ -1029,8 +1073,9 @@ export async function getCombinedRecords(
           : record.invoice_paid_amount_cents
             ? Number(record.invoice_paid_amount_cents)
             : undefined,
-      attachments: fileMap.get(record.id) ?? [],
-    }));
+        attachments: fileMap.get(record.id) ?? [],
+      };
+    });
   }
 
   const storage = await readStorage();
@@ -1071,6 +1116,8 @@ export async function getCombinedRecords(
       surveillanceSummary: entry.summary,
       surveillanceGrade: entry.grade,
       surveillanceGradeReason: entry.gradeReason,
+      surveillanceConductGrade: entry.conductGrade,
+      surveillanceConductGradeReason: entry.conductGradeReason,
       attachments: entry.attachments.map((file) => ({ ...file })),
     })),
     ...invoices.map<CombinedRecord>((invoice) => ({
@@ -1271,6 +1318,15 @@ export async function getCombinedRecordById(
       surveillanceSummary: data.surveillance_summary ?? undefined,
       surveillanceGrade: data.surveillance_grade ?? undefined,
       surveillanceGradeReason: data.surveillance_grade_reason ?? undefined,
+      ...(data.category === "surveillance"
+        ? (() => {
+            const meta = parseSurveillanceTextContent(data.text_content);
+            return {
+              surveillanceConductGrade: meta.conductGrade,
+              surveillanceConductGradeReason: meta.conductGradeReason,
+            };
+          })()
+        : {}),
       invoiceNotes: data.invoice_notes ?? undefined,
       invoiceCompany: data.invoice_company ?? undefined,
       invoiceNumber: data.invoice_number ?? undefined,

@@ -405,6 +405,8 @@ export interface CombinedRecord {
   surveillanceSummary?: string;
   surveillanceGrade?: string;
   surveillanceGradeReason?: string;
+  surveillanceConductGrade?: string;
+  surveillanceConductGradeReason?: string;
   invoiceNotes?: string;
   invoiceCompany?: string;
   invoiceNumber?: string;

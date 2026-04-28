@@ -27,6 +27,12 @@ export async function POST(request: Request) {
   const gradeReason = isJson
     ? payload?.gradeReason
     : (formData?.get("gradeReason") as string | null);
+  const conductGrade = isJson
+    ? payload?.conductGrade
+    : (formData?.get("conductGrade") as string | null);
+  const conductGradeReason = isJson
+    ? payload?.conductGradeReason
+    : (formData?.get("conductGradeReason") as string | null);
   const employeeName = isJson
     ? payload?.employeeName
     : (formData?.get("employeeName") as string | null);
@@ -58,13 +64,16 @@ export async function POST(request: Request) {
     !summary ||
     !grade ||
     !gradeReason ||
+    !conductGrade ||
+    !conductGradeReason ||
     !employeeName ||
     (!isJson && (footageFiles.length === 0 || !footageFiles.some(Boolean)) && !footage) ||
     (isJson && jsonFiles.length === 0)
   ) {
     return NextResponse.json(
       {
-        error: "Label, summary, grade, employee, reason, and footage are required.",
+        error:
+          "Label, summary, behavior grade, conduct grade, employee, reasons, and footage are required.",
       },
       { status: 400 },
     );
@@ -190,6 +199,8 @@ export async function POST(request: Request) {
       summary,
       grade,
       gradeReason,
+      conductGrade,
+      conductGradeReason,
       notes: notes ?? undefined,
       attachments: storedFiles,
     });

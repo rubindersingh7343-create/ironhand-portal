@@ -418,6 +418,10 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
       const summary = String(formData.get("summary") ?? "").trim();
       const grade = String(formData.get("grade") ?? "").trim();
       const gradeReason = String(formData.get("gradeReason") ?? "").trim();
+      const conductGrade = String(formData.get("conductGrade") ?? "").trim();
+      const conductGradeReason = String(
+        formData.get("conductGradeReason") ?? "",
+      ).trim();
       const notes = String(formData.get("notes") ?? "").trim();
       const footageLabels = formData.getAll("footageLabel").map((value) =>
         String(value ?? "").trim(),
@@ -432,10 +436,12 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
         !summary ||
         !grade ||
         !gradeReason ||
+        !conductGrade ||
+        !conductGradeReason ||
         fileRows.length === 0
       ) {
         throw new Error(
-          "Employee, summary, grade, reason, and footage are required.",
+          "Employee, summary, behavior grade, conduct grade, reasons, and footage are required.",
         );
       }
 
@@ -533,6 +539,8 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
             summary,
             grade,
             gradeReason,
+            conductGrade,
+            conductGradeReason,
             employeeName,
             notes: notes.length ? notes : null,
             files: uploadedFiles,
@@ -732,6 +740,39 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
                 </label>
                 <input
                   name="gradeReason"
+                  required
+                  placeholder="Short reason for the grade"
+                  className="ui-field w-full"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-[200px_minmax(0,1fr)]">
+              <div>
+                <label className="ui-label mb-2 block">
+                  Conduct grade
+                </label>
+                <select
+                  name="conductGrade"
+                  required
+                  className="ui-field w-full"
+                >
+                  <option value="">Select grade</option>
+                  {["A+", "A", "B+", "B", "C", "D", "F"].map(
+                    (grade) => (
+                      <option key={grade} value={grade}>
+                        {grade}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </div>
+              <div>
+                <label className="ui-label mb-2 block">
+                  Reason for grade
+                </label>
+                <input
+                  name="conductGradeReason"
                   required
                   placeholder="Short reason for the grade"
                   className="ui-field w-full"

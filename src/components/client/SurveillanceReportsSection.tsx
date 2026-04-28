@@ -823,6 +823,7 @@ export default function SurveillanceReportsSection({
     return Array.from(latestByEmployee.entries()).map(([name, record]) => ({
       name,
       grade: record.surveillanceGrade ?? "",
+      conductGrade: record.surveillanceConductGrade ?? "",
       avgGrade: (averageGradeByEmployee.get(name) ?? "").replace(/^avg\\s+/i, ""),
       record,
     }));
@@ -1100,6 +1101,20 @@ export default function SurveillanceReportsSection({
                                   {entry.grade}
                                 </span>
                               ) : null}
+                              {entry.conductGrade ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                                    Cond
+                                  </span>
+                                  <span
+                                    className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${gradePillClass(
+                                      entry.conductGrade,
+                                    )}`}
+                                  >
+                                    {entry.conductGrade}
+                                  </span>
+                                </span>
+                              ) : null}
                               {entry.avgGrade ? (
                                 <span className="inline-flex items-center gap-1">
                                   <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
@@ -1160,6 +1175,35 @@ export default function SurveillanceReportsSection({
                               {selectedRoutineEntry?.record?.surveillanceGradeReason ? (
                                 <span className="text-sm text-slate-700">
                                   {selectedRoutineEntry.record.surveillanceGradeReason}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        )}
+
+                        {(selectedRoutineEntry?.record?.surveillanceConductGrade ||
+                          selectedRoutineEntry?.record?.surveillanceConductGradeReason) && (
+                          <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
+                              Conduct Grade
+                            </p>
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              {selectedRoutineEntry?.record?.surveillanceConductGrade ? (
+                                <span
+                                  className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${gradePillClass(
+                                    selectedRoutineEntry.record.surveillanceConductGrade,
+                                  )}`}
+                                >
+                                  {selectedRoutineEntry.record.surveillanceConductGrade}
+                                </span>
+                              ) : null}
+                              {selectedRoutineEntry?.record
+                                ?.surveillanceConductGradeReason ? (
+                                <span className="text-sm text-slate-700">
+                                  {
+                                    selectedRoutineEntry.record
+                                      .surveillanceConductGradeReason
+                                  }
                                 </span>
                               ) : null}
                             </div>
