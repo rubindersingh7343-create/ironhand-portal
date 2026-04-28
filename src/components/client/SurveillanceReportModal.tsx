@@ -58,7 +58,6 @@ export default function SurveillanceReportModal({
   );
   const [activeIndex, setActiveIndex] = useState(0);
   const activeAttachment = attachments[activeIndex];
-  const isRoutine = report.surveillanceLabel?.toLowerCase() === "routine";
   const category = report.surveillanceLabel ?? "Routine";
   const grade = report.surveillanceGrade;
   const gradeReason = report.surveillanceGradeReason;
@@ -83,7 +82,7 @@ export default function SurveillanceReportModal({
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          {!isRoutine && attachments.length > 0 && activeAttachment && (
+          {attachments.length > 0 && activeAttachment && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-300">
@@ -161,30 +160,26 @@ export default function SurveillanceReportModal({
             )}
           </div>
 
-          {!isRoutine && (
-            <div className="space-y-2">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-300">
-                Incident Metadata
-              </p>
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
-                Category: {category}
-                <br />
-                Reported by: {report.employeeName}
-              </div>
+          <div className="space-y-2">
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-300">
+              Upload Metadata
+            </p>
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
+              Category: {category}
+              <br />
+              Reported by: {report.employeeName}
             </div>
-          )}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-3 border-t border-white/10 px-6 py-4">
           <div className="flex flex-wrap gap-2">
-            {!isRoutine && (
-              <button
-                type="button"
-                className="rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-blue-500"
-              >
-                Mark as Reviewed
-              </button>
-            )}
+            <button
+              type="button"
+              className="rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-blue-500"
+            >
+              Mark as Reviewed
+            </button>
             <button
               type="button"
               onClick={onInvestigate}

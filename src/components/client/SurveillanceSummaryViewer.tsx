@@ -149,9 +149,9 @@ export default function SurveillanceSummaryViewer({
   const grade = report.surveillanceGrade;
   const gradeReason = report.surveillanceGradeReason;
   const labelKey = (effectiveLabel ?? "").toLowerCase();
-  const isIncident = mode === "incident" || ["critical", "theft", "incident"].includes(labelKey);
-
-  const isRoutine = (effectiveLabel ?? "").toLowerCase() === "routine";
+  const isIncident =
+    mode === "incident" ||
+    ["routine", "critical", "theft", "incident"].includes(labelKey);
   const openFullScreen = (_attachment: (typeof attachments)[number], index: number) => {
     setViewerIndex(index);
     setViewerOpen(true);

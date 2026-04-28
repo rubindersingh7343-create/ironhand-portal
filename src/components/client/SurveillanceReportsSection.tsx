@@ -13,9 +13,14 @@ type StoreSummary = {
   hasSurveillance?: boolean;
 };
 
-type IncidentCategory = "critical" | "theft" | "incident";
+type IncidentCategory = "routine" | "critical" | "theft" | "incident";
 
-const incidentLabels: IncidentCategory[] = ["critical", "theft", "incident"];
+const incidentLabels: IncidentCategory[] = [
+  "routine",
+  "critical",
+  "theft",
+  "incident",
+];
 
 const formatTimestamp = (value: string) => {
   const parsed = new Date(value);
@@ -381,6 +386,7 @@ const statusStyles = {
 } as const;
 
 const categoryStyles: Record<IncidentCategory, string> = {
+  routine: "border-emerald-200 bg-emerald-50 text-emerald-800",
   critical: "border-red-200 bg-red-50 text-red-800",
   theft: "border-orange-200 bg-orange-50 text-orange-800",
   incident: "border-blue-200 bg-blue-50 text-blue-800",
@@ -1198,7 +1204,7 @@ export default function SurveillanceReportsSection({
                           </div>
                         )}
 
-                        {/* Attachments are intentionally only displayed in the Incidents panel. */}
+                        {/* Attachments are intentionally only displayed in the uploads panel. */}
                       </div>
                     </>
                   ) : (
@@ -1212,7 +1218,7 @@ export default function SurveillanceReportsSection({
                   <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
                     <div className="mb-3 flex items-center justify-between gap-2">
                       <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
-                        Incidents
+                        Uploads
                       </p>
                       <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
                         {incidents.length}
@@ -1328,10 +1334,10 @@ export default function SurveillanceReportsSection({
                 ) : (
                   <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
                     <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
-                      Incidents
+                      Uploads
                     </p>
                     <p className="mt-3 text-sm text-slate-600">
-                      No incidents reported for this date.
+                      No classified uploads reported for this date.
                     </p>
                   </div>
                 )}

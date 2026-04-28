@@ -132,11 +132,13 @@ export default function SurveillanceInvestigateModal({
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const isRoutine = report.surveillanceLabel?.toLowerCase() === "routine";
   const labelKey = (report.surveillanceLabel ?? "routine").toLowerCase();
   const badgeKey =
-    labelKey === "critical" || labelKey === "theft" || labelKey === "incident"
-      ? (labelKey as "critical" | "theft" | "incident")
+    labelKey === "routine" ||
+    labelKey === "critical" ||
+    labelKey === "theft" ||
+    labelKey === "incident"
+      ? (labelKey as "routine" | "critical" | "theft" | "incident")
       : "routine";
   const summary = report.surveillanceSummary ?? report.notes ?? "No summary provided.";
   const grade = report.surveillanceGrade;
@@ -466,7 +468,7 @@ export default function SurveillanceInvestigateModal({
                 onClick={onPreview}
                 className="rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-white/40"
               >
-                {isRoutine ? "Open report" : "Preview video"}
+                Preview upload
               </button>
             </div>
           </div>
