@@ -1146,8 +1146,8 @@ export default function SurveillanceReportsSection({
 
                         {(selectedRoutineEntry?.record?.surveillanceGrade ||
                           selectedRoutineEntry?.record?.surveillanceGradeReason) && (
-                          <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
+                          <div className="mt-4 rounded-2xl border border-[#223a70]/30 bg-[#223a70] px-4 py-3 text-white shadow-[0_10px_26px_rgba(15,23,42,0.12)]">
+                            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/90">
                               Behavior Grade
                             </p>
                             <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -1161,7 +1161,7 @@ export default function SurveillanceReportsSection({
                                 </span>
                               ) : null}
                               {selectedRoutineEntry?.record?.surveillanceGradeReason ? (
-                                <span className="text-sm text-slate-700">
+                                <span className="text-sm text-white">
                                   {selectedRoutineEntry.record.surveillanceGradeReason}
                                 </span>
                               ) : null}
@@ -1171,8 +1171,8 @@ export default function SurveillanceReportsSection({
 
                         {(selectedRoutineEntry?.record?.surveillanceConductGrade ||
                           selectedRoutineEntry?.record?.surveillanceConductGradeReason) && (
-                          <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
+                          <div className="mt-4 rounded-2xl border border-[#223a70]/30 bg-[#223a70] px-4 py-3 text-white shadow-[0_10px_26px_rgba(15,23,42,0.12)]">
+                            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/90">
                               Conduct Grade
                             </p>
                             <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -1187,7 +1187,7 @@ export default function SurveillanceReportsSection({
                               ) : null}
                               {selectedRoutineEntry?.record
                                 ?.surveillanceConductGradeReason ? (
-                                <span className="text-sm text-slate-700">
+                                <span className="text-sm text-white">
                                   {
                                     selectedRoutineEntry.record
                                       .surveillanceConductGradeReason
