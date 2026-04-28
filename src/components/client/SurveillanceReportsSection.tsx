@@ -1161,7 +1161,7 @@ export default function SurveillanceReportsSection({
                                 </span>
                               ) : null}
                               {selectedRoutineEntry?.record?.surveillanceGradeReason ? (
-                                <span className="text-sm text-white">
+                                <span className="text-sm !text-white">
                                   {selectedRoutineEntry.record.surveillanceGradeReason}
                                 </span>
                               ) : null}
@@ -1187,7 +1187,7 @@ export default function SurveillanceReportsSection({
                               ) : null}
                               {selectedRoutineEntry?.record
                                 ?.surveillanceConductGradeReason ? (
-                                <span className="text-sm text-white">
+                                <span className="text-sm !text-white">
                                   {
                                     selectedRoutineEntry.record
                                       .surveillanceConductGradeReason
