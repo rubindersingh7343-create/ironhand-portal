@@ -782,7 +782,10 @@ export default function SurveillanceReportsSection({
   }, [dateTouched, latestRecordDate, selectedDate]);
 
   const routineRecords = useMemo(() => {
-    return recordsForDate;
+    const labeledRoutine = recordsForDate.filter(
+      (record) => record.surveillanceLabel?.toLowerCase() === "routine",
+    );
+    return labeledRoutine;
   }, [recordsForDate]);
 
   const averageGradeByEmployee = useMemo(() => {
