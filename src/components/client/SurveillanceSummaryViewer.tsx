@@ -53,10 +53,20 @@ const isImageAttachment = (file?: Partial<StoredFile> | null) => {
   return /\.(png|jpe?g|webp|gif|avif|heic|heif|bmp|tiff?)$/.test(name);
 };
 
+const isVideoAttachment = (file?: Partial<StoredFile> | null) => {
+  if (!file) return false;
+  if (file.kind === "video") return true;
+  const mime = (file.mimeType ?? "").toLowerCase();
+  if (mime.startsWith("video/")) return true;
+  const name = (file.originalName ?? file.path ?? "").toLowerCase();
+  return /\.(mp4|mov|m4v|webm|ogg|ogv|avi|mkv|hevc)$/i.test(name);
+};
+
 function AttachmentThumb({ file }: { file: StoredFile }) {
   const [failed, setFailed] = useState(false);
   const src = buildAttachmentSrc(file.path || file.id);
   const showImage = Boolean(src) && isImageAttachment(file) && !failed;
+  const showVideo = Boolean(src) && isVideoAttachment(file) && !failed;
 
   return (
     <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl border border-white/15 bg-white/10">
@@ -69,6 +79,28 @@ function AttachmentThumb({ file }: { file: StoredFile }) {
           className="h-full w-full object-cover"
           onError={() => setFailed(true)}
         />
+      ) : showVideo ? (
+        <>
+          <video
+            src={`${src}#t=0.1`}
+            preload="metadata"
+            muted
+            playsInline
+            className="h-full w-full object-cover"
+            onError={() => setFailed(true)}
+          />
+          <span className="absolute inset-0 bg-black/20" />
+          <span className="absolute inset-0 flex items-center justify-center text-white">
+            <svg
+              viewBox="0 0 24 24"
+              className="h-5 w-5 drop-shadow"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </span>
+        </>
       ) : (
         <div className="flex h-full w-full items-center justify-center text-slate-200/80">
           <svg

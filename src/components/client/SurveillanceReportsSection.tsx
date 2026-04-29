@@ -71,6 +71,15 @@ const isImageAttachment = (file?: Partial<StoredFile> | null) => {
   return /\.(png|jpe?g|webp|gif|avif|heic|heif|bmp|tiff?)$/.test(name);
 };
 
+const isVideoAttachment = (file?: Partial<StoredFile> | null) => {
+  if (!file) return false;
+  if (file.kind === "video") return true;
+  const mime = (file.mimeType ?? "").toLowerCase();
+  if (mime.startsWith("video/")) return true;
+  const name = (file.originalName ?? file.path ?? "").toLowerCase();
+  return /\.(mp4|mov|m4v|webm|ogg|ogv|avi|mkv|hevc)$/i.test(name);
+};
+
 function AttachmentPreview({
   file,
   onOpen,
@@ -81,6 +90,7 @@ function AttachmentPreview({
   const [failed, setFailed] = useState(false);
   const src = buildAttachmentSrc(file.path || file.id);
   const showImage = Boolean(src) && isImageAttachment(file) && !failed;
+  const showVideo = Boolean(src) && isVideoAttachment(file) && !failed;
 
   return (
     <button
@@ -99,6 +109,31 @@ function AttachmentPreview({
           className="h-full w-full object-cover transition group-hover:scale-[1.02]"
           onError={() => setFailed(true)}
         />
+      ) : showVideo ? (
+        <>
+          <video
+            src={`${src}#t=0.1`}
+            preload="metadata"
+            muted
+            playsInline
+            className="h-full w-full object-cover transition group-hover:scale-[1.02]"
+            onError={() => setFailed(true)}
+          />
+          <span className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/10" />
+          <span className="absolute left-1/2 top-1/2 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-[#223a70]/95 text-white shadow-[0_10px_30px_rgba(15,23,42,0.35)]">
+            <svg
+              viewBox="0 0 24 24"
+              className="ml-0.5 h-6 w-6"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </span>
+          <span className="absolute bottom-3 left-3 rounded-full bg-black/55 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white">
+            Video
+          </span>
+        </>
       ) : (
         <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-slate-500">
           <svg
