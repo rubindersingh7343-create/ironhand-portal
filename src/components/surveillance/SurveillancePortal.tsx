@@ -111,9 +111,6 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
   const [rowUploadLocalIds, setRowUploadLocalIds] = useState<Record<number, string | null>>(
     {},
   );
-  const [summaryStatus, setSummaryStatus] = useState<"idle" | "generating">(
-    "idle",
-  );
   const formRef = useRef<HTMLFormElement | null>(null);
   const photoInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
   const videoInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
@@ -465,36 +462,13 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
       }
       const summary = String(result?.summary ?? "").trim();
       if (!summary) {
-        throw new Error("AI summary came back empty. Add a manual summary and retry.");
-      }
-      const textarea = formElement.elements.namedItem("summary");
-      if (textarea instanceof HTMLTextAreaElement) {
-        textarea.value = summary;
+        throw new Error("AI summary came back empty. Please retry the upload.");
       }
       data.set("summary", summary);
       return summary;
     },
     [fileNames, fileRows, selectedStore, stores],
   );
-
-  const handleGenerateSummary = async () => {
-    const formElement = formRef.current;
-    if (!formElement || summaryStatus === "generating") return;
-    setSummaryStatus("generating");
-    setMessage(null);
-    try {
-      await generateSummaryFromForm(formElement);
-      setStatus("success");
-      setMessage("AI summary generated. Review it, then send the report.");
-    } catch (error) {
-      setStatus("error");
-      setMessage(
-        error instanceof Error ? error.message : "Unable to generate AI summary.",
-      );
-    } finally {
-      setSummaryStatus("idle");
-    }
-  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -506,7 +480,7 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
 
     try {
       const employeeName = String(formData.get("employeeName") ?? "").trim();
-      let summary = String(formData.get("summary") ?? "").trim();
+      let summary = "";
       const grade = String(formData.get("grade") ?? "").trim();
       const gradeReason = String(formData.get("gradeReason") ?? "").trim();
       const conductGrade = String(formData.get("conductGrade") ?? "").trim();
@@ -547,9 +521,7 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
       if (!primaryFootageSummary) {
         throw new Error("Add a short summary for the footage.");
       }
-      if (!summary) {
-        summary = await generateSummaryFromForm(formElement, formData);
-      }
+      summary = await generateSummaryFromForm(formElement, formData);
 
       let response: Response;
       if (supabasePublic) {
@@ -1003,33 +975,12 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
             </div>
 
             <div>
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <label className="ui-label block">
-                  Employee action summary
-                </label>
-                <button
-                  type="button"
-                  onClick={handleGenerateSummary}
-                  disabled={summaryStatus === "generating"}
-                  className="rounded-full border border-blue-300/40 bg-blue-500/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-100 transition hover:border-blue-200 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {summaryStatus === "generating"
-                    ? "Generating…"
-                    : "Generate AI summary"}
-                </button>
-              </div>
-              <textarea
-                name="summary"
-                rows={3}
-                placeholder="Leave blank to auto-generate from the upload summaries, grades, and notes."
-                className="w-full rounded-2xl border border-white/10 bg-[#111a32] px-4 py-3 text-sm text-white placeholder:text-slate-300 focus:border-blue-400 focus:outline-none"
-              />
-            </div>
-
-            <div>
               <label className="ui-label mb-2 block">
                 Optional notes to client
               </label>
+              <p className="mb-2 text-xs text-slate-400">
+                These notes are optional. The AI will include them when writing the owner summary.
+              </p>
               <textarea
                 name="notes"
                 rows={3}
@@ -1050,23 +1001,20 @@ export default function SurveillancePortal({ user }: { user: SessionUser }) {
               </p>
             )}
 
-	            <button
-	              type="submit"
-	              disabled={
-	                status === "sending" ||
-                  summaryStatus === "generating" ||
-                  stores.length === 0 ||
-                  (Boolean(supabasePublic) && upload.anyUploading)
-	              }
-	              className="w-full rounded-2xl bg-blue-600 px-6 py-3 text-base font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-	            >
-	              {status === "sending"
-	                ? "Sending…"
-	                : summaryStatus === "generating"
-	                  ? "Generating summary…"
-	                : upload.anyUploading
-	                  ? "Uploading…"
-	                  : "Send surveillance report"}
+            <button
+              type="submit"
+              disabled={
+                status === "sending" ||
+                stores.length === 0 ||
+                (Boolean(supabasePublic) && upload.anyUploading)
+              }
+              className="w-full rounded-2xl bg-blue-600 px-6 py-3 text-base font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {status === "sending"
+                ? "Generating AI summary…"
+                : upload.anyUploading
+                  ? "Uploading…"
+                  : "Send surveillance report"}
             </button>
           </form>
         </section>
