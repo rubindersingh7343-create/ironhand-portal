@@ -653,6 +653,7 @@ export default function SurveillanceReportsSection({
           store: selectedStore,
         });
         params.set("includeStores", "0");
+        params.set("signFiles", "0");
         if (fetchRange.startDate) params.set("startDate", fetchRange.startDate);
         if (fetchRange.endDate) params.set("endDate", fetchRange.endDate);
 

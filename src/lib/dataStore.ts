@@ -989,6 +989,7 @@ export async function getCombinedRecords(
       data = retry.data;
     }
 
+    const shouldSignFiles = filters.signFiles !== false;
     const filesWithSignedUrls = await Promise.all(
       (data ?? []).flatMap((record: any) =>
         (record.record_files ?? []).map(async (file: any) => {
@@ -1004,14 +1005,18 @@ export async function getCombinedRecords(
           })();
           const path = objectPath;
           if (!path) return null;
-          const { data: signed } = await supabase.storage
-            .from(SUPABASE_BUCKET)
-            .createSignedUrl(path, 60 * 60 * 24 * 7);
+          const signedUrl = shouldSignFiles
+            ? (
+                await supabase.storage
+                  .from(SUPABASE_BUCKET)
+                  .createSignedUrl(path, 60 * 60 * 24 * 7)
+              ).data?.signedUrl
+            : null;
           return {
             recordId: record.id,
             file: {
               id: file.id,
-              path: signed?.signedUrl ?? file.storage_path,
+              path: signedUrl ?? path,
               originalName: file.original_name,
               mimeType: file.mime_type,
               size: file.size,

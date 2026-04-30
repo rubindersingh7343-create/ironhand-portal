@@ -424,4 +424,5 @@ export interface RecordFilters {
   employee?: string;
   startDate?: string;
   endDate?: string;
+  signFiles?: boolean;
 }

@@ -39,6 +39,7 @@ export async function GET(request: Request) {
   const startDate = searchParams.get("startDate") ?? undefined;
   const endDate = searchParams.get("endDate") ?? undefined;
   const requestedStore = searchParams.get("store") ?? undefined;
+  const signFiles = searchParams.get("signFiles") !== "0";
 
   let storeNumber: string | undefined;
   if (user.role === "client") {
@@ -65,6 +66,7 @@ export async function GET(request: Request) {
     employee,
     startDate,
     endDate,
+    signFiles,
   };
 
   const records = await getCombinedRecords(filters);
