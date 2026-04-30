@@ -427,6 +427,12 @@ const categoryStyles: Record<IncidentCategory, string> = {
   incident: "border-blue-200 bg-blue-50 text-blue-800",
 };
 
+const formatClassification = (value?: string) => {
+  const normalized = value?.trim();
+  if (!normalized) return "Surveillance";
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1).toLowerCase();
+};
+
 const gradePillClass = (grade?: string) => {
   const key = (grade ?? "").toUpperCase();
   if (key.startsWith("A")) {
@@ -836,10 +842,7 @@ export default function SurveillanceReportsSection({
   }, [dateTouched, latestRecordDate, selectedDate]);
 
   const routineRecords = useMemo(() => {
-    const labeledRoutine = recordsForDate.filter(
-      (record) => record.surveillanceLabel?.toLowerCase() === "routine",
-    );
-    return labeledRoutine;
+    return recordsForDate;
   }, [recordsForDate]);
 
   const averageGradeByEmployee = useMemo(() => {
@@ -1268,7 +1271,11 @@ export default function SurveillanceReportsSection({
 
                       <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
                         <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">
-                          Routine Surveillance Report
+                          {selectedRoutineEntry?.record?.surveillanceLabel
+                            ? `${formatClassification(
+                                selectedRoutineEntry.record.surveillanceLabel,
+                              )} Surveillance Report`
+                            : "Surveillance Report"}
                         </p>
                         <p className="mt-1 text-xs text-slate-500">
                           {activeStoreName} · {selectedStore} · {formatTimestamp(
@@ -1347,7 +1354,7 @@ export default function SurveillanceReportsSection({
                     </>
                   ) : (
                     <p className="text-sm text-slate-600">
-                      No routine reports submitted for this date yet.
+                      No surveillance reports submitted for this date yet.
                     </p>
                   )}
                 </div>
